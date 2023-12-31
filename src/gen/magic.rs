@@ -64,15 +64,22 @@ pub fn init_magics(seed: &mut u64) {
 
         // generate attack maps
 
-        let mut maps: Vec<u64> = Vec::new();
+        let mut total_capacity = 0;
+        for bits in magic_bits_rook.iter() {
+            total_capacity += 1 << bits;
+        }
+        let mut maps = vec![0; total_capacity];
+        let mut current_capacity = 0;
         for i in 0..64 {
             let mut combs = vec![0; 1 << comb_bits_rook[i]];
             init_combs(&mut combs, blocker_boards_rook[i]);
-            let mut attacks = vec![0; 1 << comb_bits_rook[i]];
-            init_attacks(i, true, &mut attacks, &mut combs, 1 << comb_bits_rook[i]);
-            for attack in attacks {
-                maps.push(attack);
+            let mut attacks = vec![0; 1 << magic_bits_rook[i]];
+            init_attacks(i, true, &mut attacks, &mut combs, 1 << magic_bits_rook[i]);
+            for (j, comb) in combs.iter().enumerate() {
+                let magic_index = (comb.wrapping_mul(magics_rook[i]) >> (64 - magic_bits_rook[i])) as usize;
+                maps[magic_index + current_capacity] = attacks[j];
             }
+            current_capacity += 1 << magic_bits_rook[i];
         }
         magics_to_file(PATH_AMR, &magics_rook, magic_bits_rook, &maps);
     }
@@ -125,15 +132,22 @@ pub fn init_magics(seed: &mut u64) {
 
         // generate attack maps
 
-        let mut maps: Vec<u64> = Vec::new();
+        let mut total_capacity = 0;
+        for bits in magic_bits_bishop.iter() {
+            total_capacity += 1 << bits;
+        }
+        let mut maps = vec![0; total_capacity];
+        let mut current_capacity = 0;
         for i in 0..64 {
             let mut combs = vec![0; 1 << comb_bits_bishop[i]];
             init_combs(&mut combs, blocker_boards_bishop[i]);
-            let mut attacks = vec![0; 1 << comb_bits_bishop[i]];
-            init_attacks(i, true, &mut attacks, &mut combs, 1 << comb_bits_bishop[i]);
-            for attack in attacks {
-                maps.push(attack);
+            let mut attacks = vec![0; 1 << magic_bits_bishop[i]];
+            init_attacks(i, false, &mut attacks, &mut combs, 1 << magic_bits_bishop[i]);
+            for (j, comb) in combs.iter().enumerate() {
+                let magic_index = (comb.wrapping_mul(magics_bishop[i]) >> (64 - magic_bits_bishop[i])) as usize;
+                maps[magic_index + current_capacity] = attacks[j];
             }
+            current_capacity += 1 << magic_bits_bishop[i];
         }
         magics_to_file(PATH_AMB, &magics_bishop, magic_bits_bishop, &maps);
     }
@@ -361,7 +375,7 @@ mod tests {
     use crate::util::{bb_to_str, str_to_bb};
 
     #[test]
-    fn test_magic_blocker_boards() {
+    fn test_magic_blockers() {
         let mut bbsr = vec![0; 64];
         let mut bbsb = vec![0; 64];
         init_blocker_boards(true, &mut bbsr);
@@ -410,6 +424,11 @@ mod tests {
         let mut attackb = vec![0];
         init_attacks(35, false, &mut attackb, &mut combb, 1);
         assert_eq!("0000000000100000000101000000000000010100001000100000000100000000", bb_to_str(attackb[0]));
+
+        let mut combb = vec![str_to_bb("0000000000001000000000000000000000000000000000000000010000000000")];
+        let mut attackb = vec![0];
+        init_attacks(37, false, &mut attackb, &mut combb, 1);
+        assert_eq!("0000000010001000010100000000000001010000100010000000010000000000", bb_to_str(attackb[0]));
     }
 
     #[test]

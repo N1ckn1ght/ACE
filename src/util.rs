@@ -164,23 +164,23 @@ pub fn move_get_to(mov: u32) -> usize {
 }
 
 #[inline]
-pub fn move_get_go_bb(mov: u32) -> u64 {
+pub fn move_get_to_bb(mov: u32) -> u64 {
     1 << (mov >> 12 & 0b11111111)
 }
 
 #[inline]
 pub fn move_get_piece(mov: u32) -> usize {
-    1 << (mov >> 20 & 0b1111)
+    (mov >> 20 & 0b1111) as usize
 }
 
 #[inline]
 pub fn move_get_promotion(mov: u32) -> usize {
-    1 << (mov >> 24 & 0b1111)
+    (mov >> 24 & 0b1111) as usize
 }
 
 #[inline]
 pub fn move_get_capture(mov: u32) -> usize {
-    1 << (mov >> 28 & 0b1111)
+    (mov >> 28 & 0b1111) as usize
 }
 
 // more secondary decoding (`special` part)
@@ -189,7 +189,7 @@ pub fn move_get_capture(mov: u32) -> usize {
 
 #[inline]
 pub fn move_is_check(mov: u32) -> bool {
-    mov & 0b1111 == 0b0001 || mov & 0b1000 == 0b1000    
+    mov & 0b1111 == 0b0001 || mov & 0b1000 == 0b1000    // || move_is_double_check() is suggested
 }
 
 #[inline]
@@ -272,11 +272,11 @@ pub fn magics_to_file(path: &str, magics: &[u64], bits: &[usize], attacks: &[u64
     for i in 0..64 {
         buf.write_u64::<LittleEndian>(magics[i]).unwrap();
         buf.write_u32::<LittleEndian>(bits[i] as u32).unwrap();
-        let temp = shift + (1 << bits[i]);
-        for attack in attacks.iter().take(temp).skip(shift) {
-            buf.write_u64::<LittleEndian>(*attack).unwrap();
+        let count = 1 << bits[i];
+        for i in shift..(shift + count) {
+            buf.write_u64::<LittleEndian>(attacks[i]).unwrap();
         }
-        shift = temp;
+        shift += count;
     }   
     match fs::metadata(path) {
         Ok(_) => {
@@ -301,11 +301,11 @@ pub fn file_to_magics(path: &str, magics: &mut [u64], bits: &mut [usize], attack
         attacks_index_shifts[i] = shift;
         magics[i] = cur.read_u64::<LittleEndian>().unwrap();
         bits[i] = cur.read_u32::<LittleEndian>().unwrap() as usize;
-        let temp = shift + (1 << bits[i]);
-        for _ in shift..temp {
+        let count = 1 << bits[i];
+        for _ in shift..(shift + count) {
             vec.push(cur.read_u64::<LittleEndian>().unwrap());
         }
-        shift = temp;
+        shift += count;
     }
     vec.shrink_to_fit();
     vec
@@ -423,26 +423,27 @@ mod tests {
         assert_eq!(value, 24);
     }
 
-    // #[test]
-    // fn test_utility_move_encoding() {
-    //     let from = 1 << 36;
-    //     let to = 1 << 57;
-    //     let promotion = P;
-    //     let capture = K + 1;
-    //     let special = 16 + 8 + 4 + 1;
-    //     let mov = move_encode_bb(from, to, promotion, capture, special);
-    //     assert_eq!(move_get_from(mov), from);
-    //     assert_eq!(move_get_to(mov), to);
-    //     assert_eq!(move_get_promotion(mov), promotion);
-    //     assert_eq!(move_get_capture(mov), capture);
-    //     assert_eq!(move_is_castle_short(mov), true);
-    //     assert_eq!(move_is_castle_long(mov), false);
-    //     assert_eq!(move_is_en_passant(mov), true);
-    //     assert_eq!(move_is_double_pawn(mov), true);
-    //     assert_eq!(move_is_check(mov), true);
-    //     let mov = move_encode(gtz(from), gtz(to), promotion, capture, special);
-    //     assert_eq!(move_get_from(mov), from);
-    //     assert_eq!(move_get_to(mov), to);
-    //     assert_eq!(move_is_double_check(mov), false);
-    // }
+    #[test]
+    fn test_utility_move_encoding() {
+        let from = 1 << 36;
+        let to = 1 << 57;
+        let piece = Q2;
+        let promotion = P;
+        let capture = N;
+        let special = MSE_DOUBLE_CHECK_EN_PASSANT;
+        let mov = move_encode_bb(from, to, piece, promotion, capture, special);
+        assert_eq!(move_get_from(mov), gtz(from));
+        assert_eq!(move_get_to(mov), gtz(to));
+        assert_eq!(move_get_piece(mov), piece);
+        assert_eq!(move_get_promotion(mov), promotion);
+        assert_eq!(move_get_capture(mov), capture);
+        assert_eq!(move_is_castle_short(mov), false);
+        assert_eq!(move_is_castle_long(mov), false);
+        assert_eq!(move_is_en_passant(mov), true);
+        assert_eq!(move_is_double_pawn(mov), false);
+        assert_eq!(move_is_check(mov), false);
+        assert_eq!(move_is_double_check(mov), true);
+        let mov2 = move_encode(gtz(from), gtz(to), piece, promotion, capture, special);
+        assert_eq!(mov, mov2);
+    }
 }

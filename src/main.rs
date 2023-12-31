@@ -18,5 +18,7 @@ fn main() {
     board.revert_move();
     if board.turn {
         println!("yes");
+    } else {
+        println!("{}", x[0]);
     }
 }

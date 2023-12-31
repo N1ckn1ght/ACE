@@ -178,7 +178,7 @@ impl Board {
         let mut bishops = self.bbs[B + turn];
         while bishops > 0 {
             let sq = pop_bit(&mut bishops);
-            let mut mask = self.get_sliding_diagonal_attacks(self.turn, sq, both);
+            let mut mask = self.get_sliding_diagonal_attacks(sq, both);
             while mask > 0 {
                 let csq = pop_bit(&mut mask);
                 moves.push(move_encode(sq, csq, B + turn, E, self.get_capture(!self.turn, sq), MSE_NOTHING));
@@ -188,7 +188,7 @@ impl Board {
         let mut rooks = self.bbs[R + turn];
         while rooks > 0 {
             let sq = pop_bit(&mut rooks);
-            let mut mask = self.get_sliding_straight_attacks(self.turn, sq, both);
+            let mut mask = self.get_sliding_straight_attacks(sq, both);
             while mask > 0 {
                 let csq = pop_bit(&mut mask);
                 moves.push(move_encode(sq, csq, R + turn, E, self.get_capture(!self.turn, sq), MSE_NOTHING));
@@ -198,7 +198,7 @@ impl Board {
         let mut queens = self.bbs[Q + turn];
         while queens > 0 {
             let sq = pop_bit(&mut queens);
-            let mut mask = self.get_sliding_diagonal_attacks(self.turn, sq, both) | self.get_sliding_straight_attacks(self.turn, sq, both);
+            let mut mask = self.get_sliding_diagonal_attacks(sq, both) | self.get_sliding_straight_attacks(sq, both);
             while mask > 0 {
                 let csq = pop_bit(&mut mask);
                 moves.push(move_encode(sq, csq, Q + turn, E, self.get_capture(!self.turn, sq), MSE_NOTHING));
@@ -226,13 +226,13 @@ impl Board {
         }
         // bishops | queens
         let diagonal_attackers = self.bbs[B + atk_turn as usize] | self.bbs[Q + atk_turn as usize];
-        let diagonal_vision    = self.get_sliding_diagonal_attacks(atk_turn, sq, occupancies);
+        let diagonal_vision    = self.get_sliding_diagonal_attacks(sq, occupancies);
         if diagonal_attackers & diagonal_vision > 0 {
             return true;
         }
         // rooks | queens
         let straight_attackers = self.bbs[R + atk_turn as usize] | self.bbs[Q + atk_turn as usize];
-        let straight_vision    = self.get_sliding_straight_attacks(atk_turn, sq, occupancies);
+        let straight_vision    = self.get_sliding_straight_attacks(sq, occupancies);
         if straight_attackers & straight_vision > 0 {
             return true;
         }
@@ -340,15 +340,17 @@ impl Board {
     }
 
     #[inline]
-    pub fn get_sliding_diagonal_attacks(&self, atk_turn: bool, sq: usize, occupancies: u64) -> u64 {
-        let magic_index = occupancies.wrapping_mul(self.maps.magics_bishop[sq]) >> (64 - self.maps.magic_bits_bishop[sq]);
-        self.maps.magics_bishop[magic_index as usize + self.maps.ais_bishop[sq]]
+    pub fn get_sliding_diagonal_attacks(&self, sq: usize, occupancies: u64) -> u64 {
+        let mask = occupancies & self.maps.bbs_bishop[sq];
+        let magic_index = mask.wrapping_mul(self.maps.magics_bishop[sq]) >> (64 - self.maps.magic_bits_bishop[sq]);
+        self.maps.attacks_bishop[magic_index as usize + self.maps.ais_bishop[sq]]
     }
 
     #[inline]
-    pub fn get_sliding_straight_attacks(&self, atk_turn: bool, sq: usize, occupancies: u64) -> u64 {
-        let magic_index = occupancies.wrapping_mul(self.maps.magics_bishop[sq]) >> (64 - self.maps.magic_bits_bishop[sq]);
-        self.maps.magics_bishop[magic_index as usize + self.maps.ais_bishop[sq]]
+    pub fn get_sliding_straight_attacks(&self, sq: usize, occupancies: u64) -> u64 {
+        let mask = occupancies & self.maps.bbs_rook[sq];
+        let magic_index = mask.wrapping_mul(self.maps.magics_rook[sq]) >> (64 - self.maps.magic_bits_rook[sq]);
+        self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]]
     }
 
     /* TODO (optional):
@@ -376,5 +378,20 @@ mod tests {
         assert_eq!("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1", board1.export());
         let board3 = Board::import("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1");
         assert_eq!(board1.export(), board3.export());
+    }
+
+    #[test]
+    fn test_board_magic() {
+        let mut board = Board::new();
+        set_bit(&mut board.bbs[Q], 37);
+        let ally = board.get_occupancies(false);
+        assert_eq!("0000000000000000000000000010000000000000000000001111111111111111", bb_to_str(ally));
+        let occupancies = board.get_occupancies(true) | ally;
+        assert_eq!("1111111111111111000000000010000000000000000000001111111111111111", bb_to_str(occupancies));
+        let dmask = board.get_sliding_diagonal_attacks(37, occupancies);
+        assert_eq!("0000000010001000010100000000000001010000100010000000010000000000", bb_to_str(dmask));
+        let smask = board.get_sliding_straight_attacks(37, occupancies);
+        assert_eq!("0000000000100000001000001101111100100000001000000010000000000000", bb_to_str(smask));
+        assert_eq!("0000000010101000011100001101111101110000101010000000000000000000", bb_to_str((dmask | smask) & !ally));
     }
 }
