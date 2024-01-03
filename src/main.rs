@@ -5,12 +5,25 @@ mod board;
 
 use crate::board::Board;
 use crate::gen::{magic::init_magics, leaping::init_leaping_attacks};
-use crate::util::{move_transform, visualise};
+use crate::util::*;
 
 fn main() {
     init_magics(&mut 1773);
     init_leaping_attacks();
-    let mut board = Board::import("8/8/8/2k5/2pP4/8/B7/4K3 b - d3 0 3");
+
+    /* Used for testing, remove later */
+
+    let x = "2kr3r/p1pqnp1p/2nb4/1p1p1b2/3PpPpN/N2QB1P1/PPP1P1BP/R3K2R b KQ - 1 13";
+    let mut board = Board::import(&x);
+
+    println!("{}\t{}\t{}", "----", "--", x);
+    let moves = board.get_legal_moves();
+    for mov in moves.iter() {
+        board.make_move(*mov);
+        let x = board.get_legal_moves();
+        println!("{}\t{}\t{}\t{}", *mov, move_transform(*mov), x.len(), board.export());
+        board.revert_move();
+    }
 
     let moves = board.get_legal_moves();
     for (tabs, mov) in moves.into_iter().enumerate() {
@@ -21,5 +34,4 @@ fn main() {
     }
     println!("\n");
     visualise(&board.bbs, 12);
-    println!("{}", board.en_passant);
 }
