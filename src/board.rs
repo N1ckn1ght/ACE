@@ -170,13 +170,13 @@ impl Board {
         // king, special
         if self.castlings & (CSW << turn) > 0 {
             let csq = 6 + 56 * turn;
-            if get_bit(both, csq) == 0 && get_bit(both, csq - 1) == 0 && !self.is_under_attack(!self.turn, csq - 1, both, ally) && !self.is_under_attack(!self.turn, sq, both, ally) {
+            if CSMASK << (56 * turn) & both == 0 && !self.is_under_attack(!self.turn, csq - 1, both, ally) && !self.is_under_attack(!self.turn, sq, both, ally) {
                 moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_SHORT));
             }
         }
         if self.castlings & (CLW << turn) > 0 {
             let csq = 2 + 56 * turn;
-            if get_bit(both, csq) == 0 && get_bit(both, csq | 1) == 0 && !self.is_under_attack(!self.turn, csq | 1, both, ally) && !self.is_under_attack(!self.turn, sq, both, ally) {
+            if CLMASK << (56 * turn) & both == 0 && !self.is_under_attack(!self.turn, csq | 1, both, ally) && !self.is_under_attack(!self.turn, sq, both, ally) {
                 moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_LONG));
             }
         }
@@ -550,7 +550,7 @@ impl Board {
         - fn export_pgn
     */
 
-    /* Debug */
+    /* Debug and benchmarking */
 
     pub fn perft(&mut self, depth: usize) -> u64 {
         let moves = self.get_legal_moves();
@@ -561,6 +561,41 @@ impl Board {
         for mov in moves.iter() {
             self.make_move(*mov);
             count += self.perft(depth - 1);
+            self.revert_move();
+        }
+        count
+    }
+
+    // [moves, captures, en passants, castles, promotions]
+    pub fn perft_verbosed(&mut self, depth: usize) -> [u64; 5] {
+        let moves = self.get_legal_moves();
+        if depth == 1 {
+            let mut arr = [0, 0, 0, 0, 0];
+            for mov in moves.iter() { 
+                arr[0] += 1;
+                if move_get_capture(*mov) < E {
+                    arr[1] += 1;
+                }
+                if mov & MSE_EN_PASSANT > 0 {
+                    arr[2] += 1;
+                }
+                if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) > 0 {
+                    arr[3] += 1;
+                }
+                if move_get_promotion(*mov) < E {
+                    arr[4] += 1;
+                }
+            }
+            return arr;
+        }
+        let moves = self.get_legal_moves();
+        let mut count = [0, 0, 0, 0, 0];
+        for mov in moves.iter() {
+            self.make_move(*mov);
+            let temp = self.perft_verbosed(depth - 1);
+            for (i, elem) in count.iter_mut().enumerate() {
+                *elem += temp[i];
+            }
             self.revert_move();
         }
         count
@@ -617,6 +652,14 @@ mod tests {
         assert_eq!(Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3").get_legal_moves().len(), 0);
         assert_eq!(Board::import("rn1q1b1r/ppp1kBpp/3p1n2/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7").get_legal_moves().len(), 1);
         assert_eq!(Board::import("rn1q1bnr/ppp1kBpp/3p1p2/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 3 7").get_legal_moves().len(), 0);
+        assert_eq!(Board::import("r3k2r/8/8/4B3/4b3/8/8/R3K2R w KQkq - 0 1").get_legal_moves().len(), 38);
+        assert_eq!(Board::import("r3k2r/8/8/4B3/4b3/8/8/R3K2R b KQkq - 0 1").get_legal_moves().len(), 38);
+        assert_eq!(Board::import("r3k2r/8/8/3B4/3b4/8/8/R3K2R w KQkq - 0 1").get_legal_moves().len(), 36);
+        assert_eq!(Board::import("r3k2r/8/8/3B4/3b4/8/8/R3K2R b KQkq - 0 1").get_legal_moves().len(), 36);
+        assert_eq!(Board::import("r3k2r/8/8/3B4/3b4/8/8/R3K2R b KQkq - 0 1").get_legal_moves().len(), 36);
+        assert_eq!(Board::import("r3k2r/4r3/8/8/7Q/8/8/R3K2R w KQkq - 0 1").get_legal_moves().len(), 6);
+        assert_eq!(Board::import("r3k2r/8/8/4R2q/8/8/8/R3K2R b KQkq - 0 1").get_legal_moves().len(), 5);    
+        assert_eq!(Board::import("r3k2r/8/8/8/8/8/8/RB2K2R w KQkq - 0 1").get_legal_moves().len(), 29);
         /* Test positions from https://gist.github.com/peterellisjones/8c46c28141c162d1d8a0f0badbc9cff9 */
         assert_eq!(Board::import("r6r/1b2k1bq/8/8/7B/8/8/R3K2R b KQ - 3 2").get_legal_moves().len(), 8);
         assert_eq!(Board::import("8/8/8/2k5/2pP4/8/B7/4K3 b - d3 0 3").get_legal_moves().len(), 8);
@@ -697,30 +740,30 @@ mod tests {
     #[test]
     fn test_board_legal_moves_advanced() {
         let mut board = Board::new();
-        assert_eq!(board.perft(1), 20);
-        assert_eq!(board.perft(2), 400);
-        assert_eq!(board.perft(3), 8902);
-        assert_eq!(board.perft(4), 197281);
+        assert_eq!(board.perft_verbosed(1), [20, 0, 0, 0, 0]);
+        assert_eq!(board.perft_verbosed(2), [400, 0, 0, 0, 0]);
+        assert_eq!(board.perft_verbosed(3), [8902, 34, 0, 0, 0]);
+        assert_eq!(board.perft_verbosed(4), [197281, 1576, 0, 0, 0]);
         /* Positions from https://www.chessprogramming.org/Perft_Results */
         let mut board = Board::import("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
-        assert_eq!(board.perft(1), 48);
-        assert_eq!(board.perft(2), 2039);
-        assert_eq!(board.perft(3), 97862);
-        assert_eq!(board.perft(4), 4085603);
+        assert_eq!(board.perft_verbosed(1), [48, 8, 0, 2, 0]);
+        assert_eq!(board.perft_verbosed(2), [2039, 351, 1, 91, 0]);
+        assert_eq!(board.perft_verbosed(3), [97862, 17102, 45, 3162, 0]);
+        assert_eq!(board.perft_verbosed(4), [4085603, 757163, 1929, 128013, 15172]);
         let mut board = Board::import("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
-        assert_eq!(board.perft(1), 14);
-        assert_eq!(board.perft(2), 191);
-        assert_eq!(board.perft(3), 2812);
-        assert_eq!(board.perft(4), 43238);
+        assert_eq!(board.perft_verbosed(1), [14, 1, 0, 0, 0]);
+        assert_eq!(board.perft_verbosed(2), [191, 14, 0, 0, 0]);
+        assert_eq!(board.perft_verbosed(3), [2812, 209, 2, 0, 0]);
+        assert_eq!(board.perft_verbosed(4), [43238, 3348, 123, 0, 0]);
         let mut board = Board::import("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
-        assert_eq!(board.perft(1), 6);
-        assert_eq!(board.perft(2), 264);
-        assert_eq!(board.perft(3), 9467);
-        assert_eq!(board.perft(4), 422333);
+        assert_eq!(board.perft_verbosed(1), [6, 0, 0, 0, 0]);
+        assert_eq!(board.perft_verbosed(2), [264, 87, 0, 6, 48]);
+        assert_eq!(board.perft_verbosed(3), [9467, 1021, 4, 0, 120]);
+        assert_eq!(board.perft_verbosed(4), [422333, 131393, 0, 7795, 60032]);
         let mut board = Board::import("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1");
-        assert_eq!(board.perft(1), 6);
-        assert_eq!(board.perft(2), 264);
-        assert_eq!(board.perft(3), 9467);
-        assert_eq!(board.perft(4), 422333);
+        assert_eq!(board.perft_verbosed(1), [6, 0, 0, 0, 0]);
+        assert_eq!(board.perft_verbosed(2), [264, 87, 0, 6, 48]);
+        assert_eq!(board.perft_verbosed(3), [9467, 1021, 4, 0, 120]);
+        assert_eq!(board.perft_verbosed(4), [422333, 131393, 0, 7795, 60032]);
     }
 }

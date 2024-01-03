@@ -56,6 +56,9 @@ pub static FILE_F: u64 = 0x2020202020202020;
 pub static FILE_G: u64 = 0x4040404040404040;
 pub static FILE_H: u64 = 0x8080808080808080;
 
+pub static CSMASK: u64 = 0x0000000000000060;
+pub static CLMASK: u64 = 0x000000000000000E;
+
 /* Move `special` encoding (change only with corresponding functions below)
     - now with u64 any can use MSE_CHECK | MSE_EN_PASSANT by bitwise OR instead of ciphering functions */
 

@@ -1,5 +1,4 @@
-// This module is used to generate constant resources
-// It shall not be linked to main in production!
+// The module to generate constant resources (maps)
 
 pub mod magic;
 pub mod leaping;
