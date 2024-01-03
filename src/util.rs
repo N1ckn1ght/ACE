@@ -115,11 +115,6 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
     value & (1 << bit)
 }
 
-#[inline]
-pub fn del_bit8(value: &mut u8, bit: usize) {
-    *value &= !(1 << bit)
-}
-
 /* Move encoding */
 
 // since it's not a struct, let's use more inline fuctions
@@ -260,9 +255,9 @@ pub fn file_to_magics(path: &str, magics: &mut [u64], bits: &mut [usize], attack
 
 pub fn visualise(bitboards: &[u64], columns: usize) {
     for i in (0..bitboards.len()).step_by(columns) {
-        for j in (0..64).step_by(8) {
+        for j in (0..57).rev().step_by(8) {
             for k in 0..min(bitboards.len() - i, columns) {
-                for l in (j..j+8).rev() {
+                for l in j..j+8 {
                     print!("{}", min(get_bit(bitboards[i + k], l), 1));
                 }
                 print!("\t");
@@ -330,9 +325,9 @@ pub fn move_transform(mov: u64) -> String {
     let to = move_get_to(mov);
     let promotion = move_get_promotion(mov);
     let mut str = String::new();
-    str.push(char::from_u32('h' as u32 - (from % 8) as u32).unwrap());
+    str.push(char::from_u32((from % 8) as u32 + 'a' as u32).unwrap());
     str.push(char::from_u32((from / 8) as u32 + '1' as u32).unwrap());
-    str.push(char::from_u32('h' as u32 - (to % 8) as u32).unwrap());
+    str.push(char::from_u32((to % 8) as u32 + 'a' as u32).unwrap());
     str.push(char::from_u32((to / 8) as u32 + '1' as u32).unwrap());
     if promotion < E {
         str.push(PIECES_REV[&((promotion | 1) as u32)]);
