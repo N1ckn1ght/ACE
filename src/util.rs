@@ -26,7 +26,7 @@ pub static PATH_AMP2: &str = "./res/attack_maps_pawn_black";
 /* Pieces and placements */
 
 pub static P:  usize = 0;  // white
-pub static P2: usize = 1;  // black (white + turn)
+pub static P2: usize = 1;  // black (white | turn)
 pub static N:  usize = 2;
 pub static N2: usize = 3;
 pub static B:  usize = 4;
@@ -56,36 +56,25 @@ pub static FILE_F: u64 = 0x2020202020202020;
 pub static FILE_G: u64 = 0x4040404040404040;
 pub static FILE_H: u64 = 0x8080808080808080;
 
-/* Move encoding */
+/* Move `special` encoding (change only with corresponding functions below)
+    - now with u64 any can use MSE_CHECK | MSE_EN_PASSANT by bitwise OR instead of ciphering functions */
 
-pub static CASTLE_SHORT: u32 = 1;
-pub static CASTLE_LONG:  u32 = 1 << 1;
-pub static EN_PASSANT:   u32 = 1 << 2;
-pub static DOUBLE_PAWN:  u32 = 1 << 3;
-pub static CHECK:        u32 = 1 << 4;
-pub static DOUBLE_CHECK: u32 = 1 << 5;
+pub static MSE_NOTHING:                 u64 = 0b00000000;
+pub static MSE_DOUBLE_CHECK:            u64 = 0b10000000;
+pub static MSE_CHECK:                   u64 = 0b01000000;
+pub static MSE_EN_PASSANT:              u64 = 0b00001000;
+pub static MSE_CASTLE_SHORT:            u64 = 0b00000100;
+pub static MSE_CASTLE_LONG:             u64 = 0b00000010;
+pub static MSE_DOUBLE_PAWN:             u64 = 0b00000001;
+// Note: there's no MSE_PROMOTION, it's in a different encoding section
 
-/* Move `special` encoding (change only with corresponding functions below) */
+/* board.castlings bits
+    - it won't correlate with MSE because of the color bits anyway */
 
-pub static MSE_NOTHING:                 u32 = 0b0000;
-pub static MSE_CHECK:                   u32 = 0b0001;
-pub static MSE_DOUBLE_CHECK:            u32 = 0b0010;
-pub static MSE_DOUBLE_CHECK_EN_PASSANT: u32 = 0b0011;
-pub static MSE_CASTLE_SHORT:            u32 = 0b0100;
-pub static MSE_CASTLE_LONG:             u32 = 0b0101;
-pub static MSE_EN_PASSANT:              u32 = 0b0110;
-pub static MSE_DOUBLE_PAWN:             u32 = 0b0111;
-pub static MSE_CASTLE_SHORT_CHECK:      u32 = 0b1000;
-pub static MSE_CASTE_LONG_CHECK:        u32 = 0b1001;
-pub static MSE_EN_PASSANT_CHECK:        u32 = 0b1010;
-pub static MSE_DOUBLE_PAWN_CHECK:       u32 = 0b1011;
-
-/* board.castlings[] indices */
-
-pub static CSW: usize = 0;  // castle short white
-pub static CSB: usize = 1;  // castle short black
-pub static CLW: usize = 2;  // castle long white
-pub static CLB: usize = 3;  // castle long black
+pub static CSW: u8 = 0b0001; // castle short white
+pub static CSB: u8 = 0b0010; // castle short black
+pub static CLW: u8 = 0b0100; // castle long white
+pub static CLB: u8 = 0b1000; // castle long black
 
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
 
@@ -119,17 +108,16 @@ pub fn pop_bit(bitboard: &mut u64) -> usize {
     bit
 }
 
-/* Move encoding (aux) */
+/* 8-bit auxiliaries */
 
-// I just want to avoid useless 'as' casts if possible...
 #[inline]
-pub fn get_bit32(value: u32, bit: usize) -> u32 {
+pub fn get_bit8(value: u8, bit: usize) -> u8 {
     value & (1 << bit)
 }
 
 #[inline]
-pub fn gtz32(bitboard: u64) -> u32 {
-    u64::trailing_zeros(bitboard)
+pub fn del_bit8(value: &mut u8, bit: usize) {
+    *value &= !(1 << bit)
 }
 
 /* Move encoding */
@@ -137,90 +125,47 @@ pub fn gtz32(bitboard: u64) -> u32 {
 // since it's not a struct, let's use more inline fuctions
 // since minimum piece (P) is 0, empty piece will be encoded to E (or any other value greater than K2, e.g. 12)
 // also this time it's not necessary to have a certain encoding struct to sort by (because of iterative deepening)
-// ! `special` will include checks in it, but move_is_special WON'T return true if it's just check
+// I dislike using u64, but in the end it allows to store everything without heavy ciphering/deciphering
+// [8 - SPECIAL][8 - square from][8 - square to][4 - moving piece][4 - promotion][4 - captured piece][28 - FREE]
 #[inline]
-pub fn move_encode(from: usize, to: usize, piece: usize, promotion: usize, capture: usize, special: u32 ) -> u32 {
-    special | (from << 4 | to << 12 | piece << 20 | promotion << 24 | capture << 28) as u32
+pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promotion: usize, special: u64 ) -> u64 {
+    // x86 systems are not gonna like that
+    special | (from << 8 | to << 16 | piece << 24 | promotion << 28) as u64 | (capture as u64) << 32
 }
 
 #[inline]
-pub fn move_encode_bb(from: u64, to: u64, piece: usize, promotion: usize, capture: usize, special: u32 ) -> u32 {
-    special | gtz32(from) << 4 | gtz32(to) << 12 | (piece << 20 | promotion << 24 | capture << 28) as u32
+pub fn move_get_from(mov: u64) -> usize {
+    (mov >> 8 & 0b11111111) as usize
 }
 
 #[inline]
-pub fn move_get_from(mov: u32) -> usize {
-    (mov >> 4 & 0b11111111) as usize
+pub fn move_get_from_bb(mov: u64) -> u64 {
+    1 << (mov >> 8 & 0b11111111)
 }
 
 #[inline]
-pub fn move_get_from_bb(mov: u32) -> u64 {
-    1 << (mov >> 4 & 0b11111111)
+pub fn move_get_to(mov: u64) -> usize {
+    (mov >> 16 & 0b11111111) as usize
 }
 
 #[inline]
-pub fn move_get_to(mov: u32) -> usize {
-    (mov >> 12 & 0b11111111) as usize
+pub fn move_get_to_bb(mov: u64) -> u64 {
+    1 << (mov >> 16 & 0b11111111)
 }
 
 #[inline]
-pub fn move_get_to_bb(mov: u32) -> u64 {
-    1 << (mov >> 12 & 0b11111111)
-}
-
-#[inline]
-pub fn move_get_piece(mov: u32) -> usize {
-    (mov >> 20 & 0b1111) as usize
-}
-
-#[inline]
-pub fn move_get_promotion(mov: u32) -> usize {
+pub fn move_get_piece(mov: u64) -> usize {
     (mov >> 24 & 0b1111) as usize
 }
 
 #[inline]
-pub fn move_get_capture(mov: u32) -> usize {
+pub fn move_get_promotion(mov: u64) -> usize {
     (mov >> 28 & 0b1111) as usize
 }
 
-// more secondary decoding (`special` part)
-// maybe could also add unknown_check_state or not_a_check as well, but only 4 bits to work with for now
-// for now if there's no check it's a must assumption that it's an unknown state (not even because of encoding itself, rather look at board.rs)
-
 #[inline]
-pub fn move_is_check(mov: u32) -> bool {
-    mov & 0b1111 == 0b0001 || mov & 0b1000 == 0b1000    // || move_is_double_check() is suggested
-}
-
-#[inline]
-pub fn move_is_double_check(mov: u32) -> bool {
-    mov & 0b1110 == 0b0010
-}
-
-#[inline]
-pub fn move_is_castle_short(mov: u32) -> bool {
-    mov & 0b0011 == 0b0000 && mov & 0b1100 != 0b0000
-}
-
-#[inline]
-pub fn move_is_castle_long(mov: u32) -> bool {
-    mov & 0b0011 == 0b0001 && mov & 0b1100 != 0b0000
-}
-
-#[inline]
-pub fn move_is_en_passant(mov: u32) -> bool {
-    mov & 0b0010 == 0b0010 && mov & 0b1101 != 0b0000
-}
-
-#[inline]
-pub fn move_is_double_pawn(mov: u32) -> bool {
-    mov & 0b0011 == 0b0011 && mov & 0b1100 != 0b0000
-}
-
-// doesn't include checks
-#[inline]
-pub fn move_is_special(mov: u32) -> bool {
-    mov & 0b1100 != 0b0000 || mov & 0b0011 == 0b0011
+pub fn move_get_capture(mov: u64) -> usize {
+    (mov >> 32 & 0b1111) as usize
 }
 
 /* GENERAL FUNCTIONS */
@@ -273,8 +218,8 @@ pub fn magics_to_file(path: &str, magics: &[u64], bits: &[usize], attacks: &[u64
         buf.write_u64::<LittleEndian>(magics[i]).unwrap();
         buf.write_u32::<LittleEndian>(bits[i] as u32).unwrap();
         let count = 1 << bits[i];
-        for i in shift..(shift + count) {
-            buf.write_u64::<LittleEndian>(attacks[i]).unwrap();
+        for attack in attacks.iter().skip(shift).take(count) {
+            buf.write_u64::<LittleEndian>(*attack).unwrap();
         }
         shift += count;
     }   
@@ -378,6 +323,24 @@ pub static PIECES_REV: phf::Map<u32, char> = phf_map! {
     11u32 => 'k'
 };
 
+/* INTERFACE */
+
+pub fn move_transform(mov: u64) -> String {
+    let from = move_get_from(mov);
+    let to = move_get_to(mov);
+    let promotion = move_get_promotion(mov);
+    let mut str = String::new();
+    str.push(char::from_u32('h' as u32 - (from % 8) as u32).unwrap());
+    str.push(char::from_u32((from / 8) as u32 + '1' as u32).unwrap());
+    str.push(char::from_u32('h' as u32 - (to % 8) as u32).unwrap());
+    str.push(char::from_u32((to / 8) as u32 + '1' as u32).unwrap());
+    if promotion < E {
+        str.push(PIECES_REV[&((promotion | 1) as u32)]);
+    }
+    str
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -430,20 +393,20 @@ mod tests {
         let piece = Q2;
         let promotion = P;
         let capture = N;
-        let special = MSE_DOUBLE_CHECK_EN_PASSANT;
-        let mov = move_encode_bb(from, to, piece, promotion, capture, special);
+        let special = MSE_DOUBLE_CHECK | MSE_EN_PASSANT;
+        // println!("{}\n{}\n{}\n{}\n{}\n{}", bb_to_str(special), usize_to_str(gtz(from) << 8), usize_to_str(gtz(to) << 16), usize_to_str(piece << 24), usize_to_str(promotion << 28), usize_to_str(capture << 32));
+        let mov = move_encode(gtz(from), gtz(to), piece, capture, promotion, special);
+        // println!("{}", bb_to_str(mov));
         assert_eq!(move_get_from(mov), gtz(from));
         assert_eq!(move_get_to(mov), gtz(to));
         assert_eq!(move_get_piece(mov), piece);
         assert_eq!(move_get_promotion(mov), promotion);
         assert_eq!(move_get_capture(mov), capture);
-        assert_eq!(move_is_castle_short(mov), false);
-        assert_eq!(move_is_castle_long(mov), false);
-        assert_eq!(move_is_en_passant(mov), true);
-        assert_eq!(move_is_double_pawn(mov), false);
-        assert_eq!(move_is_check(mov), false);
-        assert_eq!(move_is_double_check(mov), true);
-        let mov2 = move_encode(gtz(from), gtz(to), piece, promotion, capture, special);
-        assert_eq!(mov, mov2);
+        assert_eq!(mov & MSE_CASTLE_SHORT, 0);
+        assert_eq!(mov & MSE_CASTLE_LONG, 0);
+        assert_eq!(mov & MSE_DOUBLE_PAWN, 0);
+        assert_eq!(mov & MSE_CHECK, 0);
+        assert_ne!(mov & MSE_EN_PASSANT, 0);
+        assert_ne!(mov & MSE_DOUBLE_CHECK, 0);
     }
 }

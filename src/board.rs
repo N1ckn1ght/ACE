@@ -13,16 +13,20 @@ use crate::{util::*, maps::Maps};
 */
 
 pub struct Board {
-    pub bbs:        [u64; 12], // bitboards
-    pub turn:       bool,      // is black to move
-    pub castlings:  [bool; 4], // castle rights (util.rs has const indices)
-    pub en_passant: usize,     // en passant target square
-    pub hmc:        u32,       // halfmove clock (which drops for every capture or pawn movement)
-    pub no:         u32,       // fullmove number (which increases after every black move)
-
+    pub bbs:          [u64; 12], /* bitboards (P - K2)
+                                    - idea: maybe worth adding extra `E` board to remove some if's?.. */
+    pub turn:         bool,      // is black to move
+    pub castlings:    u8,        // castle rights (util.rs has const indices)
+    pub en_passant:   usize,     // en passant target square
+    pub hmc:          u32,       // halfmove clock (which drops for every capture or pawn movement)
+    pub no:           u32,       // fullmove number (which increases after each black move)
     /* accessible constants */
-
-    pub maps:       Maps
+    pub maps:         Maps,
+    /* takeback funcitonal */
+    pub move_history: Vec<u64>,
+    pub hmc_history:  Vec<u32>,
+    pub enp_history:  Vec<usize>,
+    pub cst_history:  Vec<u8>
 }
 
 impl Board {
@@ -30,10 +34,343 @@ impl Board {
         Self::import("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     }
 
+    /* TODO (optimize): it is possible to generate leval moves using some extra bitboards WITHOUT making and reverting pseudo-legal moves.
+       This is proven to be slightly faster (with the exception of en passant, probably), but also depends on the code. */
+    pub fn get_legal_moves(&mut self) -> Vec<u64> {
+        let mut moves = self.get_pseudo_legal_moves();
+        let mut i = 0;
+        let mut len = moves.len();
+        while i < len {
+            self.make_move(moves[i]);
+            let csq = gtz(self.bbs[K + !self.turn as usize]);
+            let ally = self.get_occupancies(!self.turn);
+            if self.is_under_attack(self.turn, csq, ally | self.get_occupancies(self.turn), ally) {
+                moves.swap(i, len);
+                moves.pop();
+            }
+            self.revert_move();
+            i += 1;
+            len -= 1;
+        }
+        moves
+    }
+
+    pub fn make_move(&mut self, mov: u64) {
+        self.move_history.push(mov);
+        self.hmc_history.push(self.hmc);
+        self.enp_history.push(self.en_passant);
+        self.cst_history.push(self.castlings);
+        self.en_passant = 0;
+        self.no += self.turn as u32;
+
+        let turn  = self.turn as usize;
+        let from  = move_get_from(mov);
+        let to    = move_get_to(mov);
+        let piece = move_get_piece(mov);
+
+        del_bit(&mut self.bbs[piece], from);
+        if move_get_promotion(mov) < E {
+            set_bit(&mut self.bbs[move_get_promotion(mov)], to);
+        } else {
+            set_bit(&mut self.bbs[piece], to);
+            if mov & MSE_EN_PASSANT > 0 {
+                if self.turn {
+                    del_bit(&mut self.bbs[P2], to - 8)
+                } else {
+                    del_bit(&mut self.bbs[P ], to + 8)
+                }
+                self.hmc = 0;
+            } else if move_get_capture(mov) < E {
+                del_bit(&mut self.bbs[move_get_capture(mov)], to);
+                self.hmc = 0;
+            } else if piece == K | turn {
+                if mov & MSE_CASTLE_SHORT > 0 {
+                    del_bit(&mut self.bbs[R | turn], to   | 1);
+                    set_bit(&mut self.bbs[R | turn], from | 1);
+                } else if mov & MSE_CASTLE_LONG > 0 {
+                    del_bit(&mut self.bbs[R | turn], to   - 2);
+                    set_bit(&mut self.bbs[R | turn], to   | 1);
+                }
+                del_bit8(&mut self.castlings, CSW as usize | turn);
+                del_bit8(&mut self.castlings, CLW as usize | turn);
+            } else if piece == R | turn {
+                match from {
+                    0  => del_bit8(&mut self.castlings, CLW as usize),
+                    7  => del_bit8(&mut self.castlings, CSW as usize),
+                    56 => del_bit8(&mut self.castlings, CLB as usize),
+                    63 => del_bit8(&mut self.castlings, CSB as usize),
+                    _ => ()
+                }
+            } else if piece == P | turn {
+                self.hmc = 0;
+                if mov & MSE_DOUBLE_PAWN > 0 {
+                    if self.turn {
+                        if RANK_4 & (get_bit(self.bbs[P2], to - 1) | get_bit(self.bbs[P2], to + 1)) > 0 {
+                            self.en_passant = to;
+                        }
+                    } else if RANK_5 & (get_bit(self.bbs[P ], to - 1) | get_bit(self.bbs[P ], to + 1)) > 0 {
+                        self.en_passant = to;
+                    }
+                }
+            }
+        }
+        self.turn = !self.turn;
+    }
+
+    pub fn revert_move(&mut self) {
+        let mov = self.move_history.pop().unwrap();
+        self.en_passant = self.enp_history.pop().unwrap();
+        self.hmc        = self.hmc_history.pop().unwrap();
+        self.castlings  = self.cst_history.pop().unwrap();
+        self.turn = !self.turn;                            // the previous move was for previous colour
+        self.no -= self.turn as u32;
+
+        let from  = move_get_from(mov);
+        let to    = move_get_to(mov);
+        let piece = move_get_piece(mov);
+
+        set_bit(&mut self.bbs[piece], from);
+        if move_get_promotion(mov) < E {
+            del_bit(&mut self.bbs[move_get_promotion(mov)], to);
+        } else {
+            del_bit(&mut self.bbs[move_get_piece(mov)], to);
+        }
+        if move_get_capture(mov) < E {
+            set_bit(&mut self.bbs[move_get_capture(mov)], to);
+        } else if mov & MSE_CASTLE_SHORT > 0 {
+            del_bit(&mut self.bbs[R + self.turn as usize], from | 1);
+            set_bit(&mut self.bbs[R + self.turn as usize], to   | 1);
+        } else if mov & MSE_CASTLE_LONG > 0 {
+            del_bit(&mut self.bbs[R + self.turn as usize], to   | 1);
+            set_bit(&mut self.bbs[R + self.turn as usize], to   - 2);
+        }
+    }
+
+    pub fn get_pseudo_legal_moves(&self) -> Vec<u64> {
+        let mut moves: Vec<u64  > = Vec::with_capacity(64);
+        let turn = self.turn as usize;
+        // occupancy masks
+        let ally  = self.get_occupancies( self.turn);
+        let enemy = self.get_occupancies(!self.turn);
+        let both  = ally | enemy;
+        // king
+        let sq = gtz(self.bbs[K | turn]);
+        let mut mask = self.maps.attacks_king[sq] & !ally;
+        while mask > 0 {
+            let csq = pop_bit(&mut mask);
+            moves.push(move_encode(sq, csq, K | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));            
+        }
+        // king, special
+        if self.castlings & (CSW << turn) > 0 {
+            let csq = 6 + 56 * turn;
+            if get_bit(both, csq) == 0 && get_bit(both, csq - 1) == 0 && !self.is_under_attack(!self.turn, csq - 1, both, ally) {
+                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_SHORT));
+            }
+        }
+        if self.castlings & (CLW << turn) > 0 {
+            let csq = 2 + 56 * turn;
+            if get_bit(both, csq) == 0 && get_bit(both, csq + 1) == 0 && !self.is_under_attack(!self.turn, csq + 1, both, ally) {
+                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_LONG));
+            }
+        }
+        // knight
+        let mut knights = self.bbs[N | turn];
+        while knights > 0 {
+            let sq = pop_bit(&mut knights);
+            let mut mask = self.maps.attacks_knight[sq] & !ally;
+            while mask > 0 {
+                let csq = pop_bit(&mut mask);
+                moves.push(move_encode(sq, csq, N | turn, self.get_capture(!self.turn, sq), E, MSE_NOTHING));
+            }
+        }
+        // bishop
+        let mut bishops = self.bbs[B | turn];
+        while bishops > 0 {
+            let sq = pop_bit(&mut bishops);
+            let mut mask = self.get_sliding_diagonal_attacks(sq, both, ally);
+            while mask > 0 {
+                let csq = pop_bit(&mut mask);
+                moves.push(move_encode(sq, csq, B | turn, self.get_capture(!self.turn, sq), E, MSE_NOTHING));
+            }
+        }
+        // rook
+        let mut rooks = self.bbs[R | turn];
+        while rooks > 0 {
+            let sq = pop_bit(&mut rooks);
+            let mut mask = self.get_sliding_straight_attacks(sq, both, ally);
+            while mask > 0 {
+                let csq = pop_bit(&mut mask);
+                moves.push(move_encode(sq, csq, R | turn, self.get_capture(!self.turn, sq), E, MSE_NOTHING));
+            }
+        }
+        // queen
+        let mut queens = self.bbs[Q | turn];
+        while queens > 0 {
+            let sq = pop_bit(&mut queens);
+            let mut mask = self.get_sliding_diagonal_attacks(sq, both, ally) | self.get_sliding_straight_attacks(sq, both, ally);
+            while mask > 0 {
+                let csq = pop_bit(&mut mask);
+                moves.push(move_encode(sq, csq, Q | turn, self.get_capture(!self.turn, sq), E, MSE_NOTHING));
+            }
+        }
+        // pawn (a hardcoded if-else)
+        let mut pawns = self.bbs[P | turn];
+        if self.turn {
+            // black
+            while pawns > 0 {
+                let sq = pop_bit(&mut pawns);
+                let mut mask = self.maps.attacks_pawns[sq + 64] & enemy;
+                if get_bit(RANK_2, sq) > 0 {
+                    // promotion
+                    while mask > 0 {
+                        let csq = pop_bit(&mut mask);
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), Q2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), R2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), B2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), N2, MSE_NOTHING));
+                    }
+                    let csq = sq - 8;
+                    if get_bit(both, csq) == 0 {
+                        moves.push(move_encode(sq, csq, P2, E, Q2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, E, R2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, E, B2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, E, N2, MSE_NOTHING));
+                    }
+                } else {
+                    while mask > 0 {
+                        let csq = pop_bit(&mut mask);
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), E, MSE_NOTHING));
+                    }
+                    let csq = sq - 8;
+                    if get_bit(both, csq) == 0 {
+                        moves.push(move_encode(sq, csq, P2, E, E, MSE_NOTHING));
+                        // double pawn move
+                        if get_bit(RANK_2, sq) > 0 && get_bit(both, csq - 8) == 0 {
+                            moves.push(move_encode(sq, csq - 8, P2, E, E, MSE_DOUBLE_PAWN));
+                        }
+                    }
+                }
+            }
+            // en passant
+            if self.en_passant > 0 {
+                if get_bit(self.bbs[P2], self.en_passant - 1) & RANK_4 > 0 {
+                    moves.push(move_encode(self.en_passant - 1, self.en_passant - 8, P2, P, E, MSE_EN_PASSANT));
+                }
+                if get_bit(self.bbs[P2], self.en_passant + 1) & RANK_4 > 0 {
+                    moves.push(move_encode(self.en_passant + 1, self.en_passant - 8, P2, P, E, MSE_EN_PASSANT));
+                }
+            }
+        } else {
+            // white
+            while pawns > 0 {
+                let sq = pop_bit(&mut pawns);
+                let mut mask = self.maps.attacks_pawns[sq] & enemy;
+                if get_bit(RANK_7, sq) > 0 {
+                    // promotion
+                    while mask > 0 {
+                        let csq = pop_bit(&mut mask);
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), Q, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), R, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), B, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), N, MSE_NOTHING));
+                    }
+                    let csq = sq + 8;
+                    if get_bit(both, csq) == 0 {
+                        moves.push(move_encode(sq, csq, P, E, Q, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, E, R, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, E, B, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, E, N, MSE_NOTHING));
+                    }
+                } else {
+                    while mask > 0 {
+                        let csq = pop_bit(&mut mask);
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), E, MSE_NOTHING));
+                    }
+                    let csq = sq + 8;
+                    if get_bit(both, csq) == 0 {
+                        moves.push(move_encode(sq, csq, P, E, E, MSE_NOTHING));
+                        // double pawn move
+                        if get_bit(RANK_2, sq) > 0 && get_bit(both, csq + 8) == 0 {
+                            moves.push(move_encode(sq, csq + 8, P, E, E, MSE_DOUBLE_PAWN));
+                        }
+                    }
+                }
+            }
+        }
+        // en passant
+        if self.en_passant > 0 {
+            if get_bit(self.bbs[P], self.en_passant - 1) & RANK_5 > 0 {
+                moves.push(move_encode(self.en_passant - 1, self.en_passant + 8, P, P2, E, MSE_EN_PASSANT));
+            }
+            if get_bit(self.bbs[P], self.en_passant + 1) & RANK_5 > 0 {
+                moves.push(move_encode(self.en_passant + 1, self.en_passant + 8, P, P2, E, MSE_EN_PASSANT));
+            }
+        }
+        moves
+    }
+
+    /* atk_turn is a colour of ATTACKING pieces
+       occupancies is the bitboard all pieces of every colour combined
+       defenders is the bitboard of pieces of the ATTACKED piece colour */
+    pub fn is_under_attack(&self, atk_turn: bool, sq: usize, occupancies: u64, defenders: u64) -> bool {
+        // kings
+        if self.maps.attacks_king[sq] & self.bbs[K + atk_turn as usize] > 0 {
+            return true;
+        }
+        // knights
+        if self.maps.attacks_knight[sq] & self.bbs[N + atk_turn as usize] > 0 {
+            return true;
+        }
+        // bishops | queens
+        let diagonal_attackers = self.bbs[B + atk_turn as usize] | self.bbs[Q + atk_turn as usize];
+        let diagonal_vision    = self.get_sliding_diagonal_attacks(sq, occupancies, defenders);
+        if diagonal_attackers & diagonal_vision > 0 {
+            return true;
+        }
+        // rooks | queens
+        let straight_attackers = self.bbs[R + atk_turn as usize] | self.bbs[Q + atk_turn as usize];
+        let straight_vision    = self.get_sliding_straight_attacks(sq, occupancies, defenders);
+        if straight_attackers & straight_vision > 0 {
+            return true;
+        }
+        // pawns
+        if self.maps.attacks_pawns[sq + 64 * !atk_turn as usize] & self.bbs[P + atk_turn as usize] > 0 {
+            return true;
+        }
+        /* additional en passant check (optional)
+           this will be useless since the function is called to determine if a king (or a castle field) is in check
+           feel free to uncomment if need it, but even, for example, in engine eval(), the need is to _count_ attacks
+        */
+        // sq == self.en_passant
+        false
+    }
+
+    /* Note: king capture is not included
+       turn is a color of a captured piece */
+    pub fn get_capture(&self, turn: bool, sq: usize) -> usize {
+        let turn = turn as usize;
+        if get_bit(self.bbs[P | turn], sq) > 0 {
+            return P | turn;
+        }
+        if get_bit(self.bbs[N | turn], sq) > 0 {
+            return N | turn;
+        }
+        if get_bit(self.bbs[B | turn], sq) > 0 {
+            return B | turn;
+        }
+        if get_bit(self.bbs[R | turn], sq) > 0 {
+            return R | turn;
+        }
+        if get_bit(self.bbs[Q | turn], sq) > 0 {
+            return Q | turn;
+        }
+        E
+    }
+
     pub fn import(fen: &str) -> Self {
         let mut bbs = [0; 12];
         let mut turn = false;
-        let mut castlings = [false; 4];
+        let mut castlings = 0;
         let mut en_passant = 0;
         let mut hmc = 0;
         let mut no = 0;
@@ -54,21 +391,18 @@ impl Board {
 
         // turn
         let part = parts.next().unwrap();
-        for char in part.chars() {
-            if char == 'b' {
-                turn = true;
-            }
-            break;
+        if part.starts_with('b') {
+            turn = true;
         }
 
         // castle rights
         let part = parts.next().unwrap();
         for char in part.chars() {
             match char {
-                'K' => castlings[CSW] = true,
-                'Q' => castlings[CLW] = true,
-                'k' => castlings[CSB] = true,
-                'q' => castlings[CLB] = true,
+                'K' => castlings |= CSW,
+                'Q' => castlings |= CLW,
+                'k' => castlings |= CSB,
+                'q' => castlings |= CLB,
                 '-' => (),
                 _   => panic!("Failed to import from FEN")
             };
@@ -112,165 +446,12 @@ impl Board {
             en_passant,
             hmc,
             no,
-            maps: Maps::init()
+            maps:         Maps::init(),
+            move_history: Vec::with_capacity(300),
+            hmc_history:  Vec::with_capacity(300),
+            enp_history:  Vec::with_capacity(300),
+            cst_history:  Vec::with_capacity(300)
         }
-    }
-
-    // TODO (optimize): it is possible to generate leval moves using some additional variables WITHOUT making and reverting pseudo-legal moves.
-    // This is proven to be slightly faster (with the exception of en passant, probably), but also depends on the code.
-    pub fn get_legal_moves(&mut self) -> Vec<u32> {
-        let mut moves = self.get_pseudo_legal_moves();
-        // TODO
-        moves
-    }
-
-    // TODO: trasnform move format (e7e8=Q) into quick readable using interface
-    pub fn make_move(&mut self, mov: u32) {
-        // TODO
-    }
-
-    pub fn revert_move(&mut self) {
-        // TODO
-    }
-
-    pub fn get_pseudo_legal_moves(&self) -> Vec<u32> {
-        let mut moves: Vec<u32> = Vec::with_capacity(64);
-        let turn = self.turn as usize;
-        // occupancy masks
-        let ally  = self.get_occupancies( self.turn);
-        let enemy = self.get_occupancies(!self.turn);
-        let both  = ally | enemy;
-        // king
-        let sq = gtz(self.bbs[K + turn]);
-        let mut mask = self.maps.attacks_king[sq] & !ally;
-        while mask > 0 {
-            let csq = pop_bit(&mut mask);
-            moves.push(move_encode(sq, csq, K + turn, E, self.get_capture(!self.turn, csq), MSE_NOTHING));            
-        }
-        // king, special
-        if self.castlings[CSW + turn] {
-            let csq = 6 + 56 * turn;
-            if get_bit(both, csq) == 0 && get_bit(both, csq - 1) == 0 {
-                if !self.is_under_attack(!self.turn, csq - 1, both) {
-                    moves.push(move_encode(sq, csq, K + turn, E, E, MSE_CASTLE_SHORT));
-                }
-            }
-        }
-        if self.castlings[CLW + turn] {
-            let csq = 2 + 56 * turn;
-            if get_bit(both, csq) == 0 && get_bit(both, csq + 1) == 0 {
-                if !self.is_under_attack(!self.turn, csq + 1, both) {
-                    moves.push(move_encode(sq, csq, K + turn, E, E, MSE_CASTLE_LONG));
-                }
-            }
-        }
-        // knight
-        let mut knights = self.bbs[N + turn];
-        while knights > 0 {
-            let sq = pop_bit(&mut knights);
-            let mut mask = self.maps.attacks_knight[sq] & !ally;
-            while mask > 0 {
-                let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, N + turn, E, self.get_capture(!self.turn, sq), MSE_NOTHING));
-            }
-        }
-        // bishop
-        let mut bishops = self.bbs[B + turn];
-        while bishops > 0 {
-            let sq = pop_bit(&mut bishops);
-            let mut mask = self.get_sliding_diagonal_attacks(sq, both);
-            while mask > 0 {
-                let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, B + turn, E, self.get_capture(!self.turn, sq), MSE_NOTHING));
-            }
-        }
-        // rook
-        let mut rooks = self.bbs[R + turn];
-        while rooks > 0 {
-            let sq = pop_bit(&mut rooks);
-            let mut mask = self.get_sliding_straight_attacks(sq, both);
-            while mask > 0 {
-                let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, R + turn, E, self.get_capture(!self.turn, sq), MSE_NOTHING));
-            }
-        }
-        // queen
-        let mut queens = self.bbs[Q + turn];
-        while queens > 0 {
-            let sq = pop_bit(&mut queens);
-            let mut mask = self.get_sliding_diagonal_attacks(sq, both) | self.get_sliding_straight_attacks(sq, both);
-            while mask > 0 {
-                let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, Q + turn, E, self.get_capture(!self.turn, sq), MSE_NOTHING));
-            }
-        }
-        // pawn
-        let mut pawns = self.bbs[P + turn];
-        while pawns > 0 {
-            let sq = pop_bit(&mut pawns);
-            // TODO: the most annoying piece to code it :D
-        }
-        moves
-    }
-
-    // atk_turn is a color of ATTACKING pieces
-    // occupancies is the all pieces of every colour combined
-    pub fn is_under_attack(&self, atk_turn: bool, sq: usize, occupancies: u64) -> bool {
-        // kings
-        if self.maps.attacks_king[sq] & self.bbs[K + atk_turn as usize] > 0 {
-            return true;
-        }
-        // knights
-        if self.maps.attacks_knight[sq] & self.bbs[N + atk_turn as usize] > 0 {
-            return true;
-        }
-        // bishops | queens
-        let diagonal_attackers = self.bbs[B + atk_turn as usize] | self.bbs[Q + atk_turn as usize];
-        let diagonal_vision    = self.get_sliding_diagonal_attacks(sq, occupancies);
-        if diagonal_attackers & diagonal_vision > 0 {
-            return true;
-        }
-        // rooks | queens
-        let straight_attackers = self.bbs[R + atk_turn as usize] | self.bbs[Q + atk_turn as usize];
-        let straight_vision    = self.get_sliding_straight_attacks(sq, occupancies);
-        if straight_attackers & straight_vision > 0 {
-            return true;
-        }
-        // pawns
-        if self.maps.attacks_pawns[sq + 64 * !atk_turn as usize] & self.bbs[P + atk_turn as usize] > 0 {
-            return true;
-        }
-        /* additional en passant check (optional)
-           this will be useless since the function is called to determine if a king (or a castle field) is in check
-           feel free to uncomment if need it, but even, for example, in engine eval(), the need is to _count_ attacks
-        */
-        // sq == self.en_passant
-        false
-    }
-
-    // Note: removing king capture check will optimize this function a bit
-    // turn is a color of a captured piece
-    pub fn get_capture(&self, turn: bool, sq: usize) -> usize {
-        let turn = turn as usize;
-        if get_bit(self.bbs[P + turn], sq) > 0 {
-            return P + turn;
-        }
-        if get_bit(self.bbs[N + turn], sq) > 0 {
-            return N + turn;
-        }
-        if get_bit(self.bbs[B + turn], sq) > 0 {
-            return B + turn;
-        }
-        if get_bit(self.bbs[R + turn], sq) > 0 {
-            return R + turn;
-        }
-        if get_bit(self.bbs[Q + turn], sq) > 0 {
-            return Q + turn;
-        }
-        if get_bit(self.bbs[K + turn], sq) > 0 {
-            return K + turn;
-        }
-        E
     }
 
     pub fn export(&self) -> String {
@@ -309,10 +490,11 @@ impl Board {
             fen.push('w');
         }
         fen.push(' ');
-        let chars = ['K', 'k', 'Q', 'q'];
+        let chars   = ['K', 'Q', 'k', 'q'];
+        let castles = [CSW, CLW, CSB, CLB];
         let mut pushed = false;
-        for i in [0, 2, 1, 3] {
-            if self.castlings[i] {
+        for (i, castle) in castles.iter().enumerate() {
+            if self.castlings & castle > 0 {
                 fen.push(chars[i]);
                 pushed = true;
             }
@@ -336,21 +518,22 @@ impl Board {
 
     #[inline]
     pub fn get_occupancies(&self, turn: bool) -> u64 {
-        self.bbs[P + turn as usize] | self.bbs[N + turn as usize] | self.bbs[B + turn as usize] | self.bbs[R + turn as usize] | self.bbs[Q + turn as usize] | self.bbs[K + turn as usize]
+        self.bbs[P | turn as usize] | self.bbs[N | turn as usize] | self.bbs[B | turn as usize] | self.bbs[R | turn as usize] | self.bbs[Q | turn as usize] | self.bbs[K | turn as usize]
     }
 
+    // ally in this context are pieces of the same colour as attacker
     #[inline]
-    pub fn get_sliding_diagonal_attacks(&self, sq: usize, occupancies: u64) -> u64 {
+    pub fn get_sliding_diagonal_attacks(&self, sq: usize, occupancies: u64, ally: u64) -> u64 {
         let mask = occupancies & self.maps.bbs_bishop[sq];
         let magic_index = mask.wrapping_mul(self.maps.magics_bishop[sq]) >> (64 - self.maps.magic_bits_bishop[sq]);
-        self.maps.attacks_bishop[magic_index as usize + self.maps.ais_bishop[sq]]
+        self.maps.attacks_bishop[magic_index as usize + self.maps.ais_bishop[sq]] & !ally
     }
 
     #[inline]
-    pub fn get_sliding_straight_attacks(&self, sq: usize, occupancies: u64) -> u64 {
+    pub fn get_sliding_straight_attacks(&self, sq: usize, occupancies: u64, ally: u64) -> u64 {
         let mask = occupancies & self.maps.bbs_rook[sq];
         let magic_index = mask.wrapping_mul(self.maps.magics_rook[sq]) >> (64 - self.maps.magic_bits_rook[sq]);
-        self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]]
+        self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]] & !ally
     }
 
     /* TODO (optional):
@@ -388,10 +571,8 @@ mod tests {
         assert_eq!("0000000000000000000000000010000000000000000000001111111111111111", bb_to_str(ally));
         let occupancies = board.get_occupancies(true) | ally;
         assert_eq!("1111111111111111000000000010000000000000000000001111111111111111", bb_to_str(occupancies));
-        let dmask = board.get_sliding_diagonal_attacks(37, occupancies);
-        assert_eq!("0000000010001000010100000000000001010000100010000000010000000000", bb_to_str(dmask));
-        let smask = board.get_sliding_straight_attacks(37, occupancies);
-        assert_eq!("0000000000100000001000001101111100100000001000000010000000000000", bb_to_str(smask));
-        assert_eq!("0000000010101000011100001101111101110000101010000000000000000000", bb_to_str((dmask | smask) & !ally));
+        let dmask = board.get_sliding_diagonal_attacks(37, occupancies, ally);
+        let smask = board.get_sliding_straight_attacks(37, occupancies, ally);
+        assert_eq!("0000000010101000011100001101111101110000101010000000000000000000", bb_to_str(dmask | smask));
     }
 }
