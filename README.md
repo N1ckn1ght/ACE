@@ -2,7 +2,7 @@
 
 Pre-calculations - 100%
 
-Board - 100% (todo: benchmakring)
+Board - 100% (17-23 mil. nodes/s)
 
 Engine - 0%
 

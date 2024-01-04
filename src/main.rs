@@ -1,7 +1,13 @@
+#![feature(test)]
+
+extern crate test;
+
 mod util;
 mod gen;
 mod maps;
 mod board;
+
+use std::time::Instant;
 
 use crate::board::Board;
 use crate::gen::{magic::init_magics, leaping::init_leaping_attacks};
@@ -14,16 +20,17 @@ fn main() {
     /* Used for testing, remove later */
 
     let mut board = Board::new();
+    let now = Instant::now();
+    let x = board.perft(6);
+    println!("{}\t{}", x, now.elapsed().as_secs());
 
-    // board.perft_divided(2);
-
-    let moves = board.get_legal_moves();
-    for (tabs, mov) in moves.iter().enumerate() {
-        if tabs % 5 == 0 {
-            println!();
-        }
-        print!("{}\t", move_transform(*mov));
-    }
-    println!("\n");
-    visualise(&board.bbs, 12);
+    // let moves = board.get_legal_moves();
+    // for (tabs, mov) in moves.iter().enumerate() {
+    //     if tabs % 5 == 0 {
+    //         println!();
+    //     }
+    //     print!("{}\t", move_transform(*mov));
+    // }
+    // println!("\n");
+    // visualise(&board.bbs, 12);
 }
