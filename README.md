@@ -2,7 +2,7 @@
 
 Pre-calculations - 100%
 
-Board - 99%? (debugging perft positions)
+Board - 100% (todo: benchmakring)
 
 Engine - 0%
 

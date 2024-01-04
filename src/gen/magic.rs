@@ -294,67 +294,83 @@ fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64]
     for i in 0..count {
         // attacks[i] = 0;
         if is_rook {
-            for j in (sq..64).step_by(8) {                                              // up
+            for j in (sq..64).step_by(8) {              // up
                 set_bit(&mut attacks[i], j);
                 if get_bit(combs[i], j) > 0 {
                     break;
                 }
             }
-            for j in (0..sq + 1).rev().step_by(8) {                                     // down
+            for j in (0..sq + 1).rev().step_by(8) {     // down
                 set_bit(&mut attacks[i], j);
                 if get_bit(combs[i], j) > 0 {
                     break;
                 }
             }
-            for j in (sq / 8 * 8..sq + 1).rev() {                                       // left
+            for j in (sq / 8 * 8..sq + 1).rev() {       // left
                 set_bit(&mut attacks[i], j);
                 if get_bit(combs[i], j) > 0 {
                     break;
                 }
             }
-            for j in sq..(sq / 8 + 1) * 8 {                                             // right
+            for j in sq..(sq / 8 + 1) * 8 {             // right
                 set_bit(&mut attacks[i], j);
                 if get_bit(combs[i], j) > 0 {
                     break;
                 }
             }
+            del_bit(&mut attacks[i], sq);
         } else {
-            for j in (sq..).step_by(7).take_while(|j| j / 8 < 8 && j % 8 <= sq % 8) {   // up-left
-                set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
-                    break;
-                }
-            }
-            for j in (sq..).step_by(9).take_while(|j| j / 8 < 8 && j % 8 >= sq % 8) {   // up-right
-                set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
-                    break;
-                }
-            }
             let mut j = sq;
-            while j % 8 >= sq % 8 {                                                     // down-right
+            loop {                                      // up-right
+                j += 7;
+                if j % 8 >= sq % 8 || j > 62 {
+                    break;
+                }
                 set_bit(&mut attacks[i], j);
                 if get_bit(combs[i], j) > 0 {
                     break;
                 }
-                if j < 7 {
+            }
+            j = sq;
+            loop {                                      // up-left
+                j += 9;
+                if j % 8 <= sq % 8 || j > 63 {
+                    break;
+                }
+                set_bit(&mut attacks[i], j);
+                if get_bit(combs[i], j) > 0 {
+                    break;
+                }
+            }
+            j = sq;
+            loop {                                      // down-left
+                if j < 8 {
                     break;
                 }
                 j -= 7;
-            }
-            j = sq;
-            while j % 8 <= sq % 8 {                                                     // down-left
+                if j % 8 <= sq % 8 {
+                    break;
+                }
                 set_bit(&mut attacks[i], j);
                 if get_bit(combs[i], j) > 0 {
                     break;
                 }
+            }
+            j = sq;
+            loop {                                      // down-right
                 if j < 9 {
                     break;
                 }
                 j -= 9;
+                if j % 8 >= sq % 8 {
+                    break;
+                }
+                set_bit(&mut attacks[i], j);
+                if get_bit(combs[i], j) > 0 {
+                    break;
+                }
             }
         }
-        del_bit(&mut attacks[i], sq);
     }
 }
 
@@ -388,6 +404,8 @@ mod tests {
         assert_eq!("0000000000000010000000100000001000000010000000100111110000000000", bb_to_str(bbsr[9]));
         assert_eq!("0111011000011100001010100100100000001000000010000000100000000000", bb_to_str(bbsb[59] | bbsr[59]));
         assert_eq!("0000000001010100001110000110111000111000010101000001001000000000", bb_to_str(bbsb[36] | bbsr[36]));
+        assert_eq!("0000000001000000001000000001000000001000000001000000001000000000", bb_to_str(bbsb[63]));
+        assert_eq!("0000000000000010000001000000100000010000001000000100000000000000", bb_to_str(bbsb[56]));
     }
 
     #[test]
@@ -429,6 +447,26 @@ mod tests {
         let mut attackb = vec![0];
         init_attacks(37, false, &mut attackb, &mut combb, 1);
         assert_eq!("0000000010001000010100000000000001010000100010000000010000000000", bb_to_str(attackb[0]));
+
+        attackb[0] = 0;
+        init_attacks(63, false, &mut attackb, &mut combb, 1);
+        assert_eq!("0000000001000000001000000001000000001000000001000000001000000001", bb_to_str(attackb[0]));
+
+        attackb[0] = 0;
+        init_attacks(56, false, &mut attackb, &mut combb, 1);
+        assert_eq!("0000000000000010000001000000100000010000001000000100000010000000", bb_to_str(attackb[0]));
+
+        attackb[0] = 0;
+        init_attacks( 8, false, &mut attackb, &mut combb, 1);
+        assert_eq!("0100000000100000000100000000100000000100000000100000000000000010", bb_to_str(attackb[0]));
+
+        attackb[0] = 0;
+        init_attacks( 7, false, &mut attackb, &mut combb, 1);
+        assert_eq!("0000000100000010000001000000100000010000001000000100000000000000", bb_to_str(attackb[0]));
+
+        attackb[0] = 0;
+        init_attacks(57, false, &mut attackb, &mut combb, 1);
+        assert_eq!("0000000000000101000010000001000000100000010000001000000000000000", bb_to_str(attackb[0]));
     }
 
     #[test]

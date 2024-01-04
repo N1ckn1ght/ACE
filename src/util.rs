@@ -406,5 +406,13 @@ mod tests {
         assert_eq!(mov & MSE_CHECK, 0);
         assert_ne!(mov & MSE_EN_PASSANT, 0);
         assert_ne!(mov & MSE_DOUBLE_CHECK, 0);
+        let mov = move_encode(57, 63, P2, R, Q2, MSE_NOTHING);
+        assert_eq!(move_get_promotion(mov), Q2);
+        let mov = move_encode(57, 63, P2, R, R2, MSE_NOTHING);
+        assert_eq!(move_get_promotion(mov), R2);
+        let mov = move_encode(57, 63, P2, R, B2, MSE_NOTHING);
+        assert_eq!(move_get_promotion(mov), B2);
+        let mov = move_encode(57, 63, P2, R, N2, MSE_NOTHING);
+        assert_eq!(move_get_promotion(mov), N2);
     }
 }
