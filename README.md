@@ -12,9 +12,11 @@ Eval - 10% (really weak for now)
 
 Interface - 2% (some functions, including driver one)
 
-### Game example:
+### Game samples (God have mercy):
 
-https://lichess.org/UD1jwtNr (God have mercy)
+https://lichess.org/UD1jwtNr (0.75 aggr, 1.0 piecew)
+
+https://lichess.org/xqVzMWxt (0.8 aggr, 1.2 piecew, 0.08 rand)
 
 ### Current plans:
 

@@ -64,7 +64,7 @@ impl Chara {
 		let zobrist = Zobrist::default();
 
 		// let piece_wmult: f32					= 1.5;	-- Result were somewhat better
-		let piece_wmult: f32					= 1.0;
+		let piece_wmult: f32					= 1.2;
 		let piece_square_related_wmult: f32		= 0.75 / (aggressiveness * 0.5  + 0.5 );	// really slight balance-out
 		let mobility_wmult: f32					= 1.0  * (aggressiveness * 0.5  + 0.5 );
 		let align_wmult: f32					= 1.0  *  aggressiveness;

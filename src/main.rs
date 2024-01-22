@@ -24,7 +24,7 @@ fn main() {
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut board = Board::default();
-    let mut chara = Chara::init(&board, 0.0, 0.75);
+    let mut chara = Chara::init(&board, 0.08, 0.8);
 
     driver(&mut chara, &mut board);
 }
