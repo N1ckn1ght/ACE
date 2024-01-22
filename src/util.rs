@@ -3,83 +3,108 @@
 
 #![allow(dead_code)]
 
-use std::{cmp::min, fs, io::Cursor};
+use std::{cmp::{min, Ordering}, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
+/* LIMITATIONS */
+
+pub const CACHE_LIMIT: usize = 100663296;   // for approx. <2048 MiB memory usage, 128 bit per hash
+// pub const FLOAT_TO_INT_MULT: i32 = 100000;
+
 /* SPECIFIED PATHES */
 
-pub static PATH_MR:   &str = "./res/magics_rook";
-pub static PATH_BBR:  &str = "./res/blocker_boards_rook";
-pub static PATH_AMR:  &str = "./res/attack_maps_rook";
-pub static PATH_MB:   &str = "./res/magics_bishop";
-pub static PATH_BBB:  &str = "./res/blocker_boards_bishop";
-pub static PATH_AMB:  &str = "./res/attack_maps_bishop";
-pub static PATH_AMK:  &str = "./res/attack_maps_king";
-pub static PATH_AMN:  &str = "./res/attack_maps_knight";
-pub static PATH_AMP:  &str = "./res/attack_maps_pawn_white";
-pub static PATH_AMP2: &str = "./res/attack_maps_pawn_black";
+// magic maps
+pub const PATH_MR:   &str = "./res/magics_rook";
+pub const PATH_BBR:  &str = "./res/blocker_boards_rook";
+pub const PATH_AMR:  &str = "./res/attack_maps_rook";
+pub const PATH_MB:   &str = "./res/magics_bishop";
+pub const PATH_BBB:  &str = "./res/blocker_boards_bishop";
+pub const PATH_AMB:  &str = "./res/attack_maps_bishop";
 // no attack maps for queen, refer to AMB | AMR after magic operations
+// leaping maps
+pub const PATH_AMK:  &str = "./res/attack_maps_king";
+pub const PATH_AMN:  &str = "./res/attack_maps_knight";
+pub const PATH_AMP:  &str = "./res/attack_maps_pawn_white";
+pub const PATH_AMP2: &str = "./res/attack_maps_pawn_black";
+// secondary maps
+pub const PATH_RNK:  &str = "./res/ranks";                              // disincluding current square
+pub const PATH_FLS:  &str = "./res/files";
+pub const PATH_PPM:  &str = "./res/passing_piece_maps_white";           // all three columns
+pub const PATH_PPM2: &str = "./res/passing_piece_maps_black";
+pub const PATH_PBM:  &str = "./res/passing_piece_blocked_maps_white";   // only left and right columns
+pub const PATH_PBM2: &str = "./res/passing_piece_blocked_maps_black";
+pub const PATH_DAMN: &str = "./res/double_attack_maps_knight";          // two move forward for knights (disincluding current square)
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 
 /* Pieces and placements */
 
-pub static P:  usize = 0;  // white
-pub static P2: usize = 1;  // black (white | turn)
-pub static N:  usize = 2;
-pub static N2: usize = 3;
-pub static B:  usize = 4;
-pub static B2: usize = 5;
-pub static R:  usize = 6;
-pub static R2: usize = 7;
-pub static Q:  usize = 8;
-pub static Q2: usize = 9;
-pub static K:  usize = 10;
-pub static K2: usize = 11;
-pub static E:  usize = 12; // no piece (0b1100)
+pub const P:  usize = 0;  // white
+pub const P2: usize = 1;  // black (white | turn)
+pub const N:  usize = 2;
+pub const N2: usize = 3;
+pub const B:  usize = 4;
+pub const B2: usize = 5;
+pub const R:  usize = 6;
+pub const R2: usize = 7;
+pub const Q:  usize = 8;
+pub const Q2: usize = 9;
+pub const K:  usize = 10;
+pub const K2: usize = 11;
+pub const E:  usize = 12; // no piece (0b1100)
 
-pub static RANK_1: u64 = 0x00000000000000FF;
-pub static RANK_2: u64 = 0x000000000000FF00;
-pub static RANK_3: u64 = 0x0000000000FF0000;
-pub static RANK_4: u64 = 0x00000000FF000000;
-pub static RANK_5: u64 = 0x000000FF00000000;
-pub static RANK_6: u64 = 0x0000FF0000000000;
-pub static RANK_7: u64 = 0x00FF000000000000;
-pub static RANK_8: u64 = 0xFF00000000000000;
-pub static FILE_A: u64 = 0x0101010101010101;
-pub static FILE_B: u64 = 0x0202020202020202;
-pub static FILE_C: u64 = 0x0404040404040404;
-pub static FILE_D: u64 = 0x0808080808080808;
-pub static FILE_E: u64 = 0x1010101010101010;
-pub static FILE_F: u64 = 0x2020202020202020;
-pub static FILE_G: u64 = 0x4040404040404040;
-pub static FILE_H: u64 = 0x8080808080808080;
+pub const RANK_1: u64 = 0x00000000000000FF;
+pub const RANK_2: u64 = 0x000000000000FF00;
+pub const RANK_3: u64 = 0x0000000000FF0000;
+pub const RANK_4: u64 = 0x00000000FF000000;
+pub const RANK_5: u64 = 0x000000FF00000000;
+pub const RANK_6: u64 = 0x0000FF0000000000;
+pub const RANK_7: u64 = 0x00FF000000000000;
+pub const RANK_8: u64 = 0xFF00000000000000;
+pub const FILE_A: u64 = 0x0101010101010101;
+pub const FILE_B: u64 = 0x0202020202020202;
+pub const FILE_C: u64 = 0x0404040404040404;
+pub const FILE_D: u64 = 0x0808080808080808;
+pub const FILE_E: u64 = 0x1010101010101010;
+pub const FILE_F: u64 = 0x2020202020202020;
+pub const FILE_G: u64 = 0x4040404040404040;
+pub const FILE_H: u64 = 0x8080808080808080;
 
-pub static CSMASK: u64 = 0x0000000000000060;
-pub static CLMASK: u64 = 0x000000000000000E;
+pub const CSMASK: u64 = 0x0000000000000060;
+pub const CLMASK: u64 = 0x000000000000000E;
 
 /* Move `special` encoding (change only with corresponding functions below)
     - now with u64 any can use MSE_CHECK | MSE_EN_PASSANT by bitwise OR instead of ciphering functions */
 
-pub static MSE_NOTHING:                 u64 = 0b00000000;
-pub static MSE_DOUBLE_CHECK:            u64 = 0b10000000;
-pub static MSE_CHECK:                   u64 = 0b01000000;
-pub static MSE_EN_PASSANT:              u64 = 0b00001000;
-pub static MSE_CASTLE_SHORT:            u64 = 0b00000100;
-pub static MSE_CASTLE_LONG:             u64 = 0b00000010;
-pub static MSE_DOUBLE_PAWN:             u64 = 0b00000001;
+pub const MSE_NOTHING:                 u64 = 0b00000000;
+pub const MSE_DOUBLE_CHECK:            u64 = 0b10000000;
+pub const MSE_CHECK:                   u64 = 0b01000000;
+pub const MSE_EN_PASSANT:              u64 = 0b00001000;
+pub const MSE_CASTLE_SHORT:            u64 = 0b00000100;
+pub const MSE_CASTLE_LONG:             u64 = 0b00000010;
+pub const MSE_DOUBLE_PAWN:             u64 = 0b00000001;
 // Note: there's no MSE_PROMOTION, it's in a different encoding section
 
 /* board.castlings bits
     - it won't correlate with MSE because of the color bits anyway */
 
-pub static CSW: u8 = 0b0001; // castle short white
-pub static CSB: u8 = 0b0010; // castle short black
-pub static CLW: u8 = 0b0100; // castle long white
-pub static CLB: u8 = 0b1000; // castle long black
+pub const CSW: u8 = 0b0001; // castle short white
+pub const CSB: u8 = 0b0010; // castle short black
+pub const CLW: u8 = 0b0100; // castle long white
+pub const CLB: u8 = 0b1000; // castle long black
 
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
+
+#[inline]
+pub fn flip(square: usize) -> usize {       // vertical mirroring, as if board was flipped
+    square ^ 56
+}
+
+#[inline]
+pub fn mirror(square: usize) -> usize {     // diagonal mirroring, as if board was rotated
+    square ^ 63
+}
 
 /* ! Bitboards ! */
 
@@ -101,6 +126,12 @@ pub fn del_bit(bitboard: &mut u64, bit: usize) {
 #[inline]
 pub fn gtz(bitboard: u64) -> usize {
     u64::trailing_zeros(bitboard) as usize
+}
+
+// used for some weird eval methods
+#[inline]
+pub fn glz(bitboard: u64) -> usize {
+    63 - u64::leading_zeros(bitboard) as usize
 }
 
 // return trailing zeros, then remove last bit
@@ -125,6 +156,7 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
 // also this time it's not necessary to have a certain encoding struct to sort by (because of iterative deepening)
 // I dislike using u64, but in the end it allows to store everything without heavy ciphering/deciphering
 // [8 - SPECIAL][8 - square from][8 - square to][4 - moving piece][4 - promotion][4 - captured piece][28 - FREE]
+// TODO: u32 is, in fact, enough, because (so far) we don't encode any checks! Maybe optimize this?..
 #[inline]
 pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promotion: usize, special: u64 ) -> u64 {
     // x86 systems are not gonna like that
@@ -173,6 +205,74 @@ pub fn xor64(mut num: u64) -> u64 {
     num ^= num >> 7;
     num ^= num << 17;
     num
+}
+
+/* DATA STRUCTURES */
+
+// optimize if necessary? i8 is enough for checkmate enclosure, though now this struct is 64 bit exactly
+#[derive(Copy, Clone)]
+pub struct Eval {
+	pub score: f32,
+	pub mate:  i16,	/* It will be stored as +-1 to the actual checkmate count, such as:
+						-  2 is M+1, +1 is white victory
+						-  0 is no mate found
+						- -2 is M-1, -1 is black victory
+					*/
+	pub depth: i16
+}
+
+impl Eval {
+    pub fn new(score: f32, mate: i16, depth: i16) -> Self {
+		Eval {
+			score,
+			mate,
+			depth
+		}
+	}
+}
+
+impl PartialEq for Eval {
+    fn eq(&self, other: &Self) -> bool {
+        self.mate == other.mate && self.score == other.score
+    }
+}
+
+impl Eq for Eval {}
+
+impl Ord for Eval {
+	fn cmp(&self, other: &Eval) -> Ordering {
+		if self.mate == other.mate {
+			return self.score.total_cmp(&other.score);
+		}
+        if self.mate > 0 && other.mate > 0 {
+            return self.mate.cmp(&other.mate).reverse().then(Ordering::Less);
+        }
+        if self.mate < 0 && other.mate < 0 {
+            return self.mate.cmp(&other.mate).reverse().then(Ordering::Less);
+        }
+        self.mate.signum().cmp(&other.mate.signum())
+	}
+}
+
+impl PartialOrd for Eval {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct EvalMove {
+    pub mov: u64,
+    pub eval: Eval
+}
+
+impl EvalMove {
+    pub fn new(mov: u64, eval: Eval) -> Self {
+        EvalMove {
+            mov,
+            eval
+        }
+    }
 }
 
 /* FILE IO */
@@ -254,6 +354,19 @@ pub fn file_to_magics(path: &str, magics: &mut [u64], bits: &mut [usize], attack
     vec
 }
 
+/* FRAMEWORK */
+
+pub fn init64(f: fn(&mut[u64]), path: &str) {
+    if Path::new(path).exists() {
+        println!("Found file: {}", path);
+    } else {
+        println!("Creating file: {}", path);
+        let mut vec = vec![0; 64];
+        f(&mut vec);
+        vector_to_file(&vec, path);
+    }
+}
+
 /* TESTING PURPOSES */
 
 pub fn visualise(bitboards: &[u64], columns: usize) {
@@ -328,21 +441,40 @@ pub fn move_transform(mov: u64) -> String {
     let to = move_get_to(mov);
     let promotion = move_get_promotion(mov);
     let mut str = String::new();
-    str.push(char::from_u32((from % 8) as u32 + 'a' as u32).unwrap());
+    str.push(char::from_u32((from & 7) as u32 + 'a' as u32).unwrap());
     str.push(char::from_u32((from / 8) as u32 + '1' as u32).unwrap());
-    str.push(char::from_u32((to % 8) as u32 + 'a' as u32).unwrap());
-    str.push(char::from_u32((to / 8) as u32 + '1' as u32).unwrap());
+    str.push(char::from_u32((to   & 7) as u32 + 'a' as u32).unwrap());
+    str.push(char::from_u32((to   / 8) as u32 + '1' as u32).unwrap());
     if promotion < E {
         str.push(PIECES_REV[&((promotion | 1) as u32)]);
     }
     str
 }
 
+pub fn move_transform_back(input: &str, legal_moves: &[u64]) -> Option<u64> {
+    let command     = input.as_bytes();
+    let from        = command[0] as usize - 'a' as usize + (command[1] as usize - '0' as usize) * 8 - 8;
+    let to          = command[2] as usize - 'a' as usize + (command[3] as usize - '0' as usize) * 8 - 8;
+    let mut promo   = E;
+    if command.len() > 4 {
+        promo = PIECES[&(command[4] as char)] & !1;
+    }
+    for legal in legal_moves.into_iter() {
+        let mfrom  = move_get_from(*legal);
+        let mto    = move_get_to(*legal);
+        let mpromo = move_get_promotion(*legal);
+        if from == mfrom && to == mto && promo == mpromo {
+            return Some(*legal);
+        }
+    }
+    None
+}
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::Board;
 
     #[test]
     fn test_utility_file_io() {
@@ -392,9 +524,7 @@ mod tests {
         let promotion = P;
         let capture = N;
         let special = MSE_DOUBLE_CHECK | MSE_EN_PASSANT;
-        // println!("{}\n{}\n{}\n{}\n{}\n{}", bb_to_str(special), usize_to_str(gtz(from) << 8), usize_to_str(gtz(to) << 16), usize_to_str(piece << 24), usize_to_str(promotion << 28), usize_to_str(capture << 32));
         let mov = move_encode(gtz(from), gtz(to), piece, capture, promotion, special);
-        // println!("{}", bb_to_str(mov));
         assert_eq!(move_get_from(mov), gtz(from));
         assert_eq!(move_get_to(mov), gtz(to));
         assert_eq!(move_get_piece(mov), piece);
@@ -414,5 +544,49 @@ mod tests {
         assert_eq!(move_get_promotion(mov), B2);
         let mov = move_encode(57, 63, P2, R, N2, MSE_NOTHING);
         assert_eq!(move_get_promotion(mov), N2);
+    }
+
+    #[test]
+    fn test_utility_move_transform_back() {
+        let mut board = Board::default();
+        let moves = board.get_legal_moves();
+        let mov = move_transform_back("e2e4", &moves);
+        assert_ne!(mov.is_none(), true);
+        let mov = move_transform_back("e2e4q", &moves);
+        assert_eq!(mov.is_none(), true);
+        let mov = move_transform_back("e2e5", &moves);
+        assert_eq!(mov.is_none(), true);
+        let mut board = Board::import("r1bq1bnr/ppp1kP1p/2np2p1/4p3/8/3B1N2/PPPP1PPP/RNBQK2R w KQ - 1 7");
+        let moves = board.get_legal_moves();
+        let mov = move_transform_back("f7g8n", &moves);
+        assert_ne!(mov.is_none(), true);
+        let mov = move_transform_back("f7f8r", &moves);
+        assert_eq!(mov.is_none(), true);
+        let mov = move_transform_back("e1g1", &moves);
+        assert_ne!(mov.is_none(), true);
+    }
+
+    #[test]
+    fn test_utility_eval_comparisons() {
+        let eval1 = Eval::new( 0.0,  0, 0);
+        let eval2 = Eval::new( 1.0,  0, 0);
+        let eval3 = Eval::new(-1.0,  0, 0);
+        let eval4 = Eval::new( 0.0,  1, 0);
+        let eval5 = Eval::new( 0.0, -1, 0);
+        let eval6 = Eval::new( 9.9, -1, 0);
+        let eval7 = Eval::new( 0.0,  2, 0);
+        let eval8 = Eval::new( 0.0, -2, 0);
+        assert_eq!(eval1 != eval2, true);
+        assert_eq!(eval1 == eval1, true);
+        assert_eq!(eval1 < eval2, true);
+        assert_eq!(eval1 > eval3, true);
+        assert_eq!(eval2 > eval3, true);
+        assert_eq!(eval1 < eval4, true);
+        assert_eq!(eval4 > eval5, true);
+        assert_eq!(eval4 > eval6, true);
+        assert_eq!(eval6 > eval5, true);
+        assert_eq!(eval6 < eval1, true);
+        assert_eq!(eval7 < eval4, true);
+        assert_eq!(eval8 > eval6, true);
     }
 }

@@ -4,33 +4,84 @@ extern crate test;
 
 mod util;
 mod gen;
-mod maps;
 mod board;
+mod chara;
+mod engine;
 
-use std::time::Instant;
+use std::io;
+
+use chara::Chara;
 
 use crate::board::Board;
+use crate::gen::secondary::init_secondary_maps;
 use crate::gen::{magic::init_magics, leaping::init_leaping_attacks};
 use crate::util::*;
 
 fn main() {
     init_magics(&mut 1773);
     init_leaping_attacks();
+    init_secondary_maps();
+    println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
-    /* Used for testing, remove later */
+    let mut board = Board::default();
+    let mut chara = Chara::init(&board, 0.0, 0.75);
 
-    let mut board = Board::new();
-    let now = Instant::now();
-    let x = board.perft(6);
-    println!("{}\t{}", x, now.elapsed().as_secs());
+    driver(&mut chara, &mut board);
+}
 
-    // let moves = board.get_legal_moves();
-    // for (tabs, mov) in moves.iter().enumerate() {
-    //     if tabs % 5 == 0 {
-    //         println!();
-    //     }
-    //     print!("{}\t", move_transform(*mov));
-    // }
-    // println!("\n");
-    // visualise(&board.bbs, 12);
+fn driver(chara: &mut Chara, board: &mut Board) {
+    let mut last_eval = Eval::new(0.0, 0, 0);
+    loop {
+        println!("Processing...\n");
+
+        let legals = board.get_legal_moves();
+        if legals.len() == 0 {
+            break;
+        }
+
+        let ems = chara.think(board, 4, last_eval);
+        for (i, em) in ems.iter().enumerate() {
+            println!("{}.\t{}\tmate = {} \tscore = {}", i, move_transform(em.mov), em.eval.mate, em.eval.score);
+        }
+        println!();
+
+        loop {
+            let str = input();
+            let mov = move_transform_back(&str.to_owned(), &legals);
+            if mov.is_some() {
+                chara.make_move(board, mov.unwrap());
+                break;
+            } else {
+                println!("Move not found?");
+            }
+        }
+
+        // ???
+        last_eval = ems[0].eval;
+
+        let legals = board.get_legal_moves();
+        if legals.len() == 0 {
+            break;
+        }
+
+        loop {
+            let str = input();
+            let mov = move_transform_back(&str.to_owned(), &legals);
+            if mov.is_some() {
+                chara.make_move(board, mov.unwrap());
+                break;
+            } else {
+                println!("Move not found?");
+            }
+        }
+    }
+}
+
+fn input() -> String {
+    let mut input = String::new();
+    match io::stdin().read_line(&mut input) {
+        Ok(_goes_into_input_above) => {},
+        Err(_no_updates_is_fine) => {},
+    }
+    input.trim().to_string()
 }

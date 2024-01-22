@@ -230,10 +230,10 @@ fn init_blocker_boards(is_rook: bool, bbs: &mut [u64]) {
             for j in (8..i + 1).rev().step_by(8) {                              // down (including 8, i)
                 set_bit(bb, j);
             }
-            for j in i / 8 * 8 + 1..i + 1 {                                     // left (still left-to-right though)
+            for j in (i & 56) + 1..i + 1 {                                     // left (still left-to-right though)
                 set_bit(bb, j);
             }
-            for j in i..(i / 8 + 1) * 8 - 1 {                                   // right
+            for j in i..(i | 7) {                                   // right
                 set_bit(bb, j);
             }
             del_bit(bb, i);
@@ -241,20 +241,20 @@ fn init_blocker_boards(is_rook: bool, bbs: &mut [u64]) {
     } else {
         for (i, bb) in bbs.iter_mut().enumerate() {
             // bbs[i] = 0;
-            for j in (i..).step_by(7).take_while(|j| j / 8 < 7 && j % 8 > 0) {  // up-left
+            for j in (i..).step_by(7).take_while(|j| j / 8 < 7 && j & 7 > 0) {  // up-left
                 set_bit(bb, j);
             }
-            for j in (i..).step_by(9).take_while(|j| j / 8 < 7 && j % 8 < 7) {  // up-right
+            for j in (i..).step_by(9).take_while(|j| j / 8 < 7 && j & 7 < 7) {  // up-right
                 set_bit(bb, j);
             }
             // if you'll find a way to do this using for loops, leave an issue on github =)
             let mut j = i;
-            while j / 8 > 0 && j % 8 < 7 {                                      // down-right
+            while j / 8 > 0 && j & 7 < 7 {                                      // down-right
                 set_bit(bb, j);
                 j -= 7;
             }
             j = i;
-            while j / 8 > 0 && j % 8 > 0 {                                      // down-left
+            while j / 8 > 0 && j & 7 > 0 {                                      // down-left
                 set_bit(bb, j);
                 j -= 9;
             }
@@ -306,13 +306,13 @@ fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64]
                     break;
                 }
             }
-            for j in (sq / 8 * 8..sq + 1).rev() {       // left
+            for j in (sq & 56..sq + 1).rev() {          // left
                 set_bit(&mut attacks[i], j);
                 if get_bit(combs[i], j) > 0 {
                     break;
                 }
             }
-            for j in sq..(sq / 8 + 1) * 8 {             // right
+            for j in sq..(sq | 7) + 1 {                 // right
                 set_bit(&mut attacks[i], j);
                 if get_bit(combs[i], j) > 0 {
                     break;
@@ -323,7 +323,7 @@ fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64]
             let mut j = sq;
             loop {                                      // up-right
                 j += 7;
-                if j % 8 >= sq % 8 || j > 62 {
+                if j & 7 >= sq & 7 || j > 62 {
                     break;
                 }
                 set_bit(&mut attacks[i], j);
@@ -334,7 +334,7 @@ fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64]
             j = sq;
             loop {                                      // up-left
                 j += 9;
-                if j % 8 <= sq % 8 || j > 63 {
+                if j & 7 <= sq & 7 || j > 63 {
                     break;
                 }
                 set_bit(&mut attacks[i], j);
@@ -348,7 +348,7 @@ fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64]
                     break;
                 }
                 j -= 7;
-                if j % 8 <= sq % 8 {
+                if j & 7 <= sq & 7 {
                     break;
                 }
                 set_bit(&mut attacks[i], j);
@@ -362,7 +362,7 @@ fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64]
                     break;
                 }
                 j -= 9;
-                if j % 8 >= sq % 8 {
+                if j & 7 >= sq & 7 {
                     break;
                 }
                 set_bit(&mut attacks[i], j);
