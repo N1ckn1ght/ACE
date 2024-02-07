@@ -5,6 +5,7 @@ extern crate test;
 mod util;
 mod gen;
 mod board;
+mod weights;
 mod chara;
 mod engine;
 
