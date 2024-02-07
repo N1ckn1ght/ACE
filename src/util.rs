@@ -153,7 +153,7 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
 
 // since it's not a struct, let's use more inline fuctions
 // since minimum piece (P) is 0, empty piece will be encoded to E (or any other value greater than K2, e.g. 12)
-// also this time it's not necessary to have a certain encoding struct to sort by (because of iterative deepening)
+// it's good to have captures as highest possible bits since it really helps in pre-ordering
 // I dislike using u64, but in the end it allows to store everything without heavy ciphering/deciphering
 // [8 - SPECIAL][8 - square from][8 - square to][4 - moving piece][4 - promotion][4 - captured piece][28 - FREE]
 // TODO: u32 is, in fact, enough, because (so far) we don't encode any checks! Maybe optimize this?..
@@ -209,16 +209,11 @@ pub fn xor64(mut num: u64) -> u64 {
 
 /* DATA STRUCTURES */
 
-// optimize if necessary? i8 is enough for checkmate enclosure, though now this struct is 64 bit exactly
 #[derive(Copy, Clone)]
 pub struct Eval {
 	pub score: f32,
-	pub mate:  i16,	/* It will be stored as +-1 to the actual checkmate count, such as:
-						-  2 is M+1, +1 is white victory
-						-  0 is no mate found
-						- -2 is M-1, -1 is black victory
-					*/
-	pub depth: i16
+	pub depth: i16,
+    pub extend: i16
 }
 
 impl Eval {

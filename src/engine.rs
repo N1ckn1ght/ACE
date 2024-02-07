@@ -14,7 +14,7 @@ use crate::{util::*, board::Board, chara::Chara};
 
 const DEPTH_FALLBACK: i16 = 4;
 
-pub fn search(chara: &mut Chara, board: &mut Board, mut alpha: Eval, mut beta: Eval, maximize: bool, depth: i16, 
+pub fn search(chara: &mut Chara, board: &mut Board, mut alpha: f32, mut beta: f32, maximize: bool, depth: i16, 
     mut quiet_extension: bool, last_move: u64) -> Eval {
 
     // IF THE TARGET DEPTH IS REACHED

@@ -358,22 +358,16 @@ impl Chara {
 
 	// Somewhat of a 0 level of the search(), but a necessary one
 	pub fn think(&mut self, board: &mut Board, depth: i16, last_eval: Eval) -> Vec<EvalMove> {
-		let mut moves_evaluated = vec![];
-		let maximize = !board.turn;	// 0 -> white to move -> maximize
-		let moves = board.get_legal_moves();
-
+		let mut moves = board.get_legal_moves();
 		if moves.len() == 0 {
 			return vec![];
 		}
+		moves.sort();
+		let mut moves_evaluated = vec![];
+		let maximize = !board.turn;	// 0 -> white to move -> maximize
 
-		// TODO: aspiration window
-		let mut alpha = Eval::new(0.0, -127, board.no);
-		let mut beta  = Eval::new(0.0,  127, board.no);
-		if last_eval.mate > 0 {
-			beta.mate = last_eval.mate - 2;
-		} else if last_eval.mate < 0 {
-			alpha.mate = last_eval.mate + 2;
-		}
+		let mut alpha = f32::max(0.0, last_eval.score + 2.0);
+		let mut beta  = f32::min(0.0, last_eval.score - 2.0);
 
 		if maximize {
 			for mov in moves.into_iter() {
@@ -381,6 +375,7 @@ impl Chara {
 				let temp = search(self, board, alpha, beta, false, board.no + depth - 1, false, mov);
 				self.revert_move(board);
 				moves_evaluated.push(EvalMove::new(mov, temp));
+				// QUIT W if time out!
 				alpha = max(alpha, temp);
 				if alpha >= beta {
 					break;
@@ -392,6 +387,7 @@ impl Chara {
 				let temp = search(self, board, alpha, beta, true , board.no + depth - 1, false, mov);
 				self.revert_move(board);
 				moves_evaluated.push(EvalMove::new(mov, temp));
+				// QUIT W if time out!
 				beta = min(beta, temp);
 				if beta <= alpha {
 					break;
