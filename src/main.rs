@@ -1,22 +1,15 @@
-#![feature(test)]
+ #![feature(test)]
+
+use std::io;
+use crate::frame::{board::Board, util::*};
+use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::init_secondary_maps};
+use crate::engine::chara::Chara;
 
 extern crate test;
 
-mod util;
 mod gen;
-mod board;
-mod weights;
-mod chara;
+mod frame;
 mod engine;
-
-use std::io;
-
-use chara::Chara;
-
-use crate::board::Board;
-use crate::gen::secondary::init_secondary_maps;
-use crate::gen::{magic::init_magics, leaping::init_leaping_attacks};
-use crate::util::*;
 
 fn main() {
     init_magics(&mut 1773);

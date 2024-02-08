@@ -1,12 +1,11 @@
 // The main module of the chess engine.
-// The board its heart, the search its muscles, this is its brain.
 // ANY changes to the board MUST be done through the character's methods!
 
 use std::{collections::{HashMap, HashSet}, cmp::{min, max}};
 use rand::{rngs::ThreadRng, Rng};
-use crate::{util::*, board::Board, gen::Zobrist, engine::search, weights::Weights};
+use crate::frame::{util::*, board::Board};
+use crate::engine::{weights::Weights, zobrist::Zobrist, search::search};
 
-// TODO: use f16 instead of f32 to cache approx ~40 mil./2 GiB more positions?
 // TODO: use i16 instead of floats for faster add/sub operations?
 pub struct Chara {
 	/* These weights are stored with respect to the colour, black pieces will provide negative values
@@ -72,7 +71,7 @@ impl Chara {
 		let minor_piece_pos_wmult: f32			= 1.0  * (aggressiveness * 0.5  + 0.5 );
 
 		// transform (flip for white, negative for black) and apply coefficients
-		let mut pieces_weights = [[[0.0; 64]; 12]; 2];
+		let mut pieces_weights: [[[f32; 64]; 12]; 2] = [[[0.0; 64]; 12]; 2];
 		for i in 0..2 {
 			for j in 0..6 {
 				for k in 0..64 {
@@ -107,9 +106,9 @@ impl Chara {
 		w.dan_possible_pre.iter_mut().for_each(|w| *w = *w * minor_piece_pos_wmult);
 
 		/* Transform */
-		let mut turn_weights 	= [w.turn_weights_pre.clone(); 2];
-		turn_weights[1][1] = -turn_weights[0][1];
-		turn_weights[1][0] = 1.0 / turn_weights[0][0];
+		let mut turn_weights	= [w.turn_weights_pre.clone(); 2];
+		turn_weights[1][1]		= -turn_weights[0][1];
+		turn_weights[1][0]		= 1.0 / turn_weights[0][0];
 		let mut battery_weights = [w.battery_weights_pre.clone(); 2];
 		battery_weights[1].iter_mut().for_each(|w| *w = *w * -1.0);
 		let mut outpost_weights	= [w.outpost_weight_pre.clone(); 2];

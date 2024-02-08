@@ -1,4 +1,4 @@
-use crate::{util::*, gen::Maps};
+use crate::frame::{util::*, maps::Maps};
 
 /* Bitboard index structure (Little-Endian):
          H  G  F  E  D  C  B  A          A  B  C  D  E  F  G  H

@@ -210,25 +210,26 @@ pub fn xor64(mut num: u64) -> u64 {
 /* DATA STRUCTURES */
 
 #[derive(Copy, Clone)]
+#[repr(align(64))]
 pub struct Eval {
 	pub score: f32,
 	pub depth: i16,
-    pub extend: i16
+    pub is_extent: bool
 }
 
 impl Eval {
-    pub fn new(score: f32, mate: i16, depth: i16) -> Self {
+    pub fn new(score: f32, depth: i16, is_extent: bool) -> Self {
 		Eval {
 			score,
-			mate,
-			depth
+			depth,
+            is_extent
 		}
 	}
 }
 
 impl PartialEq for Eval {
     fn eq(&self, other: &Self) -> bool {
-        self.mate == other.mate && self.score == other.score
+        self.score == other.score
     }
 }
 
@@ -236,16 +237,7 @@ impl Eq for Eval {}
 
 impl Ord for Eval {
 	fn cmp(&self, other: &Eval) -> Ordering {
-		if self.mate == other.mate {
-			return self.score.total_cmp(&other.score);
-		}
-        if self.mate > 0 && other.mate > 0 {
-            return self.mate.cmp(&other.mate).reverse().then(Ordering::Less);
-        }
-        if self.mate < 0 && other.mate < 0 {
-            return self.mate.cmp(&other.mate).reverse().then(Ordering::Less);
-        }
-        self.mate.signum().cmp(&other.mate.signum())
+        self.score.total_cmp(&other.score)
 	}
 }
 
@@ -469,7 +461,7 @@ pub fn move_transform_back(input: &str, legal_moves: &[u64]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::Board;
+    use crate::frame::board::Board;
 
     #[test]
     fn test_utility_file_io() {

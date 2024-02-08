@@ -9,7 +9,7 @@
 // www.talkchess.com/forum3/viewtopic.php?topic_view=threads&p=175834
 
 use std::path::Path;
-use crate::util::*;
+use crate::frame::util::*;
 
 pub fn init_magics(seed: &mut u64) {
     let mut blocker_boards_rook  : Vec<u64>;
@@ -388,7 +388,7 @@ fn next_random_magic(seed: &mut u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::{bb_to_str, str_to_bb};
+    use crate::frame::util::{bb_to_str, str_to_bb};
 
     #[test]
     fn test_magic_blockers() {

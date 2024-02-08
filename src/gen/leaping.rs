@@ -1,7 +1,7 @@
 // A simple attack maps generator for leaping pieces,
 // Such as: pawns, kNights, Kings.
 
-use crate::util::*;
+use crate::frame::util::*;
 
 pub fn init_leaping_attacks() {
     init64(init_attacks_king, PATH_AMK);
@@ -71,7 +71,7 @@ fn init_attacks_pawns_black(black: &mut[u64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::bb_to_str;
+    use crate::frame::util::bb_to_str;
 
     #[test]
     fn test_leaping_attacks_king() {
