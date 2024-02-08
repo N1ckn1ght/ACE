@@ -166,7 +166,7 @@ impl Default for Weights {
         // 0 for a king seems sus but we don't really care bc we don't calc its capture
         let pieces_weights_const = [
 			[ 0.85,  3.3 ,  3.0 ,  4.0 ,  9.0 ,  0.0 ],
-			[ 0.9 ,  3.0 ,  3.1 ,  5.0 ,  9.0 ,  0.0 ]
+			[ 0.91,  3.0 ,  3.1 ,  5.0 ,  9.0 ,  0.0 ]
 		];
 
         /* Mobility weights

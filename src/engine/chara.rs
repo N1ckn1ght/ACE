@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{collections::{HashMap, HashSet}, cmp::{min, max}};
+use std::{cmp::{max, min}, collections::{HashMap, HashSet}, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use crate::engine::{weights::Weights, zobrist::Zobrist, search::search};
@@ -24,7 +24,8 @@ pub struct Chara {
 	pub pp_weights:			[f32; 3],				// mult weight per passing / protected by pawn / passing + protected by pawn (unique bonus)
 	pub outpost_weights:	[[f32; 2]; 2],			// add weight per passing knight / bishop that's defended by pawn
 	pub dan_possible:		[[f32; 3]; 2],			// add weight per knight if it is able to check / able to royal fork / able to fork heavy pieces
-	pub random_range:		f32,					// +-(0 - random_range) value per evaluated position
+	pub baw:				f32,					// base aspiration window
+	pub random_range:		f32,					// +-(0 - random_range) value per evaluated position on leaves
 	/* Temporary cache; meaning: stores evals and self-cleans when no RAM :( */
 	pub cache:				HashMap<u64, Eval>,		// evaluated position stored here (RIP RAM)
 	/* Permanent cache; meaning: only already made moves, will take back reverted ones as well */
@@ -59,10 +60,10 @@ const DAN_FORK:			usize = 2;
 impl Chara {
 	// It's a little messy, but any evals are easily modifiable.
 	// No need in modifying something twice to be applied for the different coloir, neither there's a need to write something twice in eval()
-    pub fn init(board: &Board, random_range: f32, aggressiveness: f32) -> Chara {
+    pub fn init(board: &Board, aggressiveness: f32, greed: f32, aspiration_window: f32, random_range: f32) -> Chara {
 		let mut w = Weights::default();
 
-		let piece_wmult: f32					= 1.2;
+		let piece_wmult: f32					= 1.2  * greed;
 		let piece_square_related_wmult: f32		= 0.75 / (aggressiveness * 0.5  + 0.5 );	// really slight balance-out
 		let mobility_wmult: f32					= 1.0  * (aggressiveness * 0.5  + 0.5 );
 		let align_wmult: f32					= 1.0  *  aggressiveness;
@@ -137,6 +138,7 @@ impl Chara {
 			pp_weights:		w.pp_weights.clone(),
 			outpost_weights,
 			dan_possible,
+			baw:			aspiration_window,
 			random_range,
 			cache:			HashMap::default(),
 			cache_perm_vec,
@@ -146,8 +148,9 @@ impl Chara {
 		}
     }
 
-	// Somewhat of a 0 level of the search(), but a necessary one
-	pub fn think(&mut self, board: &mut Board, depth: i16, last_eval: Eval) -> Vec<EvalMove> {
+	pub fn think(&mut self, board: &mut Board, tl: u128, last_eval: Eval) -> Vec<EvalMove> {
+		let ts = Instant::now();
+
 		let mut moves = board.get_legal_moves();
 		if moves.len() == 0 {
 			return vec![];
@@ -156,39 +159,60 @@ impl Chara {
 		let mut moves_evaluated = vec![];
 		let maximize = !board.turn;	// 0 -> white to move -> maximize
 
-		let mut alpha = f32::max(0.0, last_eval.score + 2.0);
-		let mut beta  = f32::min(0.0, last_eval.score - 2.0);
+		let mut alpha = f32::max(0.0, last_eval.score + self.baw);
+		let mut beta  = f32::min(0.0, last_eval.score - self.baw);
 
-		if maximize {
-			for mov in moves.into_iter() {
-				self.make_move(board, mov);
-				let temp = search(self, board, alpha, beta, false, board.no + depth - 1, false, mov);
-				self.revert_move(board);
-				moves_evaluated.push(EvalMove::new(mov, temp));
-				// QUIT W if time out!
-				alpha = max(alpha, temp);
-				if alpha >= beta {
-					break;
+		let mut depth = 2;
+		let mut quit = false;
+
+		loop {
+
+			if maximize {
+				for mov in moves.into_iter() {
+					self.make_move(board, mov);
+					let temp = search(self, board, alpha, beta, false, board.no + depth - 1, false, mov);
+					self.revert_move(board);
+					moves_evaluated.push(EvalMove::new(mov, temp));
+					// or if got sigkill :/
+					if ts.elapsed().as_millis() > tl {
+						quit = true;
+						break;
+					}
+					alpha = max(alpha, temp);
+					if alpha >= beta {
+						break;
+					}
+				}
+			} else {
+				for mov in moves.into_iter() {
+					self.make_move(board, mov);
+					let temp = search(self, board, alpha, beta, true , board.no + depth - 1, false, mov);
+					self.revert_move(board);
+					moves_evaluated.push(EvalMove::new(mov, temp));
+					// or if got sigkill :/
+					if ts.elapsed().as_millis() > tl {
+						quit = true;
+						break;
+					}
+					beta = min(beta, temp);
+					if beta <= alpha {
+						break;
+					}
 				}
 			}
-		} else {
-			for mov in moves.into_iter() {
-				self.make_move(board, mov);
-				let temp = search(self, board, alpha, beta, true , board.no + depth - 1, false, mov);
-				self.revert_move(board);
-				moves_evaluated.push(EvalMove::new(mov, temp));
-				// QUIT W if time out!
-				beta = min(beta, temp);
-				if beta <= alpha {
-					break;
-				}
+	
+			moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| a.eval.cmp(&b.eval));
+			if !board.turn {
+				moves_evaluated.reverse();
 			}
+
+			if quit {
+				break;
+			}
+			
+			depth += 2;
 		}
 
-		moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| a.eval.cmp(&b.eval));
-		if !board.turn {
-			moves_evaluated.reverse();
-		}
 		//	moves_evaluated.iter_mut().for_each(|em|);	- TODO: fix mate counter
 		moves_evaluated
 	}
