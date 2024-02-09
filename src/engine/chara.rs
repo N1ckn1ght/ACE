@@ -24,7 +24,6 @@ pub struct Chara {
 	pub pp_weights:			[f32; 3],				// mult weight per passing / protected by pawn / passing + protected by pawn (unique bonus)
 	pub outpost_weights:	[[f32; 2]; 2],			// add weight per passing knight / bishop that's defended by pawn
 	pub dan_possible:		[[f32; 3]; 2],			// add weight per knight if it is able to check / able to royal fork / able to fork heavy pieces
-	pub baw:				f32,					// base aspiration window
 	pub random_range:		f32,					// +-(0 - random_range) value per evaluated position on leaves
 	/* Temporary cache; meaning: stores evals and self-cleans when no RAM :( */
 	pub cache:				HashMap<u64, Eval>,		// evaluated position stored here (RIP RAM)
@@ -34,7 +33,10 @@ pub struct Chara {
 													// note: it's always 1 hash behind
 	/* Accessible constants */
 	pub zobrist:			Zobrist,
-	pub rng:				ThreadRng
+	pub rng:				ThreadRng,
+
+	/* Thinking mechanism */
+	pub target_depth:		i16
 }
 
 /* For more understandable indexing in eval() */
@@ -60,7 +62,7 @@ const DAN_FORK:			usize = 2;
 impl Chara {
 	// It's a little messy, but any evals are easily modifiable.
 	// No need in modifying something twice to be applied for the different coloir, neither there's a need to write something twice in eval()
-    pub fn init(board: &Board, aggressiveness: f32, greed: f32, aspiration_window: f32, random_range: f32) -> Chara {
+    pub fn init(board: &Board, aggressiveness: f32, greed: f32, random_range: f32) -> Chara {
 		let mut w = Weights::default();
 
 		let piece_wmult: f32					= 1.2  * greed;
@@ -138,17 +140,17 @@ impl Chara {
 			pp_weights:		w.pp_weights.clone(),
 			outpost_weights,
 			dan_possible,
-			baw:			aspiration_window,
 			random_range,
 			cache:			HashMap::default(),
 			cache_perm_vec,
 			cache_perm_set: HashSet::default(),
 			zobrist,
-			rng:			rand::thread_rng()
+			rng:			rand::thread_rng(),
+			target_depth:	-1
 		}
     }
 
-	pub fn think(&mut self, board: &mut Board, tl: u128, last_eval: Eval) -> Vec<EvalMove> {
+	pub fn think(&mut self, board: &mut Board, base_aspiration_window: f32, time_limit_ms: u128, last_eval: Eval) -> Vec<EvalMove> {
 		let ts = Instant::now();
 
 		let mut moves = board.get_legal_moves();
@@ -159,10 +161,10 @@ impl Chara {
 		let mut moves_evaluated = vec![];
 		let maximize = !board.turn;	// 0 -> white to move -> maximize
 
-		let mut alpha = f32::max(0.0, last_eval.score + self.baw);
-		let mut beta  = f32::min(0.0, last_eval.score - self.baw);
+		let mut alpha = Eval::new(f32::max(0.0, last_eval.score + base_aspiration_window), 0, false);
+		let mut beta  = Eval::new(f32::min(0.0, last_eval.score - base_aspiration_window), 0, false);
 
-		let mut depth = 2;
+		self.target_depth = 2;
 		let mut quit = false;
 
 		loop {
@@ -174,7 +176,7 @@ impl Chara {
 					self.revert_move(board);
 					moves_evaluated.push(EvalMove::new(mov, temp));
 					// or if got sigkill :/
-					if ts.elapsed().as_millis() > tl {
+					if ts.elapsed().as_millis() > time_limit_ms {
 						quit = true;
 						break;
 					}
@@ -190,7 +192,7 @@ impl Chara {
 					self.revert_move(board);
 					moves_evaluated.push(EvalMove::new(mov, temp));
 					// or if got sigkill :/
-					if ts.elapsed().as_millis() > tl {
+					if ts.elapsed().as_millis() > time_limit_ms {
 						quit = true;
 						break;
 					}
@@ -233,11 +235,13 @@ impl Chara {
 		self.cache_perm_set.remove(&self.cache_perm_vec.last().unwrap());
 	}
 
-	/* Warning! 
-		1) Search MUST use check extension! Eval does NOT evaluate checks!
-		2) Search MUST determine if the game ended! Eval should NOT evaluate staled/mated positions specifically!
-	 */
-	pub fn eval(&mut self, board: &Board) -> Eval {
+	/* Warning!
+		Before calling this function, consider the following:
+		1) Search MUST use check extension! Eval does NOT evaluate checks or free captures specifically!
+		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically!
+		3) Search HAS to know if it's a position from search extension or not due to how cache works. Eval always assumes its depths as 0.
+	*/
+	pub fn eval(&mut self, board: &Board, is_extent: bool) -> Eval {
 		let hash = *self.cache_perm_vec.last().unwrap();
 		if self.cache.contains_key(&hash) {
 			return self.cache[&hash];

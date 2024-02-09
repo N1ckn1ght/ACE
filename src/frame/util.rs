@@ -163,6 +163,8 @@ pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promoti
     special | (from << 8 | to << 16 | piece << 24 | promotion << 28) as u64 | (capture as u64) << 32
 }
 
+pub const CAPTURE_MINIMUM: u64 = (E as u64) << 32;
+
 #[inline]
 pub fn move_get_from(mov: u64) -> usize {
     (mov >> 8 & 0b11111111) as usize
