@@ -239,9 +239,8 @@ impl Chara {
 		Before calling this function, consider the following:
 		1) Search MUST use check extension! Eval does NOT evaluate checks or free captures specifically!
 		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically!
-		3) Search HAS to know if it's a position from search extension or not due to how cache works. Eval always assumes its depths as 0.
 	*/
-	pub fn eval(&mut self, board: &Board, is_extent: bool) -> Eval {
+	pub fn eval(&mut self, board: &Board) -> Eval {
 		let hash = *self.cache_perm_vec.last().unwrap();
 		if self.cache.contains_key(&hash) {
 			return self.cache[&hash];

@@ -11,35 +11,47 @@ pub fn search(
     depth: i16
 ) -> Eval {
 
-    
+    /* SEARCH CONDITION */
 
+    if depth == 0 {
+        return extension(chara, board, alpha, beta, maximize, true);
+    }
 
-    // IF THE POSITION IS ARLEADY CACHED (and evaluated)
+    /* ALREADY CACHED POSITION CHECK */
+
     let hash = *chara.cache_perm_vec.last().unwrap();
     if chara.cache.contains_key(&hash) {
         let mut eval = chara.cache[&hash];
         if depth <= eval.depth {
-            
+            return eval;
         }
     }
 
-    // IF THE GAME HAS ENDED
-    let moves = board.get_legal_moves();
+    let mut moves = board.get_legal_moves();
+
+    /* GAME END CHECK */
+
     if moves.len() == 0 {
         if board.is_in_check() {
-            let mut mate = 1;
-            if !board.turn {
-                mate = -1;
+            let mut score = f32::MAX;
+            if board.turn {
+                score = f32::MIN;
             }
-            return Eval::new(0.0, mate, board.no);
+            return Eval::new(score, 0, true);
         }
     }
 
-    // ALPHA/BETA PRUNING
+    /* PRE-SORTING (captures first) */
+
+    moves.sort();
+    moves.reverse();
+
+    /* ALPHA/BETA PRUNING */
+
     let mut eval;
 
     if maximize {
-        eval = Eval::new(0.0, -1, depth);
+        eval = Eval::new(f32::MIN, 0, false);
         for mov in moves.into_iter() {
             chara.make_move(board, mov);
             eval = max(eval, search(chara, board, alpha, beta, false, depth, quiet_extension, mov));
@@ -81,10 +93,20 @@ pub fn extension(
     /* EXTENSION CONDITION */
 
     if !(capture || board.is_in_check()) {
-        return chara.eval(board, true);
+        return chara.eval(board);
     }
 
-    let moves = board.get_legal_moves();
+    /* ALREADY CACHED POSITION CHECK */
+
+    let hash = *chara.cache_perm_vec.last().unwrap();
+    if chara.cache.contains_key(&hash) {
+        let eval = chara.cache[&hash];
+        if eval.is_extent || eval.depth != 0 {
+            return chara.cache[&hash];
+        }
+    }
+
+    let mut moves = board.get_legal_moves();
 
     /* GAME END CHECK */
 
@@ -94,42 +116,42 @@ pub fn extension(
             if board.turn {
                 score = f32::MIN;
             }
-            return Eval::new(score, 0, true);
+            return Eval::new(score, 0, false);
         }
     }
 
     /* PRE-SORTING (captures first) */
 
     moves.sort();
+    moves.reverse();
 
     /* ALPHA/BETA PRUNING */
 
-    let mut eval;
+    let mut eval = chara.eval(board);
 
     if maximize {
-        eval = Eval::new(f32::MIN, 0, false);
         for mov in moves.into_iter() {
-            chara.make_move(board, mov);
-            eval = max(eval, extension(chara, board, alpha, beta, false, mov < CAPTURE_MINIMUM));
-            chara.revert_move(board);
             alpha = max(alpha, eval);
             if alpha >= beta {
                 break;
             }
+            chara.make_move(board, mov);
+            eval = max(eval, extension(chara, board, alpha, beta, false, mov < CAPTURE_MINIMUM));
+            chara.revert_move(board);
         }
     } else {
-        eval = Eval::new(f32::MAX, 0, false);
         for mov in moves.into_iter() {
-            chara.make_move(board, mov);
-            eval = min(eval, search(chara, board, alpha, beta, true, depth, quiet_extension, mov));
-            eval.depth += 1;
-            chara.revert_move(board);
             beta = min(beta, eval);
             if beta <= alpha {
                 break;
             }
+            chara.make_move(board, mov);
+            eval = min(eval, extension(chara, board, alpha, beta, true, mov < CAPTURE_MINIMUM));
+            chara.revert_move(board);
         }
     }
 
-    0
+    eval.is_extent = true;
+    chara.cache.insert(hash, eval);
+    eval
 }
