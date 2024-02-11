@@ -25,16 +25,16 @@ pub struct Chara {
 	pub outpost_weights:	[[f32; 2]; 2],			// add weight per passing knight / bishop that's defended by pawn
 	pub dan_possible:		[[f32; 3]; 2],			// add weight per knight if it is able to check / able to royal fork / able to fork heavy pieces
 	pub random_range:		f32,					// +-(0 - random_range) value per evaluated position on leaves
-	/* Temporary cache; meaning: stores evals and self-cleans when no RAM :( */
-	pub cache:				HashMap<u64, Eval>,		// evaluated position stored here (RIP RAM)
-	/* Permanent cache; meaning: only already made moves, will take back reverted ones as well */
-	pub cache_perm_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
-	pub cache_perm_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
+	/* Cache to store evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
+	pub cache_leaves:		HashMap<u64, f32>,
+	pub cache_branches:		HashMap<u64, EvalBr>,
+	/* Cache to story already made in board moves to track drawish positions */
+	pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
+	pub history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
 													// note: it's always 1 hash behind
 	/* Accessible constants */
 	pub zobrist:			Zobrist,
 	pub rng:				ThreadRng,
-
 	/* Thinking mechanism */
 	pub target_depth:		i16
 }
@@ -141,9 +141,10 @@ impl Chara {
 			outpost_weights,
 			dan_possible,
 			random_range,
-			cache:			HashMap::default(),
-			cache_perm_vec,
-			cache_perm_set: HashSet::default(),
+			cache_leaves:	HashMap::default(),
+			cache_branches:	HashMap::default(),
+			history_vec:	cache_perm_vec,
+			history_set:	HashSet::default(),
 			zobrist,
 			rng:			rand::thread_rng(),
 			target_depth:	-1
@@ -220,19 +221,19 @@ impl Chara {
 	}
 
 	pub fn make_move(&mut self, board: &mut Board, mov: u64) {
-		let prev_hash = *self.cache_perm_vec.last().unwrap();
-		self.cache_perm_set.insert(prev_hash);
+		let prev_hash = *self.history_vec.last().unwrap();
+		self.history_set.insert(prev_hash);
 		board.make_move(mov);
 		let hash = self.zobrist.cache_iter(board, mov, prev_hash);
-		self.cache_perm_vec.push(hash);
+		self.history_vec.push(hash);
 	}
 	
 	// pub fn make_move_by_hash(&mut self, board: &mut Board, mov: u64, hash: u64) { }
 
 	pub fn revert_move(&mut self, board: &mut Board) {
 		board.revert_move();
-		self.cache_perm_vec.pop();
-		self.cache_perm_set.remove(&self.cache_perm_vec.last().unwrap());
+		self.history_vec.pop();
+		self.history_set.remove(&self.history_vec.last().unwrap());
 	}
 
 	/* Warning!
@@ -241,7 +242,7 @@ impl Chara {
 		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically!
 	*/
 	pub fn eval(&mut self, board: &Board) -> Eval {
-		let hash = *self.cache_perm_vec.last().unwrap();
+		let hash = *self.history_vec.last().unwrap();
 		if self.cache.contains_key(&hash) {
 			return self.cache[&hash];
 		}
@@ -249,7 +250,7 @@ impl Chara {
 		/* CHECK FOR ANISH GIRI,
 			SETUP SCORE APPLICATION */
 
-		if board.hmc == 50 || self.cache_perm_set.contains(&hash) {
+		if board.hmc == 50 || self.history_set.contains(&hash) {
 			return Eval::new(0.0, 0, board.no);
 		}
 

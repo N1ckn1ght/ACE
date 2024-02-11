@@ -211,17 +211,20 @@ pub fn xor64(mut num: u64) -> u64 {
 
 /* DATA STRUCTURES */
 
+// EvalLeaf is simple f32 (just score)!
+// EvalBranch on the other hand needs to store branch depth and if it is an extent eval (possibly a/b values too)
+
 #[derive(Copy, Clone)]
 #[repr(align(64))]
-pub struct Eval {
+pub struct EvalBr {
 	pub score: f32,
 	pub depth: i16,
     pub is_extent: bool
 }
 
-impl Eval {
+impl EvalBr {
     pub fn new(score: f32, depth: i16, is_extent: bool) -> Self {
-		Eval {
+		EvalBr {
 			score,
 			depth,
             is_extent
@@ -229,21 +232,21 @@ impl Eval {
 	}
 }
 
-impl PartialEq for Eval {
+impl PartialEq for EvalBr {
     fn eq(&self, other: &Self) -> bool {
         self.score == other.score
     }
 }
 
-impl Eq for Eval {}
+impl Eq for EvalBr {}
 
-impl Ord for Eval {
-	fn cmp(&self, other: &Eval) -> Ordering {
+impl Ord for EvalBr {
+	fn cmp(&self, other: &EvalBr) -> Ordering {
         self.score.total_cmp(&other.score)
 	}
 }
 
-impl PartialOrd for Eval {
+impl PartialOrd for EvalBr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -252,11 +255,11 @@ impl PartialOrd for Eval {
 #[derive(Copy, Clone)]
 pub struct EvalMove {
     pub mov: u64,
-    pub eval: Eval
+    pub eval: EvalBr
 }
 
 impl EvalMove {
-    pub fn new(mov: u64, eval: Eval) -> Self {
+    pub fn new(mov: u64, eval: EvalBr) -> Self {
         EvalMove {
             mov,
             eval
@@ -556,26 +559,16 @@ mod tests {
     }
 
     #[test]
-    fn test_utility_eval_comparisons() {
-        let eval1 = Eval::new( 0.0,  0, 0);
-        let eval2 = Eval::new( 1.0,  0, 0);
-        let eval3 = Eval::new(-1.0,  0, 0);
-        let eval4 = Eval::new( 0.0,  1, 0);
-        let eval5 = Eval::new( 0.0, -1, 0);
-        let eval6 = Eval::new( 9.9, -1, 0);
-        let eval7 = Eval::new( 0.0,  2, 0);
-        let eval8 = Eval::new( 0.0, -2, 0);
-        assert_eq!(eval1 != eval2, true);
-        assert_eq!(eval1 == eval1, true);
-        assert_eq!(eval1 < eval2, true);
-        assert_eq!(eval1 > eval3, true);
-        assert_eq!(eval2 > eval3, true);
-        assert_eq!(eval1 < eval4, true);
-        assert_eq!(eval4 > eval5, true);
-        assert_eq!(eval4 > eval6, true);
-        assert_eq!(eval6 > eval5, true);
-        assert_eq!(eval6 < eval1, true);
-        assert_eq!(eval7 < eval4, true);
-        assert_eq!(eval8 > eval6, true);
+    fn test_utility_eval_branch_comparisons() {
+        let eval1 = EvalBr::new( 0.0, 0, false);
+        let eval2 = EvalBr::new( 1.0, 0, false);
+        let eval3 = EvalBr::new(-1.0, 0, false);
+        let eval4 = EvalBr::new(-1.0, 1, false);
+        let eval5 = EvalBr::new(-1.0, 1, true);
+        assert_eq!(eval1 <  eval2, true);
+        assert_eq!(eval1 >  eval3, true);
+        assert_eq!(eval2 >  eval3, true);
+        assert_eq!(eval3 == eval4, true);
+        assert_eq!(eval4 == eval5, true);
     }
 }

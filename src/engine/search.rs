@@ -19,7 +19,7 @@ pub fn search(
 
     /* ALREADY CACHED POSITION CHECK */
 
-    let hash = *chara.cache_perm_vec.last().unwrap();
+    let hash = *chara.history_vec.last().unwrap();
     if chara.cache.contains_key(&hash) {
         let mut eval = chara.cache[&hash];
         if depth <= eval.depth {
@@ -33,9 +33,9 @@ pub fn search(
 
     if moves.len() == 0 {
         if board.is_in_check() {
-            let mut score = f32::MAX;
+            let mut score = f32::MIN;
             if board.turn {
-                score = f32::MIN;
+                score = f32::MAX;
             }
             return Eval::new(score, 0, true);
         }
@@ -84,8 +84,8 @@ pub fn search(
 pub fn extension(
     chara: &mut Chara,
     board: &mut Board,
-    mut alpha: Eval,
-    mut beta: Eval,
+    mut alpha: f32,
+    mut beta: f32,
     maximize: bool,
     capture: bool
 ) -> Eval {
@@ -98,12 +98,9 @@ pub fn extension(
 
     /* ALREADY CACHED POSITION CHECK */
 
-    let hash = *chara.cache_perm_vec.last().unwrap();
-    if chara.cache.contains_key(&hash) {
-        let eval = chara.cache[&hash];
-        if eval.is_extent || eval.depth != 0 {
-            return chara.cache[&hash];
-        }
+    let hash = *chara.history_vec.last().unwrap();
+    if chara.cache_branches.contains_key(&hash) {
+        return chara.cache_branches[&hash];
     }
 
     let mut moves = board.get_legal_moves();
@@ -112,9 +109,9 @@ pub fn extension(
 
     if moves.len() == 0 {
         if board.is_in_check() {
-            let mut score = f32::MAX;
+            let mut score = f32::MIN;
             if board.turn {
-                score = f32::MIN;
+                score = f32::MAX;
             }
             return Eval::new(score, 0, false);
         }
