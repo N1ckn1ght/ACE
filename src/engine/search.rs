@@ -32,9 +32,9 @@ pub fn search(
 
     if moves.len() == 0 {
         if board.is_in_check() {
-            let mut score = f32::MIN;
+            let mut score = -LARGE;
             if board.turn {
-                score = f32::MAX;
+                score = LARGE;
             }
             return EvalBr::new(score, 0);
         }
@@ -47,7 +47,7 @@ pub fn search(
 
     /* ALPHA/BETA PRUNING */
 
-    let mut eval = EvalBr::new(f32::MIN, 0);
+    let mut eval = EvalBr::new(-LARGE, 0);
 
     for mov in moves.into_iter() {
         chara.make_move(board, mov);
@@ -61,7 +61,7 @@ pub fn search(
 
     eval.depth += 1;
     chara.cache_branches.insert(hash, eval);
-    return eval;
+    eval
 }
 
 pub fn extension(
@@ -91,9 +91,9 @@ pub fn extension(
 
     if moves.len() == 0 {
         if board.is_in_check() {
-            let mut score = f32::MIN;
+            let mut score = -LARGE;
             if board.turn {
-                score = f32::MAX;
+                score = LARGE;
             }
             return EvalBr::new(score, 0);
         }
@@ -118,7 +118,62 @@ pub fn extension(
         chara.revert_move(board);
     }
 
-    eval.is_extent = true;
     chara.cache_branches.insert(hash, eval);
     eval
+}
+
+pub fn mate(
+    chara: &mut Chara,
+    board: &mut Board,
+    depth: i16
+) -> EvalBr {
+    
+    /* SEARCH CONDITION */
+
+    if depth == 0 {
+        return EvalBr::new(0.0, 0);
+    }
+
+    /* ALREADY CACHED POSITION CHECK */
+
+    let hash = *chara.history_vec.last().unwrap();
+    if chara.cache_branches.contains_key(&hash) {
+        let mut eval = chara.cache_branches[&hash];
+        if depth <= eval.depth {
+            return eval;
+        }
+    }
+
+    let mut moves = board.get_legal_moves();
+
+    /* GAME END CHECK */
+
+    if moves.len() == 0 {
+        if board.is_in_check() {
+            let mut score = -LARGE;
+            if board.turn {
+                score = LARGE;
+            }
+            return EvalBr::new(score, 0);
+        }
+    }
+
+    /* PRE-SORTING (captures first) */
+
+    moves.sort();
+    moves.reverse();
+
+    /* FULL-SCALE SEARCH WITHOUT PRUNING */
+
+    let mut eval = EvalBr::new(-LARGE, 0);
+
+    for mov in moves.into_iter() {
+        chara.make_move(board, mov);
+        eval = max(eval, -mate(chara, board, depth - 1));
+        chara.revert_move(board);
+    }
+
+    eval.depth += 1;
+    chara.cache_branches.insert(hash, eval);
+    return eval;
 }

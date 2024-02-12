@@ -94,6 +94,8 @@ pub const CSB: u8 = 0b0010; // castle short black
 pub const CLW: u8 = 0b0100; // castle long white
 pub const CLB: u8 = 0b1000; // castle long black
 
+pub const LARGE: f32 = 24576.0;
+
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
 
 #[inline]
