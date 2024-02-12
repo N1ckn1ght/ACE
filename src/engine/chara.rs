@@ -159,64 +159,46 @@ impl Chara {
 			return vec![];
 		}
 		moves.sort();
-		let mut moves_evaluated = vec![];
-		let maximize = !board.turn;	// 0 -> white to move -> maximize
+		moves.reverse();
 
-		let mut alpha = Eval::new(f32::max(0.0, last_eval.score + base_aspiration_window), 0, false);
-		let mut beta  = Eval::new(f32::min(0.0, last_eval.score - base_aspiration_window), 0, false);
+		let mut moves_evaluated = Vec::with_capacity(moves.len());
+		for mov in moves.into_iter() {
+			moves_evaluated.push(EvalMove::new(mov, EvalBr::new(0.0, 0)));
+		}
+
+		// what if previous score was f32::MAX or f32::MIN ?
+		let mut alpha = f32::max(0.0, last_eval.score + base_aspiration_window);
+		let mut beta  = f32::max(0.0, last_eval.score - base_aspiration_window);
 
 		self.target_depth = 2;
 		let mut quit = false;
 
 		loop {
+			let mut eval = EvalBr::new(f32::MIN, 0);
 
-			if maximize {
-				for mov in moves.into_iter() {
-					self.make_move(board, mov);
-					let temp = search(self, board, alpha, beta, false, board.no + depth - 1, false, mov);
-					self.revert_move(board);
-					moves_evaluated.push(EvalMove::new(mov, temp));
-					// or if got sigkill :/
-					if ts.elapsed().as_millis() > time_limit_ms {
-						quit = true;
-						break;
-					}
-					alpha = max(alpha, temp);
-					if alpha >= beta {
-						break;
-					}
+			for me in moves_evaluated.iter_mut() {
+				self.make_move(board, me.mov);
+				me.eval = max(me.eval, search(self, board, -beta, -alpha, self.target_depth - 1));
+				self.revert_move(board);
+				if ts.elapsed().as_millis() > time_limit_ms {
+					quit = true;
+					break;
 				}
-			} else {
-				for mov in moves.into_iter() {
-					self.make_move(board, mov);
-					let temp = search(self, board, alpha, beta, true , board.no + depth - 1, false, mov);
-					self.revert_move(board);
-					moves_evaluated.push(EvalMove::new(mov, temp));
-					// or if got sigkill :/
-					if ts.elapsed().as_millis() > time_limit_ms {
-						quit = true;
-						break;
-					}
-					beta = min(beta, temp);
-					if beta <= alpha {
-						break;
-					}
+				alpha = f32::max(alpha, me.eval.score);
+				if alpha >= beta {
+					break;
 				}
 			}
 	
 			moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| a.eval.cmp(&b.eval));
-			if !board.turn {
-				moves_evaluated.reverse();
-			}
 
 			if quit {
 				break;
 			}
 			
-			depth += 2;
+			self.target_depth += 2;
 		}
-
-		//	moves_evaluated.iter_mut().for_each(|em|);	- TODO: fix mate counter
+		
 		moves_evaluated
 	}
 

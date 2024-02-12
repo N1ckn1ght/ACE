@@ -1,4 +1,4 @@
-use std::cmp::{min, max};
+use std::cmp::max;
 use crate::frame::{util::*, board::Board};
 use crate::engine::chara::Chara;
 
@@ -7,14 +7,13 @@ pub fn search(
     board: &mut Board,
     mut alpha: f32,
     mut beta: f32,
-    turn: bool,
     depth: i16
 ) -> EvalBr {
 
     /* SEARCH CONDITION */
 
     if depth == 0 {
-        return extension(chara, board, alpha, beta, turn, true);
+        return extension(chara, board, alpha, beta, true);
     }
 
     /* ALREADY CACHED POSITION CHECK */
@@ -52,9 +51,9 @@ pub fn search(
 
     for mov in moves.into_iter() {
         chara.make_move(board, mov);
-        eval = max(eval, -search(chara, board, -beta, -alpha, !turn, depth - 1));
+        eval = max(eval, -search(chara, board, -beta, -alpha, depth - 1));
         chara.revert_move(board);
-        alpha = alpha.max(eval.score);
+        alpha = f32::max(alpha, eval.score);
         if alpha >= beta {
             break;
         }
@@ -70,7 +69,6 @@ pub fn extension(
     board: &mut Board,
     mut alpha: f32,
     mut beta: f32,
-    turn: bool,
     capture: bool
 ) -> EvalBr {
     
@@ -111,12 +109,12 @@ pub fn extension(
     let mut eval = chara.eval(board);
 
     for mov in moves.into_iter() {
-        alpha = alpha.max(eval.score);
+        alpha = f32::max(alpha, eval.score);
         if alpha >= beta {
             break;
         }
         chara.make_move(board, mov);
-        eval = max(eval, -extension(chara, board, -beta, -alpha, !turn, mov < CAPTURE_MINIMUM));
+        eval = max(eval, -extension(chara, board, -beta, -alpha, mov < CAPTURE_MINIMUM));
         chara.revert_move(board);
     }
 
