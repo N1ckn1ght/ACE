@@ -1,4 +1,4 @@
-use crate::frame::util::*;
+use super::util::*;
 
 pub struct Maps {
     pub attacks_rook:        Vec<u64>,

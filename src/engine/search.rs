@@ -1,12 +1,12 @@
 use std::cmp::max;
 use crate::frame::{util::*, board::Board};
-use crate::engine::chara::Chara;
+use super::chara::Chara;
 
 pub fn search(
     chara: &mut Chara,
     board: &mut Board,
     mut alpha: f32,
-    mut beta: f32,
+    beta: f32,
     depth: i16
 ) -> EvalBr {
 
@@ -20,7 +20,7 @@ pub fn search(
 
     let hash = *chara.history_vec.last().unwrap();
     if chara.cache_branches.contains_key(&hash) {
-        let mut eval = chara.cache_branches[&hash];
+        let eval = chara.cache_branches[&hash];
         if depth <= eval.depth {
             return eval;
         }
@@ -68,7 +68,7 @@ pub fn extension(
     chara: &mut Chara,
     board: &mut Board,
     mut alpha: f32,
-    mut beta: f32,
+    beta: f32,
     capture: bool
 ) -> EvalBr {
     
@@ -138,7 +138,7 @@ pub fn mate(
 
     let hash = *chara.history_vec.last().unwrap();
     if chara.cache_branches.contains_key(&hash) {
-        let mut eval = chara.cache_branches[&hash];
+        let eval = chara.cache_branches[&hash];
         if depth <= eval.depth {
             return eval;
         }

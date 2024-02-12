@@ -4,9 +4,7 @@
 use std::{cmp::max, collections::{HashMap, HashSet}, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
-use crate::engine::{weights::Weights, zobrist::Zobrist, search::search};
-
-use super::search::mate;
+use super::{weights::Weights, zobrist::Zobrist, search::{search, mate}};
 
 // TODO: use i16 instead of floats for faster add/sub operations?
 pub struct Chara {
@@ -162,7 +160,7 @@ impl Chara {
 
 		let mut moves_evaluated = Vec::with_capacity(moves.len());
 		for mov in moves.into_iter() {
-			moves_evaluated.push(EvalMove::new(mov, EvalBr::new(0.0, 0)));
+			moves_evaluated.push(EvalMove::new(mov, EvalBr::new(-LARGE, 0)));
 		}
 
 		// if we have a mate attack, we must follow it;
@@ -170,8 +168,6 @@ impl Chara {
 		// if (last_eval.score == LARGE && !board.turn) || (last_eval.score == -LARGE && board.turn) {
 		if last_eval.score == LARGE {
 			let depth = last_eval.depth - 2;
-			
-			let mut eval = EvalBr::new(-LARGE, 0);
 			
 			for me in moves_evaluated.iter_mut() {
 				self.make_move(board, me.mov);
@@ -187,9 +183,7 @@ impl Chara {
 
 			loop {
 				let mut alpha = f32::max(0.0, last_eval.score + base_aspiration_window * depth as f32);
-				let mut beta  = f32::max(0.0, last_eval.score - base_aspiration_window * depth as f32);
-
-				let mut eval = EvalBr::new(-LARGE, 0);
+				let     beta  = f32::max(0.0, last_eval.score - base_aspiration_window * depth as f32);
 
 				for me in moves_evaluated.iter_mut() {
 					self.make_move(board, me.mov);
@@ -216,6 +210,28 @@ impl Chara {
 		}
 		
 		moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
+
+		// a little bit of randomness in status quo (could ruin everything potentially :D)
+		let mut same = 0;
+		for me in moves_evaluated.iter() {
+			if same == 0 {
+				same = 1;
+				continue;
+			}
+			if me.eval.score + self.random_range >= moves_evaluated[0].eval.score {
+				same += 1;
+				continue;
+			}
+		}
+		if same > 1 {
+			let rnd = self.rng.gen::<usize>() % same;
+			if rnd != 0 {
+				let tmp = moves_evaluated[rnd];
+				moves_evaluated[rnd] = moves_evaluated[0];
+				moves_evaluated[0] = tmp;
+			}
+		}
+
 		println!("#DEBUG\tReal time spent: {} ms", ts.elapsed().as_millis());
 		moves_evaluated
 	}

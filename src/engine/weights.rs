@@ -218,13 +218,13 @@ impl Default for Weights {
 			]
 		];
 
-		let mut turn_weights_pre	=  [ 1.15,  0.1 ];
-		let mut align_weights_pre   = [[ 0.35,  0.3 ,  0.3 ,  0.21,  0.15,  0.3 ], [ 0.2 ,  0.2 ,  0.1 ,  0.05,  0.1,  0.1 ]];
-		let mut battery_weights_pre =  [ 0.21,  0.22,  0.45,  0.11];
-		let mut dp_weight			=    0.75;
-		let mut pp_weights			=  [ 1.21,  1.11,  1.42];
-		let mut outpost_weight_pre  =  [ 0.4 ,  0.2 ];
-		let mut dan_possible_pre    =  [ 0.4 ,  0.6 ,  0.3 ];
+		let turn_weights_pre	=  [ 1.15,  0.1 ];
+		let align_weights_pre   = [[ 0.35,  0.3 ,  0.3 ,  0.21,  0.15,  0.3 ], [ 0.2 ,  0.2 ,  0.1 ,  0.05,  0.1,  0.1 ]];
+		let battery_weights_pre =  [ 0.21,  0.22,  0.45,  0.11];
+		let dp_weight			=    0.75;
+		let pp_weights			=  [ 1.21,  1.11,  1.42];
+		let outpost_weight_pre  =  [ 0.4 ,  0.2 ];
+		let dan_possible_pre    =  [ 0.4 ,  0.6 ,  0.3 ];
 
         Self {
             pieces_weights_square_related,

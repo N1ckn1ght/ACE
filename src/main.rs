@@ -18,13 +18,14 @@ fn main() {
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut board = Board::default();
-    let mut chara = Chara::init(&board, 0.08, 0.8);
+    let mut chara = Chara::init(&board, 0.08, 1.2, 0.005);
 
     driver(&mut chara, &mut board);
 }
 
 fn driver(chara: &mut Chara, board: &mut Board) {
-    let mut last_eval = Eval::new(0.0, 0, 0);
+    let mut last_eval = EvalBr::new(0.0, 0);
+
     loop {
         println!("Processing...\n");
 
@@ -33,15 +34,16 @@ fn driver(chara: &mut Chara, board: &mut Board) {
             break;
         }
 
-        let ems = chara.think(board, 4, last_eval);
+        let ems = chara.think(board, 1.0, 1000, last_eval);
         for (i, em) in ems.iter().enumerate() {
-            println!("{}.\t{}\tmate = {} \tscore = {}", i, move_transform(em.mov), em.eval.mate, em.eval.score);
+            println!("{}.\t{}\tscore = {}\tdepth = {}", i + 1, move_transform(em.mov), em.eval.score, em.eval.depth);
         }
         println!();
 
+        let mut mov;
         loop {
             let str = input();
-            let mov = move_transform_back(&str.to_owned(), &legals);
+            mov = move_transform_back(&str.to_owned(), &legals);
             if mov.is_some() {
                 chara.make_move(board, mov.unwrap());
                 break;
@@ -50,24 +52,13 @@ fn driver(chara: &mut Chara, board: &mut Board) {
             }
         }
 
-        // ???
-        last_eval = ems[0].eval;
-
-        let legals = board.get_legal_moves();
-        if legals.len() == 0 {
-            break;
-        }
-
-        loop {
-            let str = input();
-            let mov = move_transform_back(&str.to_owned(), &legals);
-            if mov.is_some() {
-                chara.make_move(board, mov.unwrap());
+        for em in ems.iter() {
+            if em.mov == mov.unwrap() {
+                last_eval = em.eval;
                 break;
-            } else {
-                println!("Move not found?");
             }
         }
+        
     }
 }
 
