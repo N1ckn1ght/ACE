@@ -9,7 +9,7 @@ use phf::phf_map;
 
 /* LIMITATIONS */
 
-pub const CACHE_LIMIT: usize = 100663296;   // for approx. <2048 MiB memory usage, 128 bit per hash
+pub const CACHE_LIMIT = ???;   // in bits, better to leave some MiB before limit
 // pub const FLOAT_TO_INT_MULT: i32 = 100000;
 
 /* SPECIFIED PATHES */

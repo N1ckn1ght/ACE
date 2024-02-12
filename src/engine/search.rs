@@ -75,7 +75,7 @@ pub fn extension(
     /* EXTENSION CONDITION */
 
     if !(capture || board.is_in_check()) {
-        return chara.eval(board);
+        return EvalBr::new(chara.eval(board), 0);
     }
 
     /* ALREADY CACHED POSITION CHECK */
@@ -106,7 +106,7 @@ pub fn extension(
 
     /* ALPHA/BETA PRUNING */
 
-    let mut eval = chara.eval(board);
+    let mut eval = EvalBr::new(chara.eval(board), 0);
 
     for mov in moves.into_iter() {
         alpha = f32::max(alpha, eval.score);

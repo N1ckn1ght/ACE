@@ -6,6 +6,8 @@ use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use crate::engine::{weights::Weights, zobrist::Zobrist, search::search};
 
+use super::search::mate;
+
 // TODO: use i16 instead of floats for faster add/sub operations?
 pub struct Chara {
 	/* These weights are stored with respect to the colour, black pieces will provide negative values
@@ -34,9 +36,7 @@ pub struct Chara {
 													// note: it's always 1 hash behind
 	/* Accessible constants */
 	pub zobrist:			Zobrist,
-	pub rng:				ThreadRng,
-	/* Thinking mechanism */
-	pub target_depth:		i16
+	pub rng:				ThreadRng
 }
 
 /* For more understandable indexing in eval() */
@@ -146,12 +146,11 @@ impl Chara {
 			history_vec:	cache_perm_vec,
 			history_set:	HashSet::default(),
 			zobrist,
-			rng:			rand::thread_rng(),
-			target_depth:	-1
+			rng:			rand::thread_rng()
 		}
     }
 
-	pub fn think(&mut self, board: &mut Board, base_aspiration_window: f32, time_limit_ms: u128, last_eval: Eval) -> Vec<EvalMove> {
+	pub fn think(&mut self, board: &mut Board, base_aspiration_window: f32, time_limit_ms: u128, mut last_eval: EvalBr) -> Vec<EvalMove> {
 		let ts = Instant::now();
 
 		let mut moves = board.get_legal_moves();
@@ -166,39 +165,57 @@ impl Chara {
 			moves_evaluated.push(EvalMove::new(mov, EvalBr::new(0.0, 0)));
 		}
 
-		// what if previous score was f32::MAX or f32::MIN ?
-		let mut alpha = f32::max(0.0, last_eval.score + base_aspiration_window);
-		let mut beta  = f32::max(0.0, last_eval.score - base_aspiration_window);
-
-		self.target_depth = 2;
-		let mut quit = false;
-
-		loop {
-			let mut eval = EvalBr::new(f32::MIN, 0);
-
+		// if we have a mate attack, we must follow it;
+		// if enemy has a mate attack, we could actually consider surrendering :D
+		// if (last_eval.score == LARGE && !board.turn) || (last_eval.score == -LARGE && board.turn) {
+		if last_eval.score == LARGE {
+			let depth = last_eval.depth - 2;
+			
+			let mut eval = EvalBr::new(-LARGE, 0);
+			
 			for me in moves_evaluated.iter_mut() {
 				self.make_move(board, me.mov);
-				me.eval = max(me.eval, search(self, board, -beta, -alpha, self.target_depth - 1));
+				me.eval = max(me.eval, mate(self, board, depth-1));
 				self.revert_move(board);
-				if ts.elapsed().as_millis() > time_limit_ms {
-					quit = true;
-					break;
-				}
-				alpha = f32::max(alpha, me.eval.score);
-				if alpha >= beta {
+				if me.eval.score == LARGE {
 					break;
 				}
 			}
-	
-			moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| a.eval.cmp(&b.eval));
+		} else {
+			let mut depth = 2;
+			let mut quit = false;
 
-			if quit {
-				break;
+			loop {
+				let mut alpha = f32::max(0.0, last_eval.score + base_aspiration_window * depth as f32);
+				let mut beta  = f32::max(0.0, last_eval.score - base_aspiration_window * depth as f32);
+
+				let mut eval = EvalBr::new(-LARGE, 0);
+
+				for me in moves_evaluated.iter_mut() {
+					self.make_move(board, me.mov);
+					me.eval = max(me.eval, search(self, board, -beta, -alpha, depth - 1));
+					self.revert_move(board);
+					if ts.elapsed().as_millis() > time_limit_ms {
+						quit = true;
+						break;
+					}
+					alpha = f32::max(alpha, me.eval.score);
+					if alpha >= beta {
+						break;
+					}
+				}
+		
+				if quit {
+					break;
+				}
+
+				moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
+				last_eval = moves_evaluated[0].eval;
+				depth += 2;
 			}
-			
-			self.target_depth += 2;
 		}
 		
+		moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
 		moves_evaluated
 	}
 
@@ -209,8 +226,6 @@ impl Chara {
 		let hash = self.zobrist.cache_iter(board, mov, prev_hash);
 		self.history_vec.push(hash);
 	}
-	
-	// pub fn make_move_by_hash(&mut self, board: &mut Board, mov: u64, hash: u64) { }
 
 	pub fn revert_move(&mut self, board: &mut Board) {
 		board.revert_move();
@@ -223,17 +238,17 @@ impl Chara {
 		1) Search MUST use check extension! Eval does NOT evaluate checks or free captures specifically!
 		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically!
 	*/
-	pub fn eval(&mut self, board: &Board) -> Eval {
+	pub fn eval(&mut self, board: &Board) -> f32 {
 		let hash = *self.history_vec.last().unwrap();
-		if self.cache.contains_key(&hash) {
-			return self.cache[&hash];
+		if self.cache_leaves.contains_key(&hash) {
+			return self.cache_leaves[&hash];
 		}
 
 		/* CHECK FOR ANISH GIRI,
 			SETUP SCORE APPLICATION */
 
 		if board.hmc == 50 || self.history_set.contains(&hash) {
-			return Eval::new(0.0, 0, board.no);
+			return 0.0;
 		}
 
 		let counter = (board.bbs[N] | board.bbs[N2]).count_ones() * 3 + 
@@ -242,8 +257,8 @@ impl Chara {
 					  (board.bbs[Q] | board.bbs[Q2]).count_ones() * 8;
 
 		if counter < 4 && board.bbs[P] | board.bbs[P2] == 0 {
-			self.cache.insert(hash, Eval::new(0.0, 0, board.no));
-			return Eval::new(0.0, 0, board.no);
+			self.cache_leaves.insert(hash, 0.0);
+			return 0.0;
 		}
 
 		let phase = (counter < 31) as usize;
@@ -403,11 +418,11 @@ impl Chara {
 
 		/* SCORE APPLICATION END */
 
-		if self.cache.len() > CACHE_LIMIT {
+		if self.cache_leaves.len() > CACHE_LIMIT {
 			self.cache.clear();
 		}
-		self.cache.insert(hash, Eval::new(score, 0, board.no));
-		Eval::new(score, 0, board.no)
+		self.cache_leaves.insert(hash, score);
+		score
 	}
 }
 
