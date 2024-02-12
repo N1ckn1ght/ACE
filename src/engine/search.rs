@@ -53,6 +53,9 @@ pub fn search(
         chara.make_move(board, mov);
         eval = max(eval, -search(chara, board, -beta, -alpha, depth - 1));
         chara.revert_move(board);
+        if chara.ts.elapsed().as_millis() > chara.tl {
+            break;
+        }
         alpha = f32::max(alpha, eval.score);
         if alpha >= beta {
             break;
@@ -127,7 +130,7 @@ pub fn mate(
     board: &mut Board,
     depth: i16
 ) -> EvalBr {
-    
+
     /* SEARCH CONDITION */
 
     if depth == 0 {

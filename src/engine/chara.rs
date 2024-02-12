@@ -34,7 +34,10 @@ pub struct Chara {
 													// note: it's always 1 hash behind
 	/* Accessible constants */
 	pub zobrist:			Zobrist,
-	pub rng:				ThreadRng
+	pub rng:				ThreadRng,
+	/* Limitations */
+	pub ts:					Instant,				// timer start
+	pub tl:					u128					// time limit in ms
 }
 
 /* For more understandable indexing in eval() */
@@ -144,12 +147,15 @@ impl Chara {
 			history_vec:	cache_perm_vec,
 			history_set:	HashSet::default(),
 			zobrist,
-			rng:			rand::thread_rng()
+			rng:			rand::thread_rng(),
+			ts:				Instant::now(),
+			tl:				0
 		}
     }
 
 	pub fn think(&mut self, board: &mut Board, base_aspiration_window: f32, time_limit_ms: u128, mut last_eval: EvalBr) -> Vec<EvalMove> {
-		let ts = Instant::now();
+		self.ts = Instant::now();
+		self.tl = time_limit_ms;
 
 		let mut moves = board.get_legal_moves();
 		if moves.len() == 0 {
@@ -171,7 +177,8 @@ impl Chara {
 			
 			for me in moves_evaluated.iter_mut() {
 				self.make_move(board, me.mov);
-				me.eval = max(me.eval, mate(self, board, depth-1));
+				me.eval = max(me.eval, -mate(self, board, depth - 1));
+				me.eval.depth += 1;
 				self.revert_move(board);
 				if me.eval.score == LARGE {
 					break;
@@ -182,14 +189,14 @@ impl Chara {
 			let mut quit = false;
 
 			loop {
-				let mut alpha = f32::max(0.0, last_eval.score + base_aspiration_window * depth as f32);
-				let     beta  = f32::max(0.0, last_eval.score - base_aspiration_window * depth as f32);
+				let mut alpha = f32::max(0.0, last_eval.score - base_aspiration_window);
+				let     beta  = f32::max(0.0, last_eval.score + base_aspiration_window);
 
 				for me in moves_evaluated.iter_mut() {
 					self.make_move(board, me.mov);
-					me.eval = max(me.eval, search(self, board, -beta, -alpha, depth - 1));
+					me.eval = -search(self, board, -beta, -alpha, depth - 1);
 					self.revert_move(board);
-					if ts.elapsed().as_millis() > time_limit_ms {
+					if self.ts.elapsed().as_millis() > self.tl {
 						quit = true;
 						break;
 					}
@@ -206,6 +213,7 @@ impl Chara {
 				moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
 				last_eval = moves_evaluated[0].eval;
 				depth += 2;
+				println!("#DEBUG\tCranking up the depth! Now searching -{}- full moves ahead.", depth / 2);
 			}
 		}
 		
@@ -232,7 +240,7 @@ impl Chara {
 			}
 		}
 
-		println!("#DEBUG\tReal time spent: {} ms", ts.elapsed().as_millis());
+		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
 		moves_evaluated
 	}
 
@@ -257,16 +265,16 @@ impl Chara {
 	*/
 	pub fn eval(&mut self, board: &Board) -> f32 {
 		let hash = *self.history_vec.last().unwrap();
-		if self.cache_leaves.contains_key(&hash) {
-			return self.cache_leaves[&hash];
-		}
-
-		/* CHECK FOR ANISH GIRI,
-			SETUP SCORE APPLICATION */
 
 		if board.hmc == 50 || self.history_set.contains(&hash) {
 			return 0.0;
 		}
+
+		if self.cache_leaves.contains_key(&hash) {
+			return self.cache_leaves[&hash];
+		}
+
+		/* SETUP SCORE APPLICATION */
 
 		let counter = (board.bbs[N] | board.bbs[N2]).count_ones() * 3 + 
 					  (board.bbs[B] | board.bbs[B2]).count_ones() * 3 + 
