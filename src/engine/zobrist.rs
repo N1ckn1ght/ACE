@@ -1,3 +1,4 @@
+use rand::Rng;
 use crate::frame::{util::*, board::Board};
 
 pub struct Zobrist {

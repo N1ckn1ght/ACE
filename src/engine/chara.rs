@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::{max, min}, collections::{HashMap, HashSet}, time::Instant};
+use std::{cmp::max, collections::{HashMap, HashSet}, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use crate::engine::{weights::Weights, zobrist::Zobrist, search::search};
@@ -65,7 +65,7 @@ impl Chara {
     pub fn init(board: &Board, aggressiveness: f32, greed: f32, random_range: f32) -> Chara {
 		let mut w = Weights::default();
 
-		let piece_wmult: f32					= 1.2  * greed;
+		let piece_wmult: f32					= 1.0  * greed;
 		let piece_square_related_wmult: f32		= 0.75 / (aggressiveness * 0.5  + 0.5 );	// really slight balance-out
 		let mobility_wmult: f32					= 1.0  * (aggressiveness * 0.5  + 0.5 );
 		let align_wmult: f32					= 1.0  *  aggressiveness;
@@ -216,6 +216,7 @@ impl Chara {
 		}
 		
 		moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
+		println!("#DEBUG\tReal time spent: {} ms", ts.elapsed().as_millis());
 		moves_evaluated
 	}
 
@@ -418,9 +419,12 @@ impl Chara {
 
 		/* SCORE APPLICATION END */
 
-		if self.cache_leaves.len() > CACHE_LIMIT {
-			self.cache.clear();
+		if self.cache_leaves.len() + self.cache_branches.len() * 2 > CACHE_LIMIT {
+			println!("#DEBUG\tClearing cache, leaves: {}, branches: {}", self.cache_leaves.len(), self.cache_branches.len());
+			self.cache_leaves.clear();
+			self.cache_branches.clear();
 		}
+		
 		self.cache_leaves.insert(hash, score);
 		score
 	}
@@ -434,16 +438,14 @@ mod tests {
 	#[test]
 	fn test_chara_eval_initial() {
 		let mut board = Board::default();
-		let mut chara = Chara::init(&mut board, 0.0, 1.0);
+		let mut chara = Chara::init(&mut board, 0.8, 1.2, 0.0);
 		let moves = board.get_legal_moves();
 		board.make_move(move_transform_back("e2e4", &moves).unwrap());
 		let moves = board.get_legal_moves();
 		let mov = move_transform_back("e7e5", &moves).unwrap();
 		board.make_move(mov);
 		let eval = chara.eval(&board);
-		assert_eq!((eval.score * 1000.0).round(), (chara.turn_weights[0][TURN_ADD] * 1000.0).round());
-		assert_eq!(eval.depth, 2);
-		assert_eq!(eval.mate, 0);
+		assert_eq!((eval * 1000.0).round(), (chara.turn_weights[0][TURN_ADD] * 1000.0).round());
 	}
 
 	#[test]
@@ -456,9 +458,9 @@ mod tests {
 		];
 		for fen in fens.into_iter() {
 			let mut board = Board::import(fen);
-			let mut chara = Chara::init(&mut board, 0.0, 1.0);
+			let mut chara = Chara::init(&mut board, 0.8, 1.2, 0.0);
 			let eval = chara.eval(&board);
-			assert_eq!((eval.score * 1000.0).round(), (chara.turn_weights[0][TURN_ADD] * 1000.0).round());
+			assert_eq!((eval * 1000.0).round(), (chara.turn_weights[0][TURN_ADD] * 1000.0).round());
 		}
 	}
 }

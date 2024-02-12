@@ -9,7 +9,8 @@ use phf::phf_map;
 
 /* LIMITATIONS */
 
-pub const CACHE_LIMIT = ???;   // in bits, better to leave some MiB before limit
+pub const CACHE_LIMIT: usize = 469762048;   // divide your RAM in bits by 32;
+                                            // may overflow (TODO: fix this)
 // pub const FLOAT_TO_INT_MULT: i32 = 100000;
 
 /* SPECIFIED PATHES */
