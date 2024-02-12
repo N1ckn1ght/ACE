@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use std::{cmp::{min, Ordering}, fs, io::Cursor, path::Path};
+use std::{cmp::{min, Ordering}, fs, io::Cursor, ops::Neg, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
@@ -218,16 +218,14 @@ pub fn xor64(mut num: u64) -> u64 {
 #[repr(align(64))]
 pub struct EvalBr {
 	pub score: f32,
-	pub depth: i16,
-    pub is_extent: bool
+	pub depth: i16
 }
 
 impl EvalBr {
-    pub fn new(score: f32, depth: i16, is_extent: bool) -> Self {
+    pub fn new(score: f32, depth: i16) -> Self {
 		EvalBr {
 			score,
-			depth,
-            is_extent
+			depth
 		}
 	}
 }
@@ -249,6 +247,15 @@ impl Ord for EvalBr {
 impl PartialOrd for EvalBr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl Neg for EvalBr {
+    type Output = Self;
+
+    fn neg(mut self) -> Self::Output {
+        self.score = -self.score;
+        self
     }
 }
 
@@ -465,6 +472,7 @@ pub fn move_transform_back(input: &str, legal_moves: &[u64]) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::cmp::max;
     use super::*;
     use crate::frame::board::Board;
 
@@ -560,15 +568,20 @@ mod tests {
 
     #[test]
     fn test_utility_eval_branch_comparisons() {
-        let eval1 = EvalBr::new( 0.0, 0, false);
-        let eval2 = EvalBr::new( 1.0, 0, false);
-        let eval3 = EvalBr::new(-1.0, 0, false);
-        let eval4 = EvalBr::new(-1.0, 1, false);
-        let eval5 = EvalBr::new(-1.0, 1, true);
+        let eval1 = EvalBr::new( 0.0, 0);
+        let eval2 = EvalBr::new( 1.0, 0);
+        let eval3 = EvalBr::new(-1.0, 0);
+        let eval4 = EvalBr::new(-1.0, 1);
+        let eval5 = EvalBr::new(-1.0, -1);
+        let eval6 = EvalBr::new( 1.0, 1);
         assert_eq!(eval1 <  eval2, true);
         assert_eq!(eval1 >  eval3, true);
         assert_eq!(eval2 >  eval3, true);
         assert_eq!(eval3 == eval4, true);
         assert_eq!(eval4 == eval5, true);
+        assert_eq!(eval2 == eval6, true);
+        let eval7 = max(eval1, eval6);
+        assert_eq!(eval6 == eval7, true);
+        assert_eq!(eval7.depth, 1);
     }
 }

@@ -5,23 +5,23 @@ use crate::engine::chara::Chara;
 pub fn search(
     chara: &mut Chara,
     board: &mut Board,
-    mut alpha: Eval,
-    mut beta: Eval,
-    maximize: bool,
+    mut alpha: f32,
+    mut beta: f32,
+    turn: bool,
     depth: i16
-) -> Eval {
+) -> EvalBr {
 
     /* SEARCH CONDITION */
 
     if depth == 0 {
-        return extension(chara, board, alpha, beta, maximize, true);
+        return extension(chara, board, alpha, beta, turn, true);
     }
 
     /* ALREADY CACHED POSITION CHECK */
 
     let hash = *chara.history_vec.last().unwrap();
-    if chara.cache.contains_key(&hash) {
-        let mut eval = chara.cache[&hash];
+    if chara.cache_branches.contains_key(&hash) {
+        let mut eval = chara.cache_branches[&hash];
         if depth <= eval.depth {
             return eval;
         }
@@ -37,7 +37,7 @@ pub fn search(
             if board.turn {
                 score = f32::MAX;
             }
-            return Eval::new(score, 0, true);
+            return EvalBr::new(score, 0);
         }
     }
 
@@ -48,36 +48,20 @@ pub fn search(
 
     /* ALPHA/BETA PRUNING */
 
-    let mut eval;
+    let mut eval = EvalBr::new(f32::MIN, 0);
 
-    if maximize {
-        eval = Eval::new(f32::MIN, 0, false);
-        for mov in moves.into_iter() {
-            chara.make_move(board, mov);
-            eval = max(eval, search(chara, board, alpha, beta, false, depth, quiet_extension, mov));
-            eval.depth += 1;
-            chara.revert_move(board);
-            alpha = max(alpha, eval);
-            if alpha >= beta {
-                break;
-            }
-        }
-    } else {
-        eval = Eval::new(0.0, 1, depth);
-        for mov in moves.into_iter() {
-            chara.make_move(board, mov);
-            eval = min(eval, search(chara, board, alpha, beta, true, depth, quiet_extension, mov));
-            eval.depth += 1;
-            chara.revert_move(board);
-            beta = min(beta, eval);
-            if beta <= alpha {
-                break;
-            }
+    for mov in moves.into_iter() {
+        chara.make_move(board, mov);
+        eval = max(eval, -search(chara, board, -beta, -alpha, !turn, depth - 1));
+        chara.revert_move(board);
+        alpha = alpha.max(eval.score);
+        if alpha >= beta {
+            break;
         }
     }
 
-    // cache eval!
-
+    eval.depth += 1;
+    chara.cache_branches.insert(hash, eval);
     return eval;
 }
 
@@ -86,9 +70,9 @@ pub fn extension(
     board: &mut Board,
     mut alpha: f32,
     mut beta: f32,
-    maximize: bool,
+    turn: bool,
     capture: bool
-) -> Eval {
+) -> EvalBr {
     
     /* EXTENSION CONDITION */
 
@@ -113,7 +97,7 @@ pub fn extension(
             if board.turn {
                 score = f32::MAX;
             }
-            return Eval::new(score, 0, false);
+            return EvalBr::new(score, 0);
         }
     }
 
@@ -126,29 +110,17 @@ pub fn extension(
 
     let mut eval = chara.eval(board);
 
-    if maximize {
-        for mov in moves.into_iter() {
-            alpha = max(alpha, eval);
-            if alpha >= beta {
-                break;
-            }
-            chara.make_move(board, mov);
-            eval = max(eval, extension(chara, board, alpha, beta, false, mov < CAPTURE_MINIMUM));
-            chara.revert_move(board);
+    for mov in moves.into_iter() {
+        alpha = alpha.max(eval.score);
+        if alpha >= beta {
+            break;
         }
-    } else {
-        for mov in moves.into_iter() {
-            beta = min(beta, eval);
-            if beta <= alpha {
-                break;
-            }
-            chara.make_move(board, mov);
-            eval = min(eval, extension(chara, board, alpha, beta, true, mov < CAPTURE_MINIMUM));
-            chara.revert_move(board);
-        }
+        chara.make_move(board, mov);
+        eval = max(eval, -extension(chara, board, -beta, -alpha, !turn, mov < CAPTURE_MINIMUM));
+        chara.revert_move(board);
     }
 
     eval.is_extent = true;
-    chara.cache.insert(hash, eval);
+    chara.cache_branches.insert(hash, eval);
     eval
 }
