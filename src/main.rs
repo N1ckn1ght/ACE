@@ -36,7 +36,7 @@ fn driver(chara: &mut Chara, board: &mut Board) {
 
         let ems = chara.think(board, 1.5, 1000, last_eval);
         for (i, em) in ems.iter().enumerate() {
-            println!("{}.\t{}\tscore = {}\tdepth = {}", i + 1, move_transform(em.mov), em.eval.score, em.eval.depth / 2);
+            println!("{}.\t{}\tscore = {}\t\tdepth = {}", i + 1, move_transform(em.mov), em.eval.score, em.eval.depth / 2);
         }
         println!();
 
@@ -44,8 +44,8 @@ fn driver(chara: &mut Chara, board: &mut Board) {
         loop {
             let str = input();
             mov = move_transform_back(&str.to_owned(), &legals);
-            if mov.is_some() {
-                chara.make_move(board, mov.unwrap());
+            if let Some(i) = mov {
+                chara.make_move(board, i);
                 break;
             }
             println!("Move not found?");

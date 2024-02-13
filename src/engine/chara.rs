@@ -101,24 +101,24 @@ impl Chara {
 		}
 
 		/* Apply coefficients */
-		w.turn_weights_pre.iter_mut().for_each(|w| *w = *w * mobility_wmult);
-		w.align_weights_pre.iter_mut().for_each(|arr| arr.iter_mut().for_each(|w| *w = *w * align_wmult));
-		w.battery_weights_pre.iter_mut().for_each(|w| *w = *w * battery_wmult);
+		w.turn_weights_pre.iter_mut().for_each(|w| *w *= mobility_wmult);
+		w.align_weights_pre.iter_mut().for_each(|arr| arr.iter_mut().for_each(|w| *w *= align_wmult));
+		w.battery_weights_pre.iter_mut().for_each(|w| *w *= battery_wmult);
 		w.dp_weight += -0.25 + (-pawn_structure_wmult).exp2() * 0.5;
-		w.pp_weights.iter_mut().for_each(|w| *w = *w * pawn_structure_wmult);
-		w.outpost_weight_pre.iter_mut().for_each(|w| *w = *w * minor_piece_pos_wmult);
-		w.dan_possible_pre.iter_mut().for_each(|w| *w = *w * minor_piece_pos_wmult);
+		w.pp_weights.iter_mut().for_each(|w| *w *= pawn_structure_wmult);
+		w.outpost_weight_pre.iter_mut().for_each(|w| *w *= minor_piece_pos_wmult);
+		w.dan_possible_pre.iter_mut().for_each(|w| *w *= minor_piece_pos_wmult);
 
 		/* Transform */
-		let mut turn_weights	= [w.turn_weights_pre.clone(); 2];
+		let mut turn_weights	= [w.turn_weights_pre; 2];
 		turn_weights[1][1]		= -turn_weights[0][1];
 		turn_weights[1][0]		= 1.0 / turn_weights[0][0];
-		let mut battery_weights = [w.battery_weights_pre.clone(); 2];
-		battery_weights[1].iter_mut().for_each(|w| *w = *w * -1.0);
-		let mut outpost_weights	= [w.outpost_weight_pre.clone(); 2];
-		outpost_weights[1].iter_mut().for_each(|w| *w = *w * -1.0);
-		let mut dan_possible	= [w.dan_possible_pre.clone(); 2];
-		dan_possible[1].iter_mut().for_each(|w| *w = *w * -1.0);
+		let mut battery_weights = [w.battery_weights_pre; 2];
+		battery_weights[1].iter_mut().for_each(|w| *w *= -1.0);
+		let mut outpost_weights	= [w.outpost_weight_pre; 2];
+		outpost_weights[1].iter_mut().for_each(|w| *w *= -1.0);
+		let mut dan_possible	= [w.dan_possible_pre; 2];
+		dan_possible[1].iter_mut().for_each(|w| *w *= -1.0);
 		let mut align_weights 	= [[[0.0; 6]; 2]; 2];
 		for i in 0..2 {
 			for k in 0..6 {
@@ -137,8 +137,8 @@ impl Chara {
 			turn_weights,
 			align_weights,
 			battery_weights,
-			dp_weight:		w.dp_weight.clone(),
-			pp_weights:		w.pp_weights.clone(),
+			dp_weight:		w.dp_weight,
+			pp_weights:		w.pp_weights,
 			outpost_weights,
 			dan_possible,
 			random_range,
@@ -158,7 +158,7 @@ impl Chara {
 		self.tl = time_limit_ms;
 
 		let mut moves = board.get_legal_moves();
-		if moves.len() == 0 {
+		if moves.is_empty() {
 			return vec![];
 		}
 		moves.sort();
@@ -177,7 +177,7 @@ impl Chara {
 			
 			for me in moves_evaluated.iter_mut() {
 				self.make_move(board, me.mov);
-				me.eval = max(me.eval, -mate(self, board, depth - 1));
+				me.eval = -mate(self, board, depth - 1);
 				me.eval.depth += 1;
 				self.revert_move(board);
 				if me.eval.score == LARGE {
@@ -189,12 +189,15 @@ impl Chara {
 			let mut quit = false;
 
 			loop {
-				let mut alpha = f32::max(0.0, last_eval.score - base_aspiration_window);
-				let     beta  = f32::max(0.0, last_eval.score + base_aspiration_window);
+				// let mut alpha = f32::max(0.0, last_eval.score - base_aspiration_window);
+				// let     beta  = f32::max(0.0, last_eval.score + base_aspiration_window);
+				let mut alpha = f32::max(0.0, -LARGE);
+				let     beta  = f32::max(0.0,  LARGE);
 
 				for me in moves_evaluated.iter_mut() {
 					self.make_move(board, me.mov);
 					me.eval = -search(self, board, -beta, -alpha, depth - 1);
+					me.eval.depth += 1;
 					self.revert_move(board);
 					if self.ts.elapsed().as_millis() > self.tl {
 						quit = true;
@@ -210,7 +213,11 @@ impl Chara {
 					break;
 				}
 
+				// debug
+				// break;
+
 				moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
+
 				last_eval = moves_evaluated[0].eval;
 				depth += 2;
 				println!("#DEBUG\tCranking up the depth! Now searching -{}- full moves ahead.", depth / 2);
@@ -226,7 +233,7 @@ impl Chara {
 				same = 1;
 				continue;
 			}
-			if me.eval.score + self.random_range >= moves_evaluated[0].eval.score {
+			if me.eval.score.abs() + self.random_range >= moves_evaluated[0].eval.score.abs() {
 				same += 1;
 				continue;
 			}
@@ -234,9 +241,7 @@ impl Chara {
 		if same > 1 {
 			let rnd = self.rng.gen::<usize>() % same;
 			if rnd != 0 {
-				let tmp = moves_evaluated[rnd];
-				moves_evaluated[rnd] = moves_evaluated[0];
-				moves_evaluated[0] = tmp;
+				moves_evaluated.swap(0, rnd);
 			}
 		}
 
@@ -255,7 +260,7 @@ impl Chara {
 	pub fn revert_move(&mut self, board: &mut Board) {
 		board.revert_move();
 		self.history_vec.pop();
-		self.history_set.remove(&self.history_vec.last().unwrap());
+		self.history_set.remove(self.history_vec.last().unwrap());
 	}
 
 	/* Warning!

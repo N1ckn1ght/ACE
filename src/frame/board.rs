@@ -640,12 +640,11 @@ impl Board {
             }
             // if we are white - we are interested in leading bit (it's the closest one)
             // otherwise we need trailing bit
-            let path;
-            if ally_colour == 0 {
-                path = self.get_sliding_straight_path_unsafe(csq, glz(pbit));
+            let path = if ally_colour == 0 {
+                self.get_sliding_straight_path_unsafe(csq, glz(pbit))
             } else {
-                path = self.get_sliding_straight_path_unsafe(csq, gtz(pbit));
-            }
+                self.get_sliding_straight_path_unsafe(csq, gtz(pbit))
+            };
             if path & occupancy == 0 {
                 return true;
             }

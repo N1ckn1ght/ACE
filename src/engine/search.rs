@@ -30,14 +30,12 @@ pub fn search(
 
     /* GAME END CHECK */
 
-    if moves.is_empty() == 0 {
-        if board.is_in_check() {
-            let mut score = -LARGE;
-            if board.turn {
-                score = LARGE;
-            }
-            return EvalBr::new(score, 0);
+    if moves.is_empty() && board.is_in_check() {
+        let mut score = -LARGE;
+        if board.turn {
+            score = LARGE;
         }
+        return EvalBr::new(score, 0);
     }
 
     /* PRE-SORTING (captures first) */
@@ -92,14 +90,12 @@ pub fn extension(
 
     /* GAME END CHECK */
 
-    if moves.is_empty() == 0 {
-        if board.is_in_check() {
-            let mut score = -LARGE;
-            if board.turn {
-                score = LARGE;
-            }
-            return EvalBr::new(score, 0);
+    if moves.is_empty() && board.is_in_check() {
+        let mut score = -LARGE;
+        if board.turn {
+            score = LARGE;
         }
+        return EvalBr::new(score, 0);
     }
 
     /* PRE-SORTING (captures first) */
@@ -151,14 +147,12 @@ pub fn mate(
 
     /* GAME END CHECK */
 
-    if moves.is_empty() {
-        if board.is_in_check() {
-            let mut score = -LARGE;
-            if board.turn {
-                score = LARGE;
-            }
-            return EvalBr::new(score, 0);
+    if moves.is_empty() && board.is_in_check() {
+        let mut score = -LARGE;
+        if board.turn {
+            score = LARGE;
         }
+        return EvalBr::new(score, 0);
     }
 
     /* PRE-SORTING (captures first) */

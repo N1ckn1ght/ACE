@@ -461,7 +461,7 @@ pub fn move_transform_back(input: &str, legal_moves: &[u64]) -> Option<u64> {
     if command.len() > 4 {
         promo = PIECES[&(command[4] as char)] & !1;
     }
-    for legal in legal_moves.into_iter() {
+    for legal in legal_moves.iter() {
         let mfrom  = move_get_from(*legal);
         let mto    = move_get_to(*legal);
         let mpromo = move_get_promotion(*legal);
