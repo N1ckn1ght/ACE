@@ -18,7 +18,7 @@ fn main() {
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut board = Board::default();
-    let mut chara = Chara::init(&board, 0.8, 1.2, 0.005);
+    let mut chara = Chara::init(&board, 0.8, 1.2, 0.0);
 
     driver(&mut chara, &mut board);
 }
@@ -34,7 +34,7 @@ fn driver(chara: &mut Chara, board: &mut Board) {
             break;
         }
 
-        let ems = chara.think(board, 1.5, 1000, last_eval);
+        let ems = chara.think(board, 1.0, 1500, last_eval);
         for (i, em) in ems.iter().enumerate() {
             println!("{}.\t{}\tscore = {}\t\tdepth = {}", i + 1, move_transform(em.mov), em.eval.score, em.eval.depth / 2);
         }

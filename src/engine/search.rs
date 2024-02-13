@@ -52,7 +52,7 @@ pub fn search(
         eval = max(eval, -search(chara, board, -beta, -alpha, depth - 1));
         chara.revert_move(board);
         if chara.ts.elapsed().as_millis() > chara.tl {
-            break;
+            // what?
         }
         alpha = f32::max(alpha, eval.score);
         if alpha >= beta {

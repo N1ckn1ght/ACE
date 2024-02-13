@@ -189,10 +189,10 @@ impl Chara {
 			let mut quit = false;
 
 			loop {
-				// let mut alpha = f32::max(0.0, last_eval.score - base_aspiration_window);
-				// let     beta  = f32::max(0.0, last_eval.score + base_aspiration_window);
-				let mut alpha = f32::max(0.0, -LARGE);
-				let     beta  = f32::max(0.0,  LARGE);
+				let mut alpha = f32::min(0.0, last_eval.score - base_aspiration_window);
+				let     beta  = f32::max(0.0, last_eval.score + base_aspiration_window);
+				// let mut alpha = f32::min(0.0, -LARGE);
+				// let     beta  = f32::max(0.0,  LARGE);
 
 				for me in moves_evaluated.iter_mut() {
 					self.make_move(board, me.mov);
@@ -224,7 +224,7 @@ impl Chara {
 			}
 		}
 		
-		moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
+		moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.depth.cmp(&a.eval.depth).then(b.eval.score.total_cmp(&a.eval.score)));
 
 		// a little bit of randomness in status quo (could ruin everything potentially :D)
 		let mut same = 0;
@@ -233,12 +233,13 @@ impl Chara {
 				same = 1;
 				continue;
 			}
-			if me.eval.score.abs() + self.random_range >= moves_evaluated[0].eval.score.abs() {
+			if me.eval.depth == moves_evaluated[0].eval.depth && me.eval.score + self.random_range >= moves_evaluated[0].eval.score {
 				same += 1;
 				continue;
 			}
 		}
 		if same > 1 {
+			println!("#DEBUG\tChoosing randomly from pool of {} moves...", same);
 			let rnd = self.rng.gen::<usize>() % same;
 			if rnd != 0 {
 				moves_evaluated.swap(0, rnd);
@@ -249,7 +250,7 @@ impl Chara {
 		moves_evaluated
 	}
 
-	pub fn make_move(&mut self, board: &mut Board, mov: u64) {
+	pub fn make_move(&mut self, board: &mut Board, mov: u64	) {
 		let prev_hash = *self.history_vec.last().unwrap();
 		self.history_set.insert(prev_hash);
 		board.make_move(mov);
@@ -454,6 +455,10 @@ impl Chara {
 			self.cache_branches.clear();
 		}
 		
+		if board.turn {
+			score = -score;
+		}
+
 		self.cache_leaves.insert(hash, score);
 		score
 	}
