@@ -34,7 +34,7 @@ fn driver(chara: &mut Chara, board: &mut Board) {
             break;
         }
 
-        let ems = chara.think(board, 1.0, 1500, last_eval);
+        let ems = chara.think(board, 0.3, 2000, last_eval);
         for (i, em) in ems.iter().enumerate() {
             println!("{}.\t{}\tscore = {}\t\tdepth = {}", i + 1, move_transform(em.mov), em.eval.score, em.eval.depth / 2);
         }
