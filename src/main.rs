@@ -30,7 +30,7 @@ fn driver(chara: &mut Chara, board: &mut Board) {
         println!("Processing...\n");
 
         let legals = board.get_legal_moves();
-        if legals.len() == 0 {
+        if legals.is_empty() {
             break;
         }
 
@@ -47,9 +47,8 @@ fn driver(chara: &mut Chara, board: &mut Board) {
             if mov.is_some() {
                 chara.make_move(board, mov.unwrap());
                 break;
-            } else {
-                println!("Move not found?");
             }
+            println!("Move not found?");
         }
 
         for em in ems.iter() {

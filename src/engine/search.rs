@@ -30,7 +30,7 @@ pub fn search(
 
     /* GAME END CHECK */
 
-    if moves.len() == 0 {
+    if moves.is_empty() == 0 {
         if board.is_in_check() {
             let mut score = -LARGE;
             if board.turn {
@@ -92,7 +92,7 @@ pub fn extension(
 
     /* GAME END CHECK */
 
-    if moves.len() == 0 {
+    if moves.is_empty() == 0 {
         if board.is_in_check() {
             let mut score = -LARGE;
             if board.turn {
@@ -151,7 +151,7 @@ pub fn mate(
 
     /* GAME END CHECK */
 
-    if moves.len() == 0 {
+    if moves.is_empty() {
         if board.is_in_check() {
             let mut score = -LARGE;
             if board.turn {
@@ -178,5 +178,5 @@ pub fn mate(
 
     eval.depth += 1;
     chara.cache_branches.insert(hash, eval);
-    return eval;
+    eval
 }
