@@ -1,4 +1,4 @@
-use crate::{util::*, gen::Maps};
+use super::{util::*, maps::Maps};
 
 /* Bitboard index structure (Little-Endian):
          H  G  F  E  D  C  B  A          A  B  C  D  E  F  G  H
@@ -474,6 +474,7 @@ impl Board {
         E
     }
 
+    #[allow(dead_code)]
     pub fn export(&self) -> String {
         let mut fen = String::new();
         let mut pieces: [usize; 64] = [E; 64];
@@ -567,22 +568,22 @@ impl Board {
         - fn export_pgn
     */
 
-    /* More functions for evaluation and stuff */
+    /* More functions for engine usage */
 
-	pub fn get_sliding_straight_path(&self, sq1: usize, sq2: usize) -> u64 {
-        if sq1 & 7 == sq2 & 7 || sq1 & 56 == sq2 & 56 {
-            return self.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.get_sliding_straight_attacks(sq2, 1 << sq1, 0);
-        }
-        0
-	}
+	// pub fn get_sliding_straight_path(&self, sq1: usize, sq2: usize) -> u64 {
+    //     if sq1 & 7 == sq2 & 7 || sq1 & 56 == sq2 & 56 {
+    //         return self.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.get_sliding_straight_attacks(sq2, 1 << sq1, 0);
+    //     }
+    //     0
+	// }
 
-	pub fn get_sliding_diagonal_path(&self, sq1: usize, sq2: usize) -> u64 {
-        let attack1 = self.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0);
-        if attack1 & (1 << sq2) != 0 {
-            return attack1 & self.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0);
-        }
-        0
-	}
+	// pub fn get_sliding_diagonal_path(&self, sq1: usize, sq2: usize) -> u64 {
+    //     let attack1 = self.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0);
+    //     if attack1 & (1 << sq2) != 0 {
+    //         return attack1 & self.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0);
+    //     }
+    //     0
+	// }
 
     #[inline]
     pub fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
@@ -639,12 +640,11 @@ impl Board {
             }
             // if we are white - we are interested in leading bit (it's the closest one)
             // otherwise we need trailing bit
-            let path;
-            if ally_colour == 0 {
-                path = self.get_sliding_straight_path_unsafe(csq, glz(pbit));
+            let path = if ally_colour == 0 {
+                self.get_sliding_straight_path_unsafe(csq, glz(pbit))
             } else {
-                path = self.get_sliding_straight_path_unsafe(csq, gtz(pbit));
-            }
+                self.get_sliding_straight_path_unsafe(csq, gtz(pbit))
+            };
             if path & occupancy == 0 {
                 return true;
             }
@@ -654,6 +654,7 @@ impl Board {
 
     /* Debug and benchmarking */
 
+    #[allow(dead_code)]
     pub fn perft(&mut self, depth: usize) -> u64 {
         let moves = self.get_legal_moves();
         if depth == 1 {
@@ -669,6 +670,7 @@ impl Board {
     }
 
     // uses standard output instead
+    #[allow(dead_code)]
     pub fn perft_divided(&mut self, depth: usize) {
         let moves = self.get_legal_moves();
         for mov in moves.iter() {
@@ -679,6 +681,7 @@ impl Board {
     }
 
     // [moves, captures, en passants, castles, promotions]
+    #[allow(dead_code)]
     pub fn perft_verbosed(&mut self, depth: usize) -> [u64; 5] {
         let moves = self.get_legal_moves();
         if depth == 1 {
@@ -1042,33 +1045,35 @@ mod tests {
     }
 
     #[test]
-    fn test_board_sliding_straight_path() {
+    fn test_board_aux() {
         let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
-        let ar_false = [[50, 1], [0, 15], [63, 54], [56, 1], [43, 4], [9, 2], [61, 32], [8, 17], [15, 16], [0, 57], [0, 8]];
+        // let ar_false = [[50, 1], [0, 15], [63, 54], [56, 1], [43, 4], [9, 2], [61, 32], [8, 17], [15, 16], [0, 57], [0, 8]];
         let board = Board::default();
         for case in ar_true.into_iter() {
-            assert_ne!(board.get_sliding_straight_path(case[0], case[1]), 0);
+            // assert_ne!(board.get_sliding_straight_path(case[0], case[1]), 0);
             assert_ne!(board.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
         }
-        for case in ar_false.into_iter() {
-            assert_eq!(board.get_sliding_straight_path(case[0], case[1]), 0);
-        }
-    }
+        // for case in ar_false.into_iter() {
+        //     assert_eq!(board.get_sliding_straight_path(case[0], case[1]), 0);
+        // }
 
-    #[test]
-    fn test_board_sliding_diagonal_path() {
         let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
-        let ar_false = [[0, 10], [56, 6], [39, 31], [3, 40], [2, 23], [5, 34], [63, 1], [62, 0], [49, 46], [23, 16], [2, 3], [7, 14], [1, 8]];
+        // let ar_false = [[0, 10], [56, 6], [39, 31], [3, 40], [2, 23], [5, 34], [63, 1], [62, 0], [49, 46], [23, 16], [2, 3], [7, 14], [1, 8]];
         let board = Board::default();
         for case in ar_true.into_iter() {
-            assert_ne!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
+            // assert_ne!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
             assert_ne!(board.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
         }
-        for case in ar_false.into_iter() {
-            assert_eq!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
-        }
+        // for case in ar_false.into_iter() {
+        //     assert_eq!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
+        // }
+
+        let board = Board::default();
+        assert_eq!(board.is_in_check(), false);
+        let board = Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+        assert_eq!(board.is_in_check(), true);
     }
-    
+
     #[bench]
     fn perft_5(b: &mut Bencher) {
         let depth = 5;

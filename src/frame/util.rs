@@ -3,13 +3,14 @@
 
 #![allow(dead_code)]
 
-use std::{cmp::{min, Ordering}, fs, io::Cursor, path::Path};
+use std::{cmp::{min, Ordering}, fs, io::Cursor, ops::Neg, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
 /* LIMITATIONS */
 
-pub const CACHE_LIMIT: usize = 100663296;   // for approx. <2048 MiB memory usage, 128 bit per hash
+pub const CACHE_LIMIT: usize = 469762048;   // divide your RAM in bits by 32;
+                                            // may overflow (TODO: fix this)
 // pub const FLOAT_TO_INT_MULT: i32 = 100000;
 
 /* SPECIFIED PATHES */
@@ -94,6 +95,8 @@ pub const CSB: u8 = 0b0010; // castle short black
 pub const CLW: u8 = 0b0100; // castle long white
 pub const CLB: u8 = 0b1000; // castle long black
 
+pub const LARGE: f32 = 24576.0;
+
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
 
 #[inline]
@@ -153,7 +156,7 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
 
 // since it's not a struct, let's use more inline fuctions
 // since minimum piece (P) is 0, empty piece will be encoded to E (or any other value greater than K2, e.g. 12)
-// also this time it's not necessary to have a certain encoding struct to sort by (because of iterative deepening)
+// it's good to have captures as highest possible bits since it really helps in pre-ordering
 // I dislike using u64, but in the end it allows to store everything without heavy ciphering/deciphering
 // [8 - SPECIAL][8 - square from][8 - square to][4 - moving piece][4 - promotion][4 - captured piece][28 - FREE]
 // TODO: u32 is, in fact, enough, because (so far) we don't encode any checks! Maybe optimize this?..
@@ -162,6 +165,8 @@ pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promoti
     // x86 systems are not gonna like that
     special | (from << 8 | to << 16 | piece << 24 | promotion << 28) as u64 | (capture as u64) << 32
 }
+
+pub const CAPTURE_MINIMUM: u64 = (E as u64) << 32;
 
 #[inline]
 pub fn move_get_from(mov: u64) -> usize {
@@ -209,65 +214,62 @@ pub fn xor64(mut num: u64) -> u64 {
 
 /* DATA STRUCTURES */
 
-// optimize if necessary? i8 is enough for checkmate enclosure, though now this struct is 64 bit exactly
+// EvalLeaf is simple f32 (just score)!
+// EvalBranch on the other hand needs to store branch depth and if it is an extent eval (possibly a/b values too)
+
 #[derive(Copy, Clone)]
-pub struct Eval {
+#[repr(align(64))]
+pub struct EvalBr {
 	pub score: f32,
-	pub mate:  i16,	/* It will be stored as +-1 to the actual checkmate count, such as:
-						-  2 is M+1, +1 is white victory
-						-  0 is no mate found
-						- -2 is M-1, -1 is black victory
-					*/
 	pub depth: i16
 }
 
-impl Eval {
-    pub fn new(score: f32, mate: i16, depth: i16) -> Self {
-		Eval {
+impl EvalBr {
+    pub fn new(score: f32, depth: i16) -> Self {
+		EvalBr {
 			score,
-			mate,
 			depth
 		}
 	}
 }
 
-impl PartialEq for Eval {
+impl PartialEq for EvalBr {
     fn eq(&self, other: &Self) -> bool {
-        self.mate == other.mate && self.score == other.score
+        self.score == other.score
     }
 }
 
-impl Eq for Eval {}
+impl Eq for EvalBr {}
 
-impl Ord for Eval {
-	fn cmp(&self, other: &Eval) -> Ordering {
-		if self.mate == other.mate {
-			return self.score.total_cmp(&other.score);
-		}
-        if self.mate > 0 && other.mate > 0 {
-            return self.mate.cmp(&other.mate).reverse().then(Ordering::Less);
-        }
-        if self.mate < 0 && other.mate < 0 {
-            return self.mate.cmp(&other.mate).reverse().then(Ordering::Less);
-        }
-        self.mate.signum().cmp(&other.mate.signum())
+impl Ord for EvalBr {
+	fn cmp(&self, other: &EvalBr) -> Ordering {
+        self.score.total_cmp(&other.score)
 	}
 }
 
-impl PartialOrd for Eval {
+impl PartialOrd for EvalBr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl Neg for EvalBr {
+    type Output = Self;
+
+    fn neg(mut self) -> Self::Output {
+        self.score = -self.score;
+        self
     }
 }
 
 #[derive(Copy, Clone)]
 pub struct EvalMove {
     pub mov: u64,
-    pub eval: Eval
+    pub eval: EvalBr
 }
 
 impl EvalMove {
-    pub fn new(mov: u64, eval: Eval) -> Self {
+    pub fn new(mov: u64, eval: EvalBr) -> Self {
         EvalMove {
             mov,
             eval
@@ -459,7 +461,7 @@ pub fn move_transform_back(input: &str, legal_moves: &[u64]) -> Option<u64> {
     if command.len() > 4 {
         promo = PIECES[&(command[4] as char)] & !1;
     }
-    for legal in legal_moves.into_iter() {
+    for legal in legal_moves.iter() {
         let mfrom  = move_get_from(*legal);
         let mto    = move_get_to(*legal);
         let mpromo = move_get_promotion(*legal);
@@ -473,8 +475,9 @@ pub fn move_transform_back(input: &str, legal_moves: &[u64]) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::cmp::max;
     use super::*;
-    use crate::board::Board;
+    use crate::frame::board::Board;
 
     #[test]
     fn test_utility_file_io() {
@@ -567,26 +570,21 @@ mod tests {
     }
 
     #[test]
-    fn test_utility_eval_comparisons() {
-        let eval1 = Eval::new( 0.0,  0, 0);
-        let eval2 = Eval::new( 1.0,  0, 0);
-        let eval3 = Eval::new(-1.0,  0, 0);
-        let eval4 = Eval::new( 0.0,  1, 0);
-        let eval5 = Eval::new( 0.0, -1, 0);
-        let eval6 = Eval::new( 9.9, -1, 0);
-        let eval7 = Eval::new( 0.0,  2, 0);
-        let eval8 = Eval::new( 0.0, -2, 0);
-        assert_eq!(eval1 != eval2, true);
-        assert_eq!(eval1 == eval1, true);
-        assert_eq!(eval1 < eval2, true);
-        assert_eq!(eval1 > eval3, true);
-        assert_eq!(eval2 > eval3, true);
-        assert_eq!(eval1 < eval4, true);
-        assert_eq!(eval4 > eval5, true);
-        assert_eq!(eval4 > eval6, true);
-        assert_eq!(eval6 > eval5, true);
-        assert_eq!(eval6 < eval1, true);
-        assert_eq!(eval7 < eval4, true);
-        assert_eq!(eval8 > eval6, true);
+    fn test_utility_eval_branch_comparisons() {
+        let eval1 = EvalBr::new( 0.0, 0);
+        let eval2 = EvalBr::new( 1.0, 0);
+        let eval3 = EvalBr::new(-1.0, 0);
+        let eval4 = EvalBr::new(-1.0, 1);
+        let eval5 = EvalBr::new(-1.0, -1);
+        let eval6 = EvalBr::new( 1.0, 1);
+        assert_eq!(eval1 <  eval2, true);
+        assert_eq!(eval1 >  eval3, true);
+        assert_eq!(eval2 >  eval3, true);
+        assert_eq!(eval3 == eval4, true);
+        assert_eq!(eval4 == eval5, true);
+        assert_eq!(eval2 == eval6, true);
+        let eval7 = max(eval1, eval6);
+        assert_eq!(eval6 == eval7, true);
+        assert_eq!(eval7.depth, 1);
     }
 }

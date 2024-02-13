@@ -1,21 +1,15 @@
-#![feature(test)]
+ #![feature(test)]
+
+use std::io;
+use crate::frame::{board::Board, util::*};
+use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::init_secondary_maps};
+use crate::engine::chara::Chara;
 
 extern crate test;
 
-mod util;
 mod gen;
-mod board;
-mod chara;
+mod frame;
 mod engine;
-
-use std::io;
-
-use chara::Chara;
-
-use crate::board::Board;
-use crate::gen::secondary::init_secondary_maps;
-use crate::gen::{magic::init_magics, leaping::init_leaping_attacks};
-use crate::util::*;
 
 fn main() {
     init_magics(&mut 1773);
@@ -24,56 +18,46 @@ fn main() {
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut board = Board::default();
-    let mut chara = Chara::init(&board, 0.08, 0.8);
+    let mut chara = Chara::init(&board, 0.8, 1.2, 0.0);
 
     driver(&mut chara, &mut board);
 }
 
 fn driver(chara: &mut Chara, board: &mut Board) {
-    let mut last_eval = Eval::new(0.0, 0, 0);
+    let mut last_eval = EvalBr::new(0.0, 0);
+
     loop {
         println!("Processing...\n");
 
         let legals = board.get_legal_moves();
-        if legals.len() == 0 {
+        if legals.is_empty() {
             break;
         }
 
-        let ems = chara.think(board, 4, last_eval);
+        let ems = chara.think(board, 0.3, 2000, last_eval);
         for (i, em) in ems.iter().enumerate() {
-            println!("{}.\t{}\tmate = {} \tscore = {}", i, move_transform(em.mov), em.eval.mate, em.eval.score);
+            println!("{}.\t{}\tscore = {}\t\tdepth = {}", i + 1, move_transform(em.mov), em.eval.score, em.eval.depth / 2);
         }
         println!();
 
+        let mut mov;
         loop {
             let str = input();
-            let mov = move_transform_back(&str.to_owned(), &legals);
-            if mov.is_some() {
-                chara.make_move(board, mov.unwrap());
+            mov = move_transform_back(&str.to_owned(), &legals);
+            if let Some(i) = mov {
+                chara.make_move(board, i);
                 break;
-            } else {
-                println!("Move not found?");
+            }
+            println!("Move not found?");
+        }
+
+        for em in ems.iter() {
+            if em.mov == mov.unwrap() {
+                last_eval = em.eval;
+                break;
             }
         }
-
-        // ???
-        last_eval = ems[0].eval;
-
-        let legals = board.get_legal_moves();
-        if legals.len() == 0 {
-            break;
-        }
-
-        loop {
-            let str = input();
-            let mov = move_transform_back(&str.to_owned(), &legals);
-            if mov.is_some() {
-                chara.make_move(board, mov.unwrap());
-                break;
-            } else {
-                println!("Move not found?");
-            }
-        }
+        
     }
 }
 

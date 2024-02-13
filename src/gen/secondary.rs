@@ -3,7 +3,7 @@
 // Init them LAST!
 // Will crash if no leaping attack maps (PATH_AMN) are present!
 
-use crate::util::*;
+use crate::frame::util::*;
 
 pub fn init_secondary_maps() {
     init64(init_ranks, PATH_RNK);
@@ -118,7 +118,7 @@ fn init_passing_piece_blocked_maps_black(map: &mut[u64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::bb_to_str;
+    use crate::frame::util::bb_to_str;
 
     #[test]
     fn test_secondary_double_attacks_knight() {
