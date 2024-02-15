@@ -1,30 +1,20 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::max, collections::{HashMap, HashSet}, time::Instant};
+use std::{collections::{HashMap, HashSet}, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
-use super::{weights::Weights, zobrist::Zobrist, search::{search, mate}};
+use super::{weights::Weights, zobrist::Zobrist};
 
 // TODO: use i16 instead of floats for faster add/sub operations?
-pub struct Chara {
+pub struct Chara<'a> {
+	pub board:				&'a mut Board,
 	/* These weights are stored with respect to the colour, black pieces will provide negative values
 		- Usual order is:
 		- [ Game Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]	*/
-	pub pieces_weights:		[[[f32; 64]; 12]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
-	pub mobility_weights:	[[[f32; 32]; 12]; 2],	// add/subtract eval depending on piece mobility in mittlespiel/endspiel
-	pub turn_weights:		[[f32; 2]; 2],			// mult/add weights per turn if not a 100% draw
-	pub align_weights:		[[[f32; 6]; 2]; 2],		// add weight per b/r/q pieces aligned (x-ray) against king / against near square in mittelspiel/endspiel
-													// 		for straight aligns it checks if the lane is open (no ally pawn in the way)
-	pub battery_weights:	[[f32; 4]; 2],			// add weight per batteries: b+q / r+r horizontal / r+r vertical / r+q vertical
-													//		note: in case of b+q, r+q, the weight is added per queen; for rooks it's doubled
-	// pub rook_lane_open:	f32,					// add weight, small self-explanatory bonus (obsolete for now because of crazy mobility bonus?)
-	/* TODO: Better pawn structure evaluation (hash them separately) */
-	pub dp_weight:			f32,					// mult weight per pawn if it has other pawns of same color at this file (use as penalty)
-	pub pp_weights:			[f32; 3],				// mult weight per passing / protected by pawn / passing + protected by pawn (unique bonus)
-	pub outpost_weights:	[[f32; 2]; 2],			// add weight per passing knight / bishop that's defended by pawn
-	pub dan_possible:		[[f32; 3]; 2],			// add weight per knight if it is able to check / able to royal fork / able to fork heavy pieces
-	pub random_range:		f32,					// +-(0 - random_range) value per evaluated position on leaves
+	pub pieces_weights:		[[[i32; 64]; 12]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
+	pub turn_mult:			[f32; 2],
+	pub turn_add:			[i32; 2],				// works when it's not a 100% draw
 	/* Cache to store evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, f32>,
 	pub cache_branches:		HashMap<u64, EvalBr>,
@@ -40,108 +30,39 @@ pub struct Chara {
 	pub tl:					u128					// time limit in ms
 }
 
-/* For more understandable indexing in eval() */
-const TURN_MULT:		usize = 0;
-const TURN_ADD:			usize = 1;
-const ALIGN_BISHOP:		usize = 0;
-const ALIGN_ROOK:		usize = 1;
-const ALIGN_QUEEN:		usize = 2;
-const ALIGN_NEAR:		usize = 3;
-const BATTERY_BQ:		usize = 0;
-const BATTERY_RRH:		usize = 1;
-const BATTERY_RRV:		usize = 2;
-const BATTERY_RQV:		usize = 3;
-const PAWN_PASSING:		usize = 0;
-const PAWN_PROTECTED:	usize = 1;
-const PAWN_COMBINED:	usize = 2;
-const OUTPOST_KNIGHT:	usize = 0;
-const OUTPOST_BISHOP:	usize = 1;
-const DAN_CHECK:		usize = 0;
-const DAN_ROYAL_FORK:	usize = 1;
-const DAN_FORK:			usize = 2;
-
 impl Chara {
 	// It's a little messy, but any evals are easily modifiable.
 	// No need in modifying something twice to be applied for the different coloir, neither there's a need to write something twice in eval()
-    pub fn init(board: &Board, aggressiveness: f32, greed: f32, random_range: f32) -> Chara {
+    pub fn init(board: &mut Board) -> Chara {
 		let mut w = Weights::default();
 
-		let piece_wmult: f32					= 1.0  * greed;
-		let piece_square_related_wmult: f32		= 0.75 / (aggressiveness * 0.5  + 0.5 );	// really slight balance-out
-		let mobility_wmult: f32					= 1.0  * (aggressiveness * 0.5  + 0.5 );
-		let align_wmult: f32					= 1.0  *  aggressiveness;
-		let battery_wmult: f32					= 1.0  *  aggressiveness;
-		let pawn_structure_wmult: f32			= 0.5  * (aggressiveness * 0.5  + 0.5 );
-		let minor_piece_pos_wmult: f32			= 1.0  * (aggressiveness * 0.5  + 0.5 );
-
 		// transform (flip for white, negative for black) and apply coefficients
-		let mut pieces_weights: [[[f32; 64]; 12]; 2] = [[[0.0; 64]; 12]; 2];
+		let mut pieces_weights: [[[i32; 64]; 12]; 2] = [[[0; 64]; 12]; 2];
 		for i in 0..2 {
 			for j in 0..6 {
 				for k in 0..64 {
-					pieces_weights[i][ j << 1     ][k] =  w.pieces_weights_square_related[i][j][flip(k)] * piece_square_related_wmult + w.pieces_weights_const[i][j] * piece_wmult;
-					pieces_weights[i][(j << 1) | 1][k] = -w.pieces_weights_square_related[i][j][k      ] * piece_square_related_wmult - w.pieces_weights_const[i][j] * piece_wmult;
+					pieces_weights[i][ j << 1     ][k] =  w.pieces_weights_square_related[i][j][flip(k)] + w.pieces_weights_const[i][j];
+					pieces_weights[i][(j << 1) | 1][k] = -w.pieces_weights_square_related[i][j][k      ] - w.pieces_weights_const[i][j];
 				}
 			}
 		}
 
-		// transform and apply coefficients
-		let mut mobility_weights = [[[0.0; 32]; 12]; 2];
-		for j in 0..5 {
-			for k in 0..32 {
-				for i in 0..2 {
-					mobility_weights[i][ (j + 1) << 1     ][k] =  w.mobility_weights_const[j][k] * mobility_wmult;
-					mobility_weights[i][((j + 1) << 1) | 1][k] = -w.mobility_weights_const[j][k] * mobility_wmult;
-				}
-			}
-		}
-		for k in 0..32 {
-			mobility_weights[1][10][k] =  w.mobility_weights_const[5][k] * mobility_wmult;
-			mobility_weights[1][11][k] = -w.mobility_weights_const[5][k] * mobility_wmult;
-		}
-
-		/* Apply coefficients */
+		
 		w.turn_weights_pre.iter_mut().for_each(|w| *w *= mobility_wmult);
-		w.align_weights_pre.iter_mut().for_each(|arr| arr.iter_mut().for_each(|w| *w *= align_wmult));
-		w.battery_weights_pre.iter_mut().for_each(|w| *w *= battery_wmult);
-		w.dp_weight += -0.25 + (-pawn_structure_wmult).exp2() * 0.5;
-		w.pp_weights.iter_mut().for_each(|w| *w *= pawn_structure_wmult);
-		w.outpost_weight_pre.iter_mut().for_each(|w| *w *= minor_piece_pos_wmult);
-		w.dan_possible_pre.iter_mut().for_each(|w| *w *= minor_piece_pos_wmult);
 
 		/* Transform */
 		let mut turn_weights	= [w.turn_weights_pre; 2];
 		turn_weights[1][1]		= -turn_weights[0][1];
 		turn_weights[1][0]		= 1.0 / turn_weights[0][0];
-		let mut battery_weights = [w.battery_weights_pre; 2];
-		battery_weights[1].iter_mut().for_each(|w| *w *= -1.0);
-		let mut outpost_weights	= [w.outpost_weight_pre; 2];
-		outpost_weights[1].iter_mut().for_each(|w| *w *= -1.0);
-		let mut dan_possible	= [w.dan_possible_pre; 2];
-		dan_possible[1].iter_mut().for_each(|w| *w *= -1.0);
-		let mut align_weights 	= [[[0.0; 6]; 2]; 2];
-		for i in 0..2 {
-			for k in 0..6 {
-				align_weights[i][0][k] =  w.align_weights_pre[i][k];
-				align_weights[i][1][k] = -w.align_weights_pre[i][k];
-			}
-		}
-
+		
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
 		cache_perm_vec.push(zobrist.cache_new(board));
 
 		Self {
+			board,
 			pieces_weights,
-			mobility_weights,
 			turn_weights,
-			align_weights,
-			battery_weights,
-			dp_weight:		w.dp_weight,
-			pp_weights:		w.pp_weights,
-			outpost_weights,
-			dan_possible,
-			random_range,
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
@@ -153,11 +74,25 @@ impl Chara {
 		}
     }
 
-	pub fn think(&mut self, board: &mut Board, base_aspiration_window: f32, time_limit_ms: u128, mut last_eval: EvalBr) -> Vec<EvalMove> {
+	pub fn make_move(&mut self, mov: u64) {
+		let prev_hash = *self.history_vec.last().unwrap();
+		self.history_set.insert(prev_hash);
+		self.board.make_move(mov);
+		let hash = self.zobrist.cache_iter(self.board, mov, prev_hash);
+		self.history_vec.push(hash);
+	}
+
+	pub fn revert_move(&mut self) {
+		self.board.revert_move();
+		self.history_vec.pop();
+		self.history_set.remove(self.history_vec.last().unwrap());
+	}
+
+	pub fn think(&mut self, base_aspiration_window: f32, time_limit_ms: u128, mut last_eval: EvalBr) -> Vec<EvalMove> {
 		self.ts = Instant::now();
 		self.tl = time_limit_ms;
 
-		let mut moves = board.get_legal_moves();
+		let mut moves = self.board.get_legal_moves();
 		if moves.is_empty() {
 			return vec![];
 		}
@@ -250,20 +185,6 @@ impl Chara {
 		moves_evaluated
 	}
 
-	pub fn make_move(&mut self, board: &mut Board, mov: u64	) {
-		let prev_hash = *self.history_vec.last().unwrap();
-		self.history_set.insert(prev_hash);
-		board.make_move(mov);
-		let hash = self.zobrist.cache_iter(board, mov, prev_hash);
-		self.history_vec.push(hash);
-	}
-
-	pub fn revert_move(&mut self, board: &mut Board) {
-		board.revert_move();
-		self.history_vec.pop();
-		self.history_set.remove(self.history_vec.last().unwrap());
-	}
-
 	/* Warning!
 		Before calling this function, consider the following:
 		1) Search MUST use check extension! Eval does NOT evaluate checks or free captures specifically!
@@ -306,22 +227,7 @@ impl Chara {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				let mut ts = self.pieces_weights[phase][P | ally][csq];
-				/* Mult penalty per multiplied pawn on the same file */
-				if board.maps.files[csq] & board.bbs[P | ally] != 0 {
-					ts *= self.dp_weight;
-				}
-				/* Mult bonus per passing and/or easily protected pawns */
-				if board.is_passing(csq, board.bbs[P | enemy], ally) {
-					if board.is_easily_protected(csq, board.bbs[P | ally], occup, ally, enemy) {
-						ts *= self.pp_weights[PAWN_COMBINED];
-					} else {
-						ts *= self.pp_weights[PAWN_PASSING];
-					}
-				} else if board.is_easily_protected(csq, board.bbs[P | ally], occup, ally, enemy) {
-					ts *= self.pp_weights[PAWN_PROTECTED];
-				}
-				score += ts;
+				score += self.pieces_weights[phase][P | ally][csq];
 			}
 		}
 
