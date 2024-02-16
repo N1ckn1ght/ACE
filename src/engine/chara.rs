@@ -16,7 +16,7 @@ pub struct Chara<'a> {
 	pub turn_mult:			[f32; 2],
 	pub turn_add:			[i32; 2],				// works when it's not a 100% draw
 	/* Cache to store evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
-	pub cache_leaves:		HashMap<u64, f32>,
+	pub cache_leaves:		HashMap<u64, i32>,
 	pub cache_branches:		HashMap<u64, EvalBr>,
 	/* Cache to story already made in board moves to track drawish positions */
 	pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
@@ -36,7 +36,8 @@ impl Chara {
     pub fn init(board: &mut Board) -> Chara {
 		let mut w = Weights::default();
 
-		// transform (flip for white, negative for black) and apply coefficients
+		/* Transform PW (flip for white, negative for black) and apply coefficients */
+
 		let mut pieces_weights: [[[i32; 64]; 12]; 2] = [[[0; 64]; 12]; 2];
 		for i in 0..2 {
 			for j in 0..6 {
@@ -47,13 +48,12 @@ impl Chara {
 			}
 		}
 
-		
-		w.turn_weights_pre.iter_mut().for_each(|w| *w *= mobility_wmult);
+		/* Transform other W*/
 
-		/* Transform */
-		let mut turn_weights	= [w.turn_weights_pre; 2];
-		turn_weights[1][1]		= -turn_weights[0][1];
-		turn_weights[1][0]		= 1.0 / turn_weights[0][0];
+		let mut turn_mult	= [w.turn_mult_pre; 2];
+		turn_mult[1] = 1.0 / turn_mult[0];
+		let mut turn_add	= [w.turn_add_pre;  2];
+		turn_add [1] =     - turn_add [0];
 		
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
@@ -62,7 +62,8 @@ impl Chara {
 		Self {
 			board,
 			pieces_weights,
-			turn_weights,
+			turn_mult,
+			turn_add,
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
@@ -190,11 +191,11 @@ impl Chara {
 		1) Search MUST use check extension! Eval does NOT evaluate checks or free captures specifically!
 		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically!
 	*/
-	pub fn eval(&mut self, board: &Board) -> f32 {
+	pub fn eval(&mut self, board: &Board) -> i32 {
 		let hash = *self.history_vec.last().unwrap();
 
 		if board.hmc == 50 || self.history_set.contains(&hash) {
-			return 0.0;
+			return 0;
 		}
 
 		if self.cache_leaves.contains_key(&hash) {
@@ -209,13 +210,13 @@ impl Chara {
 					  (board.bbs[Q] | board.bbs[Q2]).count_ones() * 8;
 
 		if counter < 4 && board.bbs[P] | board.bbs[P2] == 0 {
-			self.cache_leaves.insert(hash, 0.0);
-			return 0.0;
+			self.cache_leaves.insert(hash, 0);
+			return 0;
 		}
 
 		let phase = (counter < 31) as usize;
 
-		let mut score: f32 = 0.0;
+		let mut score: i32 = 0;
 		let sides = [board.get_occupancies(false), board.get_occupancies(true)];
 		let occup = sides[0] | sides[1];
 		let kbits = [gtz(board.bbs[K]), gtz(board.bbs[K2])];
@@ -237,20 +238,6 @@ impl Chara {
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.pieces_weights[phase][N | ally][csq];
-				score += self.mobility_weights[phase][N | ally][(board.maps.attacks_knight[csq] & !sides[ally]).count_ones() as usize];
-				/* Add score if it's an outpost */
-				if board.is_outpost(csq, board.bbs[P | ally], board.bbs[P | enemy], ally != 0) {
-					score += self.outpost_weights[ally][OUTPOST_KNIGHT];
-				}
-				/* Add score if some promising forks are existing */
-				if board.maps.attacks_dn[csq] & board.bbs[K | enemy] != 0 {
-					score += self.dan_possible[ally][DAN_CHECK];
-					if board.maps.attacks_dn[csq] & board.bbs[Q | enemy] != 0 {
-						score += self.dan_possible[ally][DAN_ROYAL_FORK];
-					}
-				} else if board.maps.attacks_dn[csq] & board.bbs[Q | enemy] != 0 && board.maps.attacks_dn[csq] & board.bbs[R | enemy] != 0 {
-					score += self.dan_possible[ally][DAN_FORK];
-				}
 			}
 		}
 
@@ -259,24 +246,7 @@ impl Chara {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				let real_atk = board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				let imag_atk = board.get_sliding_diagonal_attacks(csq, 0, sides[ally]);
 				score += self.pieces_weights[phase][B | ally][csq];
-				score += self.mobility_weights[phase][B | ally][real_atk.count_ones() as usize];
-				/* Add score if it's an outpost */
-				if board.is_outpost(csq, board.bbs[P | ally], board.bbs[P | enemy], ally != 0) {
-					score += self.outpost_weights[ally][OUTPOST_BISHOP];
-				}
-				/* Add score if it's aligned against a king */
-				if imag_atk & board.bbs[K | enemy] != 0 && board.get_sliding_diagonal_path_unsafe(csq, kbits[enemy]) & board.bbs[P | ally] == 0 {
-					score += self.align_weights[phase][ally][ALIGN_BISHOP];
-				} else {
-					let asq = imag_atk & board.maps.attacks_king[kbits[enemy]];
-					if asq != 0 && board.get_sliding_diagonal_path_unsafe(csq, gtz(asq)) & board.bbs[P | ally] == 0 {
-						score += self.align_weights[phase][ally][ALIGN_BISHOP + ALIGN_NEAR];
-					}
-				}
-				/* Battery score will be counted per queen */
 			}
 		}
 
@@ -285,25 +255,7 @@ impl Chara {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				let real_atk = board.get_sliding_straight_attacks(csq, occup, sides[ally]);
-				let imag_atk = board.get_sliding_straight_attacks(csq, 0, sides[ally]);
 				score += self.pieces_weights[phase][R | ally][csq];
-				score += self.mobility_weights[phase][R | ally][(real_atk).count_ones() as usize];
-				/* Add score if it's aligned against a king */
-				if imag_atk & board.bbs[K | enemy] != 0 && board.get_sliding_straight_path_unsafe(csq, kbits[enemy]) & board.bbs[P | ally] == 0 {
-					score += self.align_weights[phase][ally][ALIGN_ROOK];
-				} else {
-					let asq = imag_atk & board.maps.attacks_king[kbits[enemy]];
-					if asq != 0 && board.get_sliding_straight_path_unsafe(csq, gtz(asq)) & board.bbs[P | ally] == 0 {
-						score += self.align_weights[phase][ally][ALIGN_ROOK + ALIGN_NEAR];
-					}
-				}
-				/* Add score if it's in a rook battery */
-				if real_atk & board.maps.files[csq] & board.bbs[R | ally] != 0 {
-					score += self.battery_weights[ally][BATTERY_RRV];
-				} else if real_atk & board.maps.ranks[csq] & board.bbs[R | ally] != 0 {
-					score += self.battery_weights[ally][BATTERY_RRH];
-				}
 			}
 		}
 
@@ -312,46 +264,15 @@ impl Chara {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				let rdatk = board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				let idatk = board.get_sliding_diagonal_attacks(csq, 0, sides[ally]);
-				let rsatk = board.get_sliding_straight_attacks(csq, occup, sides[ally]);
-				let isatk = board.get_sliding_straight_attacks(csq, 0, sides[ally]);
 				score += self.pieces_weights[phase][Q | ally][csq];
-				score += self.mobility_weights[phase][Q | ally][(rdatk | rsatk).count_ones() as usize];
-				/* Add score if it's aligned against a king */
-				if idatk & board.bbs[K | enemy] != 0 && board.get_sliding_diagonal_path_unsafe(csq, kbits[enemy]) & board.bbs[P | ally] == 0 {
-					score += self.align_weights[phase][ally][ALIGN_QUEEN];
-				} else if isatk & board.bbs[K | enemy] != 0 && board.get_sliding_straight_path_unsafe(csq, kbits[enemy]) & board.bbs[P | ally] == 0 {
-					score += self.align_weights[phase][ally][ALIGN_QUEEN];
-				} else {
-					let asq = idatk & board.maps.attacks_king[kbits[enemy]];
-					if asq != 0 {
-						if board.get_sliding_diagonal_path_unsafe(csq, gtz(asq)) & board.bbs[P | ally] == 0 {
-							score += self.align_weights[phase][ally][ALIGN_QUEEN + ALIGN_NEAR];
-						}
-					} else {
-						let asq = isatk & board.maps.attacks_king[kbits[enemy]];
-						if asq != 0 && board.get_sliding_straight_path_unsafe(csq, gtz(asq)) & board.bbs[P | ally] == 0 {
-							score += self.align_weights[phase][ally][ALIGN_QUEEN + ALIGN_NEAR];
-						}
-					}
-				}
-				/* Add score if it's in a battery */
-				if rsatk & board.maps.files[csq] & board.bbs[R | ally] != 0 {
-					score += self.battery_weights[ally][BATTERY_RQV];
-				}
-				if rdatk & board.bbs[B | ally] != 0 {
-					score += self.battery_weights[ally][BATTERY_BQ];
-				}
 			}
 		}
 
-		score += self.mobility_weights[phase][K ][(board.maps.attacks_king[kbits[0]] & !sides[0]).count_ones() as usize];
-		score += self.mobility_weights[phase][K2][(board.maps.attacks_king[kbits[1]] & !sides[1]).count_ones() as usize];
-
+		/* 
 		score *= self.turn_weights[(board.turn ^ (score < 0.0)) as usize][TURN_MULT];
 		score += self.turn_weights[board.turn as usize][TURN_ADD];
 		score += self.rng.gen::<f32>() * self.random_range * 2.0 - self.random_range;
+		*/
 
 		/* SCORE APPLICATION END */
 

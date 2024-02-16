@@ -220,12 +220,12 @@ pub fn xor64(mut num: u64) -> u64 {
 #[derive(Copy, Clone)]
 #[repr(align(64))]
 pub struct EvalBr {
-	pub score: f32,
+	pub score: i32,
 	pub depth: i16
 }
 
 impl EvalBr {
-    pub fn new(score: f32, depth: i16) -> Self {
+    pub fn new(score: i32, depth: i16) -> Self {
 		EvalBr {
 			score,
 			depth
@@ -243,7 +243,7 @@ impl Eq for EvalBr {}
 
 impl Ord for EvalBr {
 	fn cmp(&self, other: &EvalBr) -> Ordering {
-        self.score.total_cmp(&other.score)
+        self.score.cmp(&other.score)
 	}
 }
 
@@ -571,12 +571,12 @@ mod tests {
 
     #[test]
     fn test_utility_eval_branch_comparisons() {
-        let eval1 = EvalBr::new( 0.0, 0);
-        let eval2 = EvalBr::new( 1.0, 0);
-        let eval3 = EvalBr::new(-1.0, 0);
-        let eval4 = EvalBr::new(-1.0, 1);
-        let eval5 = EvalBr::new(-1.0, -1);
-        let eval6 = EvalBr::new( 1.0, 1);
+        let eval1 = EvalBr::new( 0, 0);
+        let eval2 = EvalBr::new( 1, 0);
+        let eval3 = EvalBr::new(-1, 0);
+        let eval4 = EvalBr::new(-1, 1);
+        let eval5 = EvalBr::new(-1, -1);
+        let eval6 = EvalBr::new( 1, 1);
         assert_eq!(eval1 <  eval2, true);
         assert_eq!(eval1 >  eval3, true);
         assert_eq!(eval2 >  eval3, true);
