@@ -89,7 +89,7 @@ impl Chara {
 		self.history_set.remove(self.history_vec.last().unwrap());
 	}
 
-	pub fn think(&mut self, base_aspiration_window: f32, time_limit_ms: u128, mut last_eval: EvalBr) -> Vec<EvalMove> {
+	pub fn think(&mut self, initial_depth: i16, base_aspiration_window: f32, time_limit_ms: u128) -> Vec<EvalMove> {
 		self.ts = Instant::now();
 		self.tl = time_limit_ms;
 
@@ -103,6 +103,13 @@ impl Chara {
 		let mut moves_evaluated = Vec::with_capacity(moves.len());
 		for mov in moves.into_iter() {
 			moves_evaluated.push(EvalMove::new(mov, EvalBr::new(-LARGE, 0)));
+		}
+
+		let alpha = -INF;
+		let beta  =  INF;
+
+		loop {
+			
 		}
 
 		// if we have a mate attack, we must follow it;
