@@ -10,8 +10,8 @@ use phf::phf_map;
 /* LIMITATIONS */
 
 pub const CACHE_LIMIT: usize = 469762048;   // divide your RAM in bits by 32;
-                                            // may overflow (TODO: fix this)
-// pub const FLOAT_TO_INT_MULT: i32 = 100000;
+                                            // might overflow (TODO: fix this)
+pub const ITERATIVE_DEPTH_LIMIT: i16 = 50;
 
 /* SPECIFIED PATHES */
 
@@ -85,7 +85,9 @@ pub const MSE_EN_PASSANT:              u64 = 0b00001000;
 pub const MSE_CASTLE_SHORT:            u64 = 0b00000100;
 pub const MSE_CASTLE_LONG:             u64 = 0b00000010;
 pub const MSE_DOUBLE_PAWN:             u64 = 0b00000001;
-// Note: there's no MSE_PROMOTION, it's in a different encoding section
+// Note: there's no MSE_PROMOTION, it's encoded by piece, same as CAPTURE and PIECE
+
+pub const MSE_NOT_CAPTURE_MIN: u64 = (E as u64) << 32;
 
 /* board.castlings bits
     - it won't correlate with MSE because of the color bits anyway */
@@ -166,8 +168,6 @@ pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promoti
     // x86 systems are not gonna like that
     special | (from << 8 | to << 16 | piece << 24 | promotion << 28) as u64 | (capture as u64) << 32
 }
-
-pub const CAPTURE_MINIMUM: u64 = (E as u64) << 32;
 
 #[inline]
 pub fn move_get_from(mov: u64) -> usize {

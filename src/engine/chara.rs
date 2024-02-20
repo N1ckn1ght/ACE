@@ -15,19 +15,20 @@ pub struct Chara<'a> {
 	pub pieces_weights:		[[[i32; 64]; 12]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
 	pub turn_mult:			[f32; 2],
 	pub turn_add:			[i32; 2],				// works when it's not a 100% draw
-	/* Cache to store evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
+	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
 	pub cache_branches:		HashMap<u64, EvalBr>,
-	/* Cache to story already made in board moves to track drawish positions */
+	/* Cache for already made in board moves to track drawish positions */
 	pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
 	pub history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
 													// note: it's always 1 hash behind
 	/* Accessible constants */
 	pub zobrist:			Zobrist,
 	pub rng:				ThreadRng,
-	/* Limitations */
+	/* Trackers */
 	pub ts:					Instant,				// timer start
-	pub tl:					u128					// time limit in ms
+	pub tl:					u128,					// time limit in ms
+	pub nodes:				u64						// nodes searched
 }
 
 impl Chara {
@@ -109,7 +110,7 @@ impl Chara {
 		let beta  =  INF;
 
 		loop {
-			
+			break;
 		}
 
 		// if we have a mate attack, we must follow it;
@@ -193,15 +194,46 @@ impl Chara {
 		moves_evaluated
 	}
 
+	fn search() {
+
+	}
+
+	fn extension(&mut self, mut alpha: i32, mut beta: i32) -> i32 {
+		if self.nodes & 0b0000011111111111 == 0 {
+			// listen
+		}
+		self.nodes += 1;
+
+		let mut score = self.eval();
+		if score >= beta {
+			return beta;	// fail high
+		}
+		if score > alpha {
+			alpha = score;
+		}
+
+		let moves = self.board.get_legal_moves();
+		
+		// not like this
+		if moves.is_empty() && self.board.is_in_check() {
+			let mut score = -LARGE;
+			if self.board.turn {
+				score = LARGE;
+			}
+		}
+
+		0
+	}
+
 	/* Warning!
 		Before calling this function, consider the following:
 		1) Search MUST use check extension! Eval does NOT evaluate checks or free captures specifically!
 		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically!
 	*/
-	pub fn eval(&mut self, board: &Board) -> i32 {
+	fn eval(&mut self) -> i32 {
 		let hash = *self.history_vec.last().unwrap();
 
-		if board.hmc == 50 || self.history_set.contains(&hash) {
+		if self.board.hmc == 50 || self.history_set.contains(&hash) {
 			return 0;
 		}
 
