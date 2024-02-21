@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{collections::{HashMap, HashSet}, time::Instant};
+use std::{cmp::max, collections::{HashMap, HashSet}, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{weights::Weights, zobrist::Zobrist};
@@ -17,7 +17,7 @@ pub struct Chara<'a> {
 	pub turn_add:			[i32; 2],				// works when it's not a 100% draw
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
-	pub cache_branches:		HashMap<u64, EvalBr>,
+	// pub cache_branches:		HashMap<u64, EvalBr>,
 	/* Cache for already made in board moves to track drawish positions */
 	pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
 	pub history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
@@ -31,11 +31,11 @@ pub struct Chara<'a> {
 	pub nodes:				u64						// nodes searched
 }
 
-impl Chara {
+impl<'a> Chara<'a> {
 	// It's a little messy, but any evals are easily modifiable.
 	// No need in modifying something twice to be applied for the different coloir, neither there's a need to write something twice in eval()
-    pub fn init(board: &mut Board) -> Chara {
-		let mut w = Weights::default();
+    pub fn init(board: &'a mut Board) -> Chara<'a> {
+		let w = Weights::default();
 
 		/* Transform PW (flip for white, negative for black) and apply coefficients */
 
@@ -66,17 +66,18 @@ impl Chara {
 			turn_mult,
 			turn_add,
 			cache_leaves:	HashMap::default(),
-			cache_branches:	HashMap::default(),
+			// cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
 			history_set:	HashSet::default(),
 			zobrist,
 			rng:			rand::thread_rng(),
 			ts:				Instant::now(),
-			tl:				0
+			tl:				0,
+			nodes:			0
 		}
     }
 
-	pub fn make_move(&mut self, mov: u64) {
+	pub fn make_move(&mut self, mov: u32) {
 		let prev_hash = *self.history_vec.last().unwrap();
 		self.history_set.insert(prev_hash);
 		self.board.make_move(mov);
@@ -89,6 +90,7 @@ impl Chara {
 		self.history_vec.pop();
 		self.history_set.remove(self.history_vec.last().unwrap());
 	}
+}
 
 	pub fn think(&mut self, initial_depth: i16, base_aspiration_window: f32, time_limit_ms: u128) -> Vec<EvalMove> {
 		self.ts = Instant::now();
@@ -195,34 +197,48 @@ impl Chara {
 	}
 
 	fn search() {
-
+		
 	}
 
-	fn extension(&mut self, mut alpha: i32, mut beta: i32) -> i32 {
-		if self.nodes & 0b0000011111111111 == 0 {
-			// listen
+	fn extension(&mut self, mut alpha: i32, mut beta: i32, depth: i16) -> i32 {
+		if self.nodes & NODES_BETWEEN_COMMS == 0 {
+			// todo: listen
 		}
 		self.nodes += 1;
 
+		// cuttin even before we get a list of moves
 		let mut score = self.eval();
 		if score >= beta {
-			return beta;	// fail high
+			return beta; // fail high
 		}
-		if score > alpha {
-			alpha = score;
-		}
+		alpha = max(alpha, score);
 
-		let moves = self.board.get_legal_moves();
+		let mut moves = self.board.get_legal_moves();
 		
-		// not like this
-		if moves.is_empty() && self.board.is_in_check() {
-			let mut score = -LARGE;
-			if self.board.turn {
-				score = LARGE;
+		// if mate or stalemate
+		if moves.is_empty() {
+			if self.board.is_in_check() {
+				return -LARGE - depth;
 			}
 		}
 
-		0
+		moves.sort();
+		moves.reverse();
+
+		for mov in moves.iter() {
+			if *mov > MSE_NOT_CAPTURE_MIN {
+				break;
+			}
+			self.make_move(*mov);
+			self.extension(-beta, -alpha);
+			self.revert_move();
+			if score >= beta {
+				return beta;
+			}
+			alpha = max(alpha, score);
+		}
+
+		alpha // fail low
 	}
 
 	/* Warning!

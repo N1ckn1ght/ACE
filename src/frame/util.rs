@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use std::{cmp::{min, Ordering}, fs, io::Cursor, ops::Neg, path::Path};
+use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
@@ -12,6 +12,7 @@ use phf::phf_map;
 pub const CACHE_LIMIT: usize = 469762048;   // divide your RAM in bits by 32;
                                             // might overflow (TODO: fix this)
 pub const ITERATIVE_DEPTH_LIMIT: i16 = 50;
+pub const NODES_BETWEEN_COMMS: u64 = 0b0000011111111111;
 
 /* SPECIFIED PATHES */
 
@@ -41,19 +42,19 @@ pub const PATH_DAMN: &str = "./res/double_attack_maps_knight";          // two m
 
 /* Pieces and placements */
 
-pub const P:  usize = 0;  // white
-pub const P2: usize = 1;  // black (white | turn)
-pub const N:  usize = 2;
-pub const N2: usize = 3;
-pub const B:  usize = 4;
-pub const B2: usize = 5;
-pub const R:  usize = 6;
-pub const R2: usize = 7;
-pub const Q:  usize = 8;
-pub const Q2: usize = 9;
-pub const K:  usize = 10;
-pub const K2: usize = 11;
-pub const E:  usize = 12; // no piece (0b1100)
+pub const E:  usize = 0;
+pub const P:  usize = 2;  // white
+pub const P2: usize = 3;  // black (white | turn)
+pub const N:  usize = 4;
+pub const N2: usize = 5;
+pub const B:  usize = 6;
+pub const B2: usize = 7;
+pub const R:  usize = 8;
+pub const R2: usize = 9;
+pub const Q:  usize = 10;
+pub const Q2: usize = 11;
+pub const K:  usize = 12;
+pub const K2: usize = 13;
 
 pub const RANK_1: u64 = 0x00000000000000FF;
 pub const RANK_2: u64 = 0x000000000000FF00;
@@ -75,19 +76,16 @@ pub const FILE_H: u64 = 0x8080808080808080;
 pub const CSMASK: u64 = 0x0000000000000060;
 pub const CLMASK: u64 = 0x000000000000000E;
 
-/* Move `special` encoding (change only with corresponding functions below)
-    - now with u64 any can use MSE_CHECK | MSE_EN_PASSANT by bitwise OR instead of ciphering functions */
+/* Move `special` encoding (change only with corresponding functions below) */
 
-pub const MSE_NOTHING:                 u64 = 0b00000000;
-pub const MSE_DOUBLE_CHECK:            u64 = 0b10000000;
-pub const MSE_CHECK:                   u64 = 0b01000000;
-pub const MSE_EN_PASSANT:              u64 = 0b00001000;
-pub const MSE_CASTLE_SHORT:            u64 = 0b00000100;
-pub const MSE_CASTLE_LONG:             u64 = 0b00000010;
-pub const MSE_DOUBLE_PAWN:             u64 = 0b00000001;
+pub const MSE_NOTHING:                 u32 = 0b0000;
+pub const MSE_EN_PASSANT:              u32 = 0b1000;
+pub const MSE_CASTLE_SHORT:            u32 = 0b0100;
+pub const MSE_CASTLE_LONG:             u32 = 0b0010;
+pub const MSE_DOUBLE_PAWN:             u32 = 0b0001;
 // Note: there's no MSE_PROMOTION, it's encoded by piece, same as CAPTURE and PIECE
 
-pub const MSE_NOT_CAPTURE_MIN: u64 = (E as u64) << 32;
+pub const MSE_CAPTURE_MIN: u32 = (P as u32) << 28;
 
 /* board.castlings bits
     - it won't correlate with MSE because of the color bits anyway */
@@ -158,50 +156,46 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
 /* Move encoding */
 
 // since it's not a struct, let's use more inline fuctions
-// since minimum piece (P) is 0, empty piece will be encoded to E (or any other value greater than K2, e.g. 12)
-// it's good to have captures as highest possible bits since it really helps in pre-ordering
-// I dislike using u64, but in the end it allows to store everything without heavy ciphering/deciphering
-// [8 - SPECIAL][8 - square from][8 - square to][4 - moving piece][4 - promotion][4 - captured piece][28 - FREE]
-// TODO: u32 is, in fact, enough, because (so far) we don't encode any checks! Maybe optimize this?..
+// let's keep it in Most Valuable Victim - Least Valuable Attacker way
+// [4 - SPECIAL][8 - square from][8 - square to][4 - moving piece][4 - promotion][4 - captured piece]
 #[inline]
-pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promotion: usize, special: u64 ) -> u64 {
-    // x86 systems are not gonna like that
-    special | (from << 8 | to << 16 | piece << 24 | promotion << 28) as u64 | (capture as u64) << 32
+pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promotion: usize, special: u32 ) -> u32 {
+    special | (from << 4 | to << 12 | (!piece & 0b1111) << 20 | promotion << 24 | capture << 28) as u32
 }
 
 #[inline]
-pub fn move_get_from(mov: u64) -> usize {
-    (mov >> 8 & 0b11111111) as usize
+pub fn move_get_from(mov: u32) -> usize {
+    (mov >> 4 & 0b11111111) as usize
 }
 
 #[inline]
-pub fn move_get_from_bb(mov: u64) -> u64 {
-    1 << (mov >> 8 & 0b11111111)
+pub fn move_get_from_bb(mov: u32) -> u64 {
+    1 << (mov >> 4 & 0b11111111)
 }
 
 #[inline]
-pub fn move_get_to(mov: u64) -> usize {
-    (mov >> 16 & 0b11111111) as usize
+pub fn move_get_to(mov: u32) -> usize {
+    (mov >> 12 & 0b11111111) as usize
 }
 
 #[inline]
-pub fn move_get_to_bb(mov: u64) -> u64 {
-    1 << (mov >> 16 & 0b11111111)
+pub fn move_get_to_bb(mov: u32) -> u64 {
+    1 << (mov >> 12 & 0b11111111)
 }
 
 #[inline]
-pub fn move_get_piece(mov: u64) -> usize {
+pub fn move_get_piece(mov: u32) -> usize {
+    (!mov >> 20 & 0b1111) as usize
+}
+
+#[inline]
+pub fn move_get_promotion(mov: u32) -> usize {
     (mov >> 24 & 0b1111) as usize
 }
 
 #[inline]
-pub fn move_get_promotion(mov: u64) -> usize {
+pub fn move_get_capture(mov: u32) -> usize {
     (mov >> 28 & 0b1111) as usize
-}
-
-#[inline]
-pub fn move_get_capture(mov: u64) -> usize {
-    (mov >> 32 & 0b1111) as usize
 }
 
 /* GENERAL FUNCTIONS */
@@ -211,71 +205,6 @@ pub fn xor64(mut num: u64) -> u64 {
     num ^= num >> 7;
     num ^= num << 17;
     num
-}
-
-/* DATA STRUCTURES */
-
-// EvalLeaf is simple f32 (just score)!
-// EvalBranch on the other hand needs to store branch depth and if it is an extent eval (possibly a/b values too)
-
-#[derive(Copy, Clone)]
-#[repr(align(64))]
-pub struct EvalBr {
-	pub score: i32,
-	pub depth: i16
-}
-
-impl EvalBr {
-    pub fn new(score: i32, depth: i16) -> Self {
-		EvalBr {
-			score,
-			depth
-		}
-	}
-}
-
-impl PartialEq for EvalBr {
-    fn eq(&self, other: &Self) -> bool {
-        self.score == other.score
-    }
-}
-
-impl Eq for EvalBr {}
-
-impl Ord for EvalBr {
-	fn cmp(&self, other: &EvalBr) -> Ordering {
-        self.score.cmp(&other.score)
-	}
-}
-
-impl PartialOrd for EvalBr {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Neg for EvalBr {
-    type Output = Self;
-
-    fn neg(mut self) -> Self::Output {
-        self.score = -self.score;
-        self
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct EvalMove {
-    pub mov: u64,
-    pub eval: EvalBr
-}
-
-impl EvalMove {
-    pub fn new(mov: u64, eval: EvalBr) -> Self {
-        EvalMove {
-            mov,
-            eval
-        }
-    }
 }
 
 /* FILE IO */
@@ -423,23 +352,23 @@ pub static PIECES: phf::Map<char, usize> = phf_map! {
 
 // TODO (optional): find a way to use usize key, if there is one, same with changing keys to constants from above
 pub static PIECES_REV: phf::Map<u32, char> = phf_map! {
-    0u32  => 'P',
-    1u32  => 'p',
-    2u32  => 'N',
-    3u32  => 'n',
-    4u32  => 'B',
-    5u32  => 'b',
-    6u32  => 'R',
-    7u32  => 'r',
-    8u32  => 'Q',
-    9u32  => 'q',
-    10u32 => 'K',
-    11u32 => 'k'
+    2u32  => 'P',
+    3u32  => 'p',
+    4u32  => 'N',
+    5u32  => 'n',
+    6u32  => 'B',
+    7u32  => 'b',
+    8u32  => 'R',
+    9u32  => 'r',
+    10u32 => 'Q',
+    11u32 => 'q',
+    12u32 => 'K',
+    13u32 => 'k'
 };
 
 /* INTERFACE */
 
-pub fn move_transform(mov: u64) -> String {
+pub fn move_transform(mov: u32) -> String {
     let from = move_get_from(mov);
     let to = move_get_to(mov);
     let promotion = move_get_promotion(mov);
@@ -454,7 +383,7 @@ pub fn move_transform(mov: u64) -> String {
     str
 }
 
-pub fn move_transform_back(input: &str, legal_moves: &[u64]) -> Option<u64> {
+pub fn move_transform_back(input: &str, legal_moves: &[u32]) -> Option<u32> {
     let command     = input.as_bytes();
     let from        = command[0] as usize - 'a' as usize + (command[1] as usize - '0' as usize) * 8 - 8;
     let to          = command[2] as usize - 'a' as usize + (command[3] as usize - '0' as usize) * 8 - 8;
@@ -476,7 +405,6 @@ pub fn move_transform_back(input: &str, legal_moves: &[u64]) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::max;
     use super::*;
     use crate::frame::board::Board;
 
@@ -527,7 +455,7 @@ mod tests {
         let piece = Q2;
         let promotion = P;
         let capture = N;
-        let special = MSE_DOUBLE_CHECK | MSE_EN_PASSANT;
+        let special = MSE_EN_PASSANT;
         let mov = move_encode(gtz(from), gtz(to), piece, capture, promotion, special);
         assert_eq!(move_get_from(mov), gtz(from));
         assert_eq!(move_get_to(mov), gtz(to));
@@ -537,9 +465,7 @@ mod tests {
         assert_eq!(mov & MSE_CASTLE_SHORT, 0);
         assert_eq!(mov & MSE_CASTLE_LONG, 0);
         assert_eq!(mov & MSE_DOUBLE_PAWN, 0);
-        assert_eq!(mov & MSE_CHECK, 0);
         assert_ne!(mov & MSE_EN_PASSANT, 0);
-        assert_ne!(mov & MSE_DOUBLE_CHECK, 0);
         let mov = move_encode(57, 63, P2, R, Q2, MSE_NOTHING);
         assert_eq!(move_get_promotion(mov), Q2);
         let mov = move_encode(57, 63, P2, R, R2, MSE_NOTHING);
@@ -568,24 +494,5 @@ mod tests {
         assert_eq!(mov.is_none(), true);
         let mov = move_transform_back("e1g1", &moves);
         assert_ne!(mov.is_none(), true);
-    }
-
-    #[test]
-    fn test_utility_eval_branch_comparisons() {
-        let eval1 = EvalBr::new( 0, 0);
-        let eval2 = EvalBr::new( 1, 0);
-        let eval3 = EvalBr::new(-1, 0);
-        let eval4 = EvalBr::new(-1, 1);
-        let eval5 = EvalBr::new(-1, -1);
-        let eval6 = EvalBr::new( 1, 1);
-        assert_eq!(eval1 <  eval2, true);
-        assert_eq!(eval1 >  eval3, true);
-        assert_eq!(eval2 >  eval3, true);
-        assert_eq!(eval3 == eval4, true);
-        assert_eq!(eval4 == eval5, true);
-        assert_eq!(eval2 == eval6, true);
-        let eval7 = max(eval1, eval6);
-        assert_eq!(eval6 == eval7, true);
-        assert_eq!(eval7.depth, 1);
     }
 }

@@ -2,7 +2,7 @@ use rand::Rng;
 use crate::frame::{util::*, board::Board};
 
 pub struct Zobrist {
-    pub hash_boards:       [[u64; 64]; 12],
+    pub hash_boards:       [[u64; 64]; K2 + 1],
     pub hash_en_passant:   [u64; 64],
     pub hash_castlings:    [u64; 16],
     pub hash_turn:         u64
@@ -13,7 +13,7 @@ impl Default for Zobrist {
     fn default() -> Zobrist {
         let mut rng = rand::thread_rng();
 
-        let mut hash_boards = [[0; 64]; 12];
+        let mut hash_boards = [[0; 64]; K2 + 1];
         let mut hash_en_passant = [0; 64];
         let mut hash_castlings = [0; 16];
         let hash_turn = rng.gen::<u64>();
@@ -42,8 +42,8 @@ impl Default for Zobrist {
 impl Zobrist {
     pub fn cache_new(&self, board: &Board) -> u64 {
         let mut hash = 0;
-        for (i, bb) in board.bbs.into_iter().enumerate() {
-            let mut mask = bb;
+        for (i, bb) in board.bbs.into_iter().enumerate().skip(P) {
+            let mut mask = board.bbs[i];
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
                 hash ^= self.hash_boards[i][csq];
@@ -57,19 +57,19 @@ impl Zobrist {
         hash
     }
 
-    pub fn cache_iter(&self, board: &Board, last_move: u64, prev_hash: u64) -> u64 {
+    pub fn cache_iter(&self, board: &Board, last_move: u32, prev_hash: u64) -> u64 {
         let mut hash = prev_hash;
         let from  = move_get_from(last_move);
         let to    = move_get_to(last_move);
         let piece = move_get_piece(last_move);
         let capt  = move_get_capture(last_move);
         let promo = move_get_promotion(last_move);
-        if promo < E {
+        if promo != E {
             hash ^= self.hash_boards[promo][to];
         } else {
             hash ^= self.hash_boards[piece][to];
         }
-        if capt < E {
+        if capt != E {
             if last_move & MSE_EN_PASSANT != 0 {
                 hash ^= self.hash_boards[capt][to + !board.turn as usize * 16 - 8];
             } else {
