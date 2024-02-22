@@ -394,7 +394,7 @@ pub fn move_transform(mov: u32) -> String {
     str.push(char::from_u32((from / 8) as u32 + '1' as u32).unwrap());
     str.push(char::from_u32((to   & 7) as u32 + 'a' as u32).unwrap());
     str.push(char::from_u32((to   / 8) as u32 + '1' as u32).unwrap());
-    if promotion < E {
+    if promotion != E {
         str.push(PIECES_REV[&((promotion | 1) as u32)]);
     }
     str

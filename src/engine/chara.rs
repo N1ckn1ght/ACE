@@ -9,23 +9,28 @@ use super::{weights::Weights, zobrist::Zobrist};
 // TODO: use i16 instead of floats for faster add/sub operations?
 pub struct Chara<'a> {
 	pub board:				&'a mut Board,
+
 	/* These weights are stored with respect to the colour, black pieces will provide negative values
 		- Usual order is:
 		- [ Game Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]	*/
-	pub pieces_weights:		[[[i32; 64]; 12]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
+	pub pieces_weights:		[[[i32; 64]; 14]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
 	pub turn_mult:			[f32; 2],
 	pub turn_add:			[i32; 2],				// works when it's not a 100% draw
+	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
-	// pub cache_leaves:		HashMap<u64, i32>,
+	pub cache_leaves:		HashMap<u64, i32>,
 	// pub cache_branches:		HashMap<u64, EvalBr>,
+	
 	/* Cache for already made in board moves to track drawish positions */
 	pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
 	pub history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
 													// note: it's always 1 hash behind
+	
 	/* Accessible constants */
 	pub zobrist:			Zobrist,
 	pub rng:				ThreadRng,
-	/* Trackers */
+
+	/* Search trackers */
 	pub ts:					Instant,				// timer start
 	pub tl:					u128,					// time limit in ms
 	pub abort:				bool,
@@ -33,7 +38,8 @@ pub struct Chara<'a> {
 	pub hmc:				usize,					// current distance to root of the search
 													// expected line of moves
 	pub tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
-	pub tpvl:				[usize; HALF_DEPTH_LIMIT]
+	pub tpv_len:			[usize; HALF_DEPTH_LIMIT],
+	pub tpv_flag:			bool,					// if this is a principle variation (in search)
 }
 
 impl<'a> Chara<'a> {
@@ -44,12 +50,12 @@ impl<'a> Chara<'a> {
 
 		/* Transform PW (flip for white, negative for black) and apply coefficients */
 
-		let mut pieces_weights: [[[i32; 64]; 12]; 2] = [[[0; 64]; 12]; 2];
+		let mut pieces_weights: [[[i32; 64]; 14]; 2] = [[[0; 64]; 14]; 2];
 		for i in 0..2 {
 			for j in 0..6 {
 				for k in 0..64 {
-					pieces_weights[i][ j << 1     ][k] =  w.pieces_weights_square_related[i][j][flip(k)] + w.pieces_weights_const[i][j];
-					pieces_weights[i][(j << 1) | 1][k] = -w.pieces_weights_square_related[i][j][k      ] - w.pieces_weights_const[i][j];
+					pieces_weights[i][(j << 1) + 2][k] =  w.pieces_weights_square_related[i][j][flip(k)] + w.pieces_weights_const[i][j];
+					pieces_weights[i][(j << 1) + 3][k] = -w.pieces_weights_square_related[i][j][k      ] - w.pieces_weights_const[i][j];
 				}
 			}
 		}
@@ -70,7 +76,7 @@ impl<'a> Chara<'a> {
 			pieces_weights,
 			turn_mult,
 			turn_add,
-			// cache_leaves:	HashMap::default(),
+			cache_leaves:	HashMap::default(),
 			// cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
 			history_set:	HashSet::default(),
@@ -82,7 +88,8 @@ impl<'a> Chara<'a> {
 			nodes:			0,
 			hmc:			0,
 			tpv:			[[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
-			tpvl:			[0; HALF_DEPTH_LIMIT]
+			tpv_len:		[0; HALF_DEPTH_LIMIT],
+			tpv_flag:		false
 		}
     }
 
@@ -107,20 +114,7 @@ impl<'a> Chara<'a> {
 		self.abort = false;
 		self.nodes = 0;
 		for line in self.tpv.iter_mut() { for node in line.iter_mut() { *node = 0 } };
-		for len in self.tpvl.iter_mut() { *len = 0 };
-
-		let mut moves = self.board.get_legal_moves();
-		if moves.is_empty() {
-			return EvalMove::new(0, 0);
-		}
-		moves.sort();
-		moves.reverse();
-
-		let mut moves_evaluated = Vec::with_capacity(moves.len());
-		for mov in moves.into_iter() {
-			moves_evaluated.push(EvalMove::new(mov, -INF));
-		}
-
+		for len in self.tpv_len.iter_mut() { *len = 0 };
 		let mut alpha = -INF;
 		let mut beta  =  INF;
 		let mut depth = 1;
@@ -129,10 +123,19 @@ impl<'a> Chara<'a> {
 
 		loop {
 			if self.abort {
-				println!("#DEBUG\tQUIT W");
+				println!("#DEBUG\tAbort signal reached!");
+				depth -= 1;
+				break;
+			} else {
+				println!("#DEBUG\tNow trying -{}- half-depth, current score: {}, nodes: {}", depth, score, self.nodes);
+			}
+			self.tpv_flag = true;
+			score = self.search(alpha, beta, depth);
+			if score > LARGE - HALF_DEPTH_LIMIT as i32 {
+				// mate found lol
+				println!("#DEBUG\tMate detected.");
 				break;
 			}
-			score = self.search(alpha, beta, depth);
 			if score <= alpha || score >= beta {
 				alpha = alpha + base_aspiration_window * k - base_aspiration_window * (k << 2);
 				beta = beta - base_aspiration_window * k + base_aspiration_window * (k << 2);
@@ -140,17 +143,22 @@ impl<'a> Chara<'a> {
 				println!("#DEBUG\tAlpha/beta fail! Using x{} from base aspiration now.", k);
 				continue;
 			}
+
+			print!("#DEBUG\tExpected line:");
+			for mov in self.tpv[0].iter().take(self.tpv_len[0]) {
+				print!(" {}", move_transform(*mov));
+			}
+			println!();
+
 			alpha = score - base_aspiration_window;
 			beta = score + base_aspiration_window;
 			k = 1;
 			depth += 1;
-
-			println!("#DEBUG\tCrank! Now searching -{}- half-depth, current score: {}, nodes: {}", depth, score, self.nodes);
 		}
 		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
-		println!("#DEBUG\tMaximum half-depth: {}, nodes searched: {}", depth - 1, self.nodes);
+		println!("#DEBUG\tReal half-depth: {}, score: {}, nodes searched: {}", self.tpv_len[0], score, self.nodes);
 		print!("#DEBUG\tExpected line:");
-		for mov in self.tpv[0].iter().take(self.tpvl[0]) {
+		for mov in self.tpv[0].iter().take(self.tpv_len[0]) {
 			print!(" {}", move_transform(*mov));
 		}
 		println!();
@@ -162,7 +170,7 @@ impl<'a> Chara<'a> {
 			// listen
 			self.time_check();
 		}
-		self.tpvl[self.hmc] = self.hmc;
+		self.tpv_len[self.hmc] = self.hmc;
 		if depth <= 0 {
 			return self.extension(alpha, beta);
 		}
@@ -180,12 +188,34 @@ impl<'a> Chara<'a> {
 		}
 
 		moves.sort();
+		// follow principle variation first
+		let mut full_search = false;
+		if self.tpv_flag {
+			full_search = true;
+			self.tpv_flag = false;
+			let mut i = 0;
+			while i < moves.len() - 1{
+				if moves[i] == self.tpv[self.hmc][self.hmc] {
+					self.tpv_flag = true;
+					break;
+				}
+				i += 1;
+			}
+			while i < moves.len() - 1 {
+				moves.swap(i, i + 1);
+				i += 1;
+			}
+		}
 		moves.reverse();
 		
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let score = -self.search(-beta, -alpha, depth - 1 - (i >> 3) as i16);
+			let score = if full_search {
+				-self.search(-beta, -alpha, depth - 1)
+			} else {
+				-self.search(-beta, -alpha, depth - 1 - (i as i16 >> 3))
+			};
 			self.hmc -= 1;
 			if score > alpha {
 				alpha = score;
@@ -193,21 +223,26 @@ impl<'a> Chara<'a> {
 				// also copy next halfmove pv into this and adjust its length
 				self.tpv[self.hmc][self.hmc] = *mov;
 				let mut next = self.hmc + 1;
-				while next < self.tpvl[self.hmc + 1] {
+				while next < self.tpv_len[self.hmc + 1] {
 					self.tpv[self.hmc][next] = self.tpv[self.hmc + 1][next];	
 					next += 1;
 				}
-				self.tpvl[self.hmc] = self.tpvl[self.hmc + 1];
+				self.tpv_len[self.hmc] = self.tpv_len[self.hmc + 1];
 			}
 			self.revert_move();
 			if alpha >= beta {
-				return beta; // fail high
+				alpha = beta; // fail high
+				break;
 			}
 			if self.abort {
-				return max(alpha, self.extension(alpha, beta));
+				alpha = max(alpha, self.extension(alpha, beta));
+				break;
 			}
 		}
 
+		if full_search {
+			self.tpv_flag = true;
+		}
 		alpha // fail low
 	}
 
@@ -268,9 +303,9 @@ impl<'a> Chara<'a> {
 			return 0;
 		}
 
-		// if self.cache_leaves.contains_key(&hash) {
-		// 	return self.cache_leaves[&hash];
-		// }
+		if self.cache_leaves.contains_key(&hash) {
+			return self.cache_leaves[&hash];
+		}
 
 		/* SETUP SCORE APPLICATION */
 
@@ -280,7 +315,7 @@ impl<'a> Chara<'a> {
 					  (self.board.bbs[Q] | self.board.bbs[Q2]).count_ones() * 8;
 
 		if counter < 4 && self.board.bbs[P] | self.board.bbs[P2] == 0 {
-			// self.cache_leaves.insert(hash, 0);
+			self.cache_leaves.insert(hash, 0);
 			return 0;
 		}
 
@@ -338,33 +373,26 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		/* 
-		score *= self.turn_weights[(board.turn ^ (score < 0.0)) as usize][TURN_MULT];
-		score += self.turn_weights[board.turn as usize][TURN_ADD];
-		score += self.rng.gen::<f32>() * self.random_range * 2.0 - self.random_range;
-		*/
-
 		score += self.turn_add[self.board.turn as usize];
 
 		/* SCORE APPLICATION END */
-
-		// if self.cache_leaves.len() + self.cache_branches.len() * 2 > CACHE_LIMIT {
-		// 	println!("#DEBUG\tClearing cache, leaves: {}, branches: {}", self.cache_leaves.len(), self.cache_branches.len());
-		// 	self.cache_leaves.clear();
-		// 	self.cache_branches.clear();
-		// }
 		
 		if self.board.turn {
 			score = -score;
 		}
 
-		// self.cache_leaves.insert(hash, score);
+		self.cache_leaves.insert(hash, score);
 		score
 	}
 
 	fn time_check(&mut self) {
 		if self.ts.elapsed().as_millis() > self.tl {
 			self.abort = true;
+		}
+		// todo: find a better way
+		if self.cache_leaves.len() > CACHE_LIMIT {
+			println!("#DEBUG\tClearing cache, leaves: {}", self.cache_leaves.len());
+			self.cache_leaves.clear();
 		}
 	}
 }

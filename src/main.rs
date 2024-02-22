@@ -7,7 +7,7 @@ mod frame;
 mod engine;
 
 use std::io;
-use crate::frame::util::{move_transform, move_transform_back};
+use crate::frame::util::{move_transform, move_transform_back, visualise};
 use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::init_secondary_maps};
 use crate::frame::board::Board;
 use crate::engine::chara::Chara;
@@ -30,7 +30,7 @@ fn main() {
             break;
         }
 
-        let best_move = chara.think(50, 2000);
+        let best_move = chara.think(50, 1000);
         println!("Best move: {} ({})", move_transform(best_move.mov), best_move.score);
 
         let mut mov;
