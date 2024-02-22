@@ -43,7 +43,7 @@ impl Zobrist {
     pub fn cache_new(&self, board: &Board) -> u64 {
         let mut hash = 0;
         for (i, bb) in board.bbs.into_iter().enumerate().skip(P) {
-            let mut mask = board.bbs[i];
+            let mut mask = bb;
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
                 hash ^= self.hash_boards[i][csq];

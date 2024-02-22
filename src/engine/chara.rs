@@ -16,7 +16,7 @@ pub struct Chara<'a> {
 	pub turn_mult:			[f32; 2],
 	pub turn_add:			[i32; 2],				// works when it's not a 100% draw
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
-	pub cache_leaves:		HashMap<u64, i32>,
+	// pub cache_leaves:		HashMap<u64, i32>,
 	// pub cache_branches:		HashMap<u64, EvalBr>,
 	/* Cache for already made in board moves to track drawish positions */
 	pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
@@ -28,7 +28,12 @@ pub struct Chara<'a> {
 	/* Trackers */
 	pub ts:					Instant,				// timer start
 	pub tl:					u128,					// time limit in ms
-	pub nodes:				u64						// nodes searched
+	pub abort:				bool,
+	pub nodes:				u64,					// nodes searched
+	pub hmc:				usize,					// current distance to root of the search
+													// expected line of moves
+	pub tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
+	pub tpvl:				[usize; HALF_DEPTH_LIMIT]
 }
 
 impl<'a> Chara<'a> {
@@ -65,7 +70,7 @@ impl<'a> Chara<'a> {
 			pieces_weights,
 			turn_mult,
 			turn_add,
-			cache_leaves:	HashMap::default(),
+			// cache_leaves:	HashMap::default(),
 			// cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
 			history_set:	HashSet::default(),
@@ -73,7 +78,11 @@ impl<'a> Chara<'a> {
 			rng:			rand::thread_rng(),
 			ts:				Instant::now(),
 			tl:				0,
-			nodes:			0
+			abort:			false,
+			nodes:			0,
+			hmc:			0,
+			tpv:			[[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
+			tpvl:			[0; HALF_DEPTH_LIMIT]
 		}
     }
 
@@ -90,152 +99,158 @@ impl<'a> Chara<'a> {
 		self.history_vec.pop();
 		self.history_set.remove(self.history_vec.last().unwrap());
 	}
-}
 
-	pub fn think(&mut self, initial_depth: i16, base_aspiration_window: f32, time_limit_ms: u128) -> Vec<EvalMove> {
+	// get the best move
+	pub fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128) -> EvalMove {
 		self.ts = Instant::now();
 		self.tl = time_limit_ms;
+		self.abort = false;
+		self.nodes = 0;
+		for line in self.tpv.iter_mut() { for node in line.iter_mut() { *node = 0 } };
+		for len in self.tpvl.iter_mut() { *len = 0 };
 
 		let mut moves = self.board.get_legal_moves();
 		if moves.is_empty() {
-			return vec![];
+			return EvalMove::new(0, 0);
 		}
 		moves.sort();
 		moves.reverse();
 
 		let mut moves_evaluated = Vec::with_capacity(moves.len());
 		for mov in moves.into_iter() {
-			moves_evaluated.push(EvalMove::new(mov, EvalBr::new(-LARGE, 0)));
+			moves_evaluated.push(EvalMove::new(mov, -INF));
 		}
 
-		let alpha = -INF;
-		let beta  =  INF;
+		let mut alpha = -INF;
+		let mut beta  =  INF;
+		let mut depth = 1;
+		let mut k = 1;
+		let mut score = 0;
 
 		loop {
-			break;
-		}
-
-		// if we have a mate attack, we must follow it;
-		// if enemy has a mate attack, we could actually consider surrendering :D
-		// if (last_eval.score == LARGE && !board.turn) || (last_eval.score == -LARGE && board.turn) {
-		if last_eval.score == LARGE {
-			let depth = last_eval.depth - 2;
-			
-			for me in moves_evaluated.iter_mut() {
-				self.make_move(board, me.mov);
-				me.eval = -mate(self, board, depth - 1);
-				me.eval.depth += 1;
-				self.revert_move(board);
-				if me.eval.score == LARGE {
-					break;
-				}
+			if self.abort {
+				println!("#DEBUG\tQUIT W");
+				break;
 			}
-		} else {
-			let mut depth = 2;
-			let mut quit = false;
-
-			loop {
-				let mut alpha = f32::min(0.0, last_eval.score - base_aspiration_window);
-				let     beta  = f32::max(0.0, last_eval.score + base_aspiration_window);
-				// let mut alpha = f32::min(0.0, -LARGE);
-				// let     beta  = f32::max(0.0,  LARGE);
-
-				for me in moves_evaluated.iter_mut() {
-					self.make_move(board, me.mov);
-					me.eval = -search(self, board, -beta, -alpha, depth - 1);
-					me.eval.depth += 1;
-					self.revert_move(board);
-					if self.ts.elapsed().as_millis() > self.tl {
-						quit = true;
-						break;
-					}
-					alpha = f32::max(alpha, me.eval.score);
-					if alpha >= beta {
-						break;
-					}
-				}
-		
-				if quit {
-					break;
-				}
-
-				// debug
-				// break;
-
-				moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
-
-				last_eval = moves_evaluated[0].eval;
-				depth += 2;
-				println!("#DEBUG\tCranking up the depth! Now searching -{}- full moves ahead.", depth / 2);
-			}
-		}
-		
-		moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.depth.cmp(&a.eval.depth).then(b.eval.score.total_cmp(&a.eval.score)));
-
-		// a little bit of randomness in status quo (could ruin everything potentially :D)
-		let mut same = 0;
-		for me in moves_evaluated.iter() {
-			if same == 0 {
-				same = 1;
+			score = self.search(alpha, beta, depth);
+			if score <= alpha || score >= beta {
+				alpha = alpha + base_aspiration_window * k - base_aspiration_window * (k << 2);
+				beta = beta - base_aspiration_window * k + base_aspiration_window * (k << 2);
+				k <<= 2;
+				println!("#DEBUG\tAlpha/beta fail! Using x{} from base aspiration now.", k);
 				continue;
 			}
-			if me.eval.depth == moves_evaluated[0].eval.depth && me.eval.score + self.random_range >= moves_evaluated[0].eval.score {
-				same += 1;
-				continue;
-			}
-		}
-		if same > 1 {
-			println!("#DEBUG\tChoosing randomly from pool of {} moves...", same);
-			let rnd = self.rng.gen::<usize>() % same;
-			if rnd != 0 {
-				moves_evaluated.swap(0, rnd);
-			}
-		}
+			alpha = score - base_aspiration_window;
+			beta = score + base_aspiration_window;
+			k = 1;
+			depth += 1;
 
+			println!("#DEBUG\tCrank! Now searching -{}- half-depth, current score: {}, nodes: {}", depth, score, self.nodes);
+		}
 		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
-		moves_evaluated
+		println!("#DEBUG\tMaximum half-depth: {}, nodes searched: {}", depth - 1, self.nodes);
+		print!("#DEBUG\tExpected line:");
+		for mov in self.tpv[0].iter().take(self.tpvl[0]) {
+			print!(" {}", move_transform(*mov));
+		}
+		println!();
+		EvalMove::new(self.tpv[0][0], score)
 	}
 
-	fn search() {
-		
-	}
-
-	fn extension(&mut self, mut alpha: i32, mut beta: i32, depth: i16) -> i32 {
+	fn search(&mut self, mut alpha: i32, beta: i32, depth: i16) -> i32 {
 		if self.nodes & NODES_BETWEEN_COMMS == 0 {
-			// todo: listen
+			// listen
+			self.time_check();
+		}
+		self.tpvl[self.hmc] = self.hmc;
+		if depth <= 0 {
+			return self.extension(alpha, beta);
+		}
+		if self.hmc + 1 > HALF_DEPTH_LIMIT {
+			return self.eval();
+		}
+		self.nodes += 1;
+
+		let mut moves = self.board.get_legal_moves();
+		if moves.is_empty() {
+			if self.board.is_in_check() {
+				return -LARGE + self.hmc as i32;
+			}
+			return 0;
+		}
+
+		moves.sort();
+		moves.reverse();
+		
+		for (i, mov) in moves.iter().enumerate() {
+			self.make_move(*mov);
+			self.hmc += 1;
+			let score = -self.search(-beta, -alpha, depth - 1 - (i >> 3) as i16);
+			self.hmc -= 1;
+			if score > alpha {
+				alpha = score;
+				// score is better, use this move as principle (expected) variation
+				// also copy next halfmove pv into this and adjust its length
+				self.tpv[self.hmc][self.hmc] = *mov;
+				let mut next = self.hmc + 1;
+				while next < self.tpvl[self.hmc + 1] {
+					self.tpv[self.hmc][next] = self.tpv[self.hmc + 1][next];	
+					next += 1;
+				}
+				self.tpvl[self.hmc] = self.tpvl[self.hmc + 1];
+			}
+			self.revert_move();
+			if alpha >= beta {
+				return beta; // fail high
+			}
+			if self.abort {
+				return max(alpha, self.extension(alpha, beta));
+			}
+		}
+
+		alpha // fail low
+	}
+
+	fn extension(&mut self, mut alpha: i32, beta: i32) -> i32 {
+		if self.nodes & NODES_BETWEEN_COMMS == 0 {
+			// listen
+			self.time_check();
 		}
 		self.nodes += 1;
 
 		// cuttin even before we get a list of moves
-		let mut score = self.eval();
-		if score >= beta {
+		alpha = max(alpha, self.eval());
+		if alpha >= beta {
 			return beta; // fail high
 		}
-		alpha = max(alpha, score);
 
 		let mut moves = self.board.get_legal_moves();
 		
 		// if mate or stalemate
 		if moves.is_empty() {
 			if self.board.is_in_check() {
-				return -LARGE - depth;
+				return -LARGE + self.hmc as i32;
 			}
+			return 0;
 		}
 
 		moves.sort();
 		moves.reverse();
 
 		for mov in moves.iter() {
-			if *mov > MSE_NOT_CAPTURE_MIN {
-				break;
-			}
 			self.make_move(*mov);
-			self.extension(-beta, -alpha);
+			// extension will consider checks as well as captures
+			if *mov < MSE_CAPTURE_MIN && !self.board.is_in_check() {
+				self.revert_move();
+				continue;
+			}
+			self.hmc += 1;
+			alpha = max(alpha, -self.extension(-beta, -alpha));
+			self.hmc -= 1;
 			self.revert_move();
-			if score >= beta {
+			if alpha >= beta {
 				return beta;
 			}
-			alpha = max(alpha, score);
 		}
 
 		alpha // fail low
@@ -253,32 +268,32 @@ impl<'a> Chara<'a> {
 			return 0;
 		}
 
-		if self.cache_leaves.contains_key(&hash) {
-			return self.cache_leaves[&hash];
-		}
+		// if self.cache_leaves.contains_key(&hash) {
+		// 	return self.cache_leaves[&hash];
+		// }
 
 		/* SETUP SCORE APPLICATION */
 
-		let counter = (board.bbs[N] | board.bbs[N2]).count_ones() * 3 + 
-					  (board.bbs[B] | board.bbs[B2]).count_ones() * 3 + 
-					  (board.bbs[R] | board.bbs[R2]).count_ones() * 4 +
-					  (board.bbs[Q] | board.bbs[Q2]).count_ones() * 8;
+		let counter = (self.board.bbs[N] | self.board.bbs[N2]).count_ones() * 3 + 
+					  (self.board.bbs[B] | self.board.bbs[B2]).count_ones() * 3 + 
+					  (self.board.bbs[R] | self.board.bbs[R2]).count_ones() * 4 +
+					  (self.board.bbs[Q] | self.board.bbs[Q2]).count_ones() * 8;
 
-		if counter < 4 && board.bbs[P] | board.bbs[P2] == 0 {
-			self.cache_leaves.insert(hash, 0);
+		if counter < 4 && self.board.bbs[P] | self.board.bbs[P2] == 0 {
+			// self.cache_leaves.insert(hash, 0);
 			return 0;
 		}
 
 		let phase = (counter < 31) as usize;
 
 		let mut score: i32 = 0;
-		let sides = [board.get_occupancies(false), board.get_occupancies(true)];
+		let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
 		let occup = sides[0] | sides[1];
-		let kbits = [gtz(board.bbs[K]), gtz(board.bbs[K2])];
+		let kbits = [gtz(self.board.bbs[K]), gtz(self.board.bbs[K2])];
 
 		/* SCORE APPLICATION BEGIN */
 
-		let pawns = [board.bbs[P], board.bbs[P2]];
+		let pawns = [self.board.bbs[P], self.board.bbs[P2]];
 		for (ally, mut bb) in pawns.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
@@ -287,7 +302,7 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		let knights = [board.bbs[N], board.bbs[N2]];
+		let knights = [self.board.bbs[N], self.board.bbs[N2]];
 		for (ally, mut bb) in knights.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
@@ -296,7 +311,7 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		let bishops = [board.bbs[B], board.bbs[B2]];
+		let bishops = [self.board.bbs[B], self.board.bbs[B2]];
 		for (ally, mut bb) in bishops.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
@@ -305,7 +320,7 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		let rooks = [board.bbs[R], board.bbs[R2]];
+		let rooks = [self.board.bbs[R], self.board.bbs[R2]];
 		for (ally, mut bb) in rooks.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
@@ -314,7 +329,7 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		let queens = [board.bbs[Q], board.bbs[Q2]];
+		let queens = [self.board.bbs[Q], self.board.bbs[Q2]];
 		for (ally, mut bb) in queens.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
@@ -329,20 +344,28 @@ impl<'a> Chara<'a> {
 		score += self.rng.gen::<f32>() * self.random_range * 2.0 - self.random_range;
 		*/
 
+		score += self.turn_add[self.board.turn as usize];
+
 		/* SCORE APPLICATION END */
 
-		if self.cache_leaves.len() + self.cache_branches.len() * 2 > CACHE_LIMIT {
-			println!("#DEBUG\tClearing cache, leaves: {}, branches: {}", self.cache_leaves.len(), self.cache_branches.len());
-			self.cache_leaves.clear();
-			self.cache_branches.clear();
-		}
+		// if self.cache_leaves.len() + self.cache_branches.len() * 2 > CACHE_LIMIT {
+		// 	println!("#DEBUG\tClearing cache, leaves: {}, branches: {}", self.cache_leaves.len(), self.cache_branches.len());
+		// 	self.cache_leaves.clear();
+		// 	self.cache_branches.clear();
+		// }
 		
-		if board.turn {
+		if self.board.turn {
 			score = -score;
 		}
 
-		self.cache_leaves.insert(hash, score);
+		// self.cache_leaves.insert(hash, score);
 		score
+	}
+
+	fn time_check(&mut self) {
+		if self.ts.elapsed().as_millis() > self.tl {
+			self.abort = true;
+		}
 	}
 }
 
@@ -354,14 +377,14 @@ mod tests {
 	#[test]
 	fn test_chara_eval_initial() {
 		let mut board = Board::default();
-		let mut chara = Chara::init(&mut board, 0.8, 1.2, 0.0);
-		let moves = board.get_legal_moves();
-		board.make_move(move_transform_back("e2e4", &moves).unwrap());
-		let moves = board.get_legal_moves();
+		let mut chara = Chara::init(&mut board);
+		let moves = chara.board.get_legal_moves();
+		chara.make_move(move_transform_back("e2e4", &moves).unwrap());
+		let moves = chara.board.get_legal_moves();
 		let mov = move_transform_back("e7e5", &moves).unwrap();
-		board.make_move(mov);
-		let eval = chara.eval(&board);
-		assert_eq!((eval * 1000.0).round(), (chara.turn_weights[0][TURN_ADD] * 1000.0).round());
+		chara.make_move(mov);
+		let eval = chara.eval();
+		assert_eq!(eval, chara.turn_add[0]);
 	}
 
 	#[test]
@@ -374,9 +397,9 @@ mod tests {
 		];
 		for fen in fens.into_iter() {
 			let mut board = Board::import(fen);
-			let mut chara = Chara::init(&mut board, 0.8, 1.2, 0.0);
-			let eval = chara.eval(&board);
-			assert_eq!((eval * 1000.0).round(), (chara.turn_weights[0][TURN_ADD] * 1000.0).round());
+			let mut chara = Chara::init(&mut board);
+			let eval = chara.eval();
+			assert_eq!(eval, chara.turn_add[0]);
 		}
 	}
 }

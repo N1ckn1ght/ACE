@@ -11,7 +11,7 @@ use phf::phf_map;
 
 pub const CACHE_LIMIT: usize = 469762048;   // divide your RAM in bits by 32;
                                             // might overflow (TODO: fix this)
-pub const ITERATIVE_DEPTH_LIMIT: i16 = 50;
+pub const HALF_DEPTH_LIMIT: usize = 64;
 pub const NODES_BETWEEN_COMMS: u64 = 0b0000011111111111;
 
 /* SPECIFIED PATHES */
@@ -331,6 +331,23 @@ pub fn u32_to_str(value: u32) -> String {
 
 pub fn usize_to_str(value: usize) -> String {
     format!("{value:064b}")
+}
+
+/* DATA STRUCTURES */
+
+#[derive(Copy, Clone)]
+pub struct EvalMove {
+    pub mov: u32,
+    pub score: i32
+}
+
+impl EvalMove {
+    pub fn new(mov: u32, score: i32) -> Self {
+        EvalMove {
+            mov,
+            score
+        }
+    }
 }
 
 /* STATIC MAPS (testing/print/converting purposes) */

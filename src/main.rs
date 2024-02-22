@@ -7,7 +7,7 @@ mod frame;
 mod engine;
 
 use std::io;
-use crate::frame::util::visualise;
+use crate::frame::util::{move_transform, move_transform_back};
 use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::init_secondary_maps};
 use crate::frame::board::Board;
 use crate::engine::chara::Chara;
@@ -24,7 +24,25 @@ fn main() {
 
     loop {
         println!("Processing...\n");
-        break;
+
+        let legals = chara.board.get_legal_moves();
+        if legals.is_empty() {
+            break;
+        }
+
+        let best_move = chara.think(50, 2000);
+        println!("Best move: {} ({})", move_transform(best_move.mov), best_move.score);
+
+        let mut mov;
+        loop {
+            let str = input();
+            mov = move_transform_back(&str.to_owned(), &legals);
+            if let Some(i) = mov {
+                chara.make_move(i);
+                break;
+            }
+            println!("Move not found?");
+        }
     }
 }
 
