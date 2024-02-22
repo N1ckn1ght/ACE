@@ -122,15 +122,15 @@ impl<'a> Chara<'a> {
 		let mut score = 0;
 
 		loop {
-			if self.abort {
-				println!("#DEBUG\tAbort signal reached!");
-				depth -= 1;
-				break;
-			} else {
-				println!("#DEBUG\tNow trying -{}- half-depth, current score: {}, nodes: {}", depth, score, self.nodes);
-			}
+			println!("#DEBUG\tNow trying -{}- half-depth, current score: {}, nodes: {}", depth, score, self.nodes);
 			self.tpv_flag = true;
-			score = self.search(alpha, beta, depth);
+			let temp = self.search(alpha, beta, depth);
+			if !self.abort {
+				score = temp;
+			} else {
+				println!("#DEBUG\tAbort signal reached!");
+				break;
+			}
 			if score > LARGE - HALF_DEPTH_LIMIT as i32 {
 				// mate found lol
 				println!("#DEBUG\tMate detected.");
@@ -193,17 +193,20 @@ impl<'a> Chara<'a> {
 		if self.tpv_flag {
 			full_search = true;
 			self.tpv_flag = false;
-			let mut i = 0;
-			while i < moves.len() - 1{
-				if moves[i] == self.tpv[self.hmc][self.hmc] {
-					self.tpv_flag = true;
-					break;
+			// dirty!
+			if beta - alpha > 1 {
+				let mut i = 0;
+				while i < moves.len() - 1 {
+					if moves[i] == self.tpv[self.hmc][self.hmc] {
+						self.tpv_flag = true;
+						break;
+					}
+					i += 1;
 				}
-				i += 1;
-			}
-			while i < moves.len() - 1 {
-				moves.swap(i, i + 1);
-				i += 1;
+				while i < moves.len() - 1 {
+					moves.swap(i, i + 1);
+					i += 1;
+				}
 			}
 		}
 		moves.reverse();
@@ -235,7 +238,7 @@ impl<'a> Chara<'a> {
 				break;
 			}
 			if self.abort {
-				alpha = max(alpha, self.extension(alpha, beta));
+				alpha = 0;
 				break;
 			}
 		}
