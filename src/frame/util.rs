@@ -9,13 +9,14 @@ use phf::phf_map;
 
 /* LIMITATIONS */
 
-pub const MEMORY_LIMIT_MB: usize = 512; // really rough up, but idk for now
+// todo: custom hashmap maybe? this could overflow even now!
+pub const MEMORY_LIMIT_MB: usize = 512;
 // 96 bit
-pub const CACHED_LEAVES_LIMIT: usize = ((((MEMORY_LIMIT_MB >> 2) * 3) >> 1) << 18) / 3;
+pub const CACHED_LEAVES_LIMIT: usize = ( (MEMORY_LIMIT_MB >> 3)    << 18 ) / 3;
 // 128 bit
-pub const CACHED_BRANCHES_LIMIT: usize = (((MEMORY_LIMIT_MB >> 2) * 3) >> 1) << 16;
+pub const CACHED_BRANCHES_LIMIT: usize = (MEMORY_LIMIT_MB >> 3)    << 16;
 pub const HALF_DEPTH_LIMIT: usize = 64;
-pub const NODES_BETWEEN_COMMS: u64 = 0b0001111111111111;
+pub const NODES_BETWEEN_COMMS: u64 = 0b0000111111111111;
 
 /* SPECIFIED PATHES */
 

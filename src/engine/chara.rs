@@ -132,7 +132,7 @@ impl<'a> Chara<'a> {
 			self.tpv_flag = true;
 			let temp = self.search(alpha, beta, depth);
 			if !self.abort {
-				score = temp;
+				score = temp;	
 			} else {
 				println!("#DEBUG\tAbort signal reached!");
 				break;
@@ -478,5 +478,12 @@ mod tests {
 			let eval = chara.eval();
 			assert_eq!(eval, chara.turn_add[0]);
 		}
+	}
+
+	#[test]
+	fn test_chara_eval_initial_3() {
+		let mut board = Board::default();
+		let chara = Chara::init(&mut board);
+		assert_eq!(chara.pieces_weights[0][K][gtz(chara.board.bbs[K])], 10);
 	}
 }
