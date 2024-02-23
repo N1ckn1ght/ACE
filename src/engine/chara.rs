@@ -6,7 +6,6 @@ use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{weights::Weights, zobrist::Zobrist};
 
-// TODO: use i16 instead of floats for faster add/sub operations?
 pub struct Chara<'a> {
 	pub board:				&'a mut Board,
 
@@ -19,7 +18,7 @@ pub struct Chara<'a> {
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
-	// pub cache_branches:		HashMap<u64, EvalBr>,
+	pub cache_branches:		HashMap<u64, EvalBr>,
 	
 	/* Cache for already made in board moves to track drawish positions */
 	pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
@@ -33,11 +32,12 @@ pub struct Chara<'a> {
 	/* Search trackers */
 	pub ts:					Instant,				// timer start
 	pub tl:					u128,					// time limit in ms
-	pub abort:				bool,
+	pub abort:				bool,					// stop search signal
 	pub nodes:				u64,					// nodes searched
 	pub hmc:				usize,					// current distance to root of the search
-													// expected line of moves
+													// expected lines of moves
 	pub tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
+													// expected lines of moves length
 	pub tpv_len:			[usize; HALF_DEPTH_LIMIT],
 	pub tpv_flag:			bool,					// if this is a principle variation (in search)
 }
@@ -77,7 +77,7 @@ impl<'a> Chara<'a> {
 			turn_mult,
 			turn_add,
 			cache_leaves:	HashMap::default(),
-			// cache_branches:	HashMap::default(),
+			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
 			history_set:	HashSet::default(),
 			zobrist,
@@ -89,7 +89,7 @@ impl<'a> Chara<'a> {
 			hmc:			0,
 			tpv:			[[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
 			tpv_len:		[0; HALF_DEPTH_LIMIT],
-			tpv_flag:		false
+			tpv_flag:		false,
 		}
     }
 
@@ -108,7 +108,7 @@ impl<'a> Chara<'a> {
 	}
 
 	// get the best move
-	pub fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128) -> EvalMove {
+	pub fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
 		self.ts = Instant::now();
 		self.tl = time_limit_ms;
 		self.abort = false;
@@ -122,7 +122,6 @@ impl<'a> Chara<'a> {
 		let mut score = 0;
 
 		loop {
-			println!("#DEBUG\tNow trying -{}- half-depth, current score: {}, nodes: {}", depth, score, self.nodes);
 			self.tpv_flag = true;
 			let temp = self.search(alpha, beta, depth);
 			if !self.abort {
@@ -144,6 +143,7 @@ impl<'a> Chara<'a> {
 				continue;
 			}
 
+			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score, self.nodes);
 			print!("#DEBUG\tExpected line:");
 			for mov in self.tpv[0].iter().take(self.tpv_len[0]) {
 				print!(" {}", move_transform(*mov));
@@ -154,11 +154,14 @@ impl<'a> Chara<'a> {
 			beta = score + base_aspiration_window;
 			k = 1;
 			depth += 1;
+			if depth > depth_limit {
+				break;
+			}
 		}
 		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
-		println!("#DEBUG\tReal half-depth: {}, score: {}, nodes searched: {}", self.tpv_len[0], score, self.nodes);
+		println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score, self.nodes);
 		print!("#DEBUG\tExpected line:");
-		for mov in self.tpv[0].iter().take(self.tpv_len[0]) {
+		for mov in self.tpv[0].iter().take(max(self.tpv_len[0], 1)) {
 			print!(" {}", move_transform(*mov));
 		}
 		println!();
@@ -166,18 +169,44 @@ impl<'a> Chara<'a> {
 	}
 
 	fn search(&mut self, mut alpha: i32, beta: i32, depth: i16) -> i32 {
-		if self.nodes & NODES_BETWEEN_COMMS == 0 {
-			// listen
-			self.time_check();
-		}
 		self.tpv_len[self.hmc] = self.hmc;
+
+		let hash = *self.history_vec.last().unwrap();
+		if self.board.hmc == 50 || self.history_set.contains(&hash) {
+			return 0;
+		}
+		
+		if self.hmc != 0 && self.cache_branches.contains_key(&hash) {
+			let br = self.cache_branches[&hash];
+			if br.depth >= depth {
+				let mut score = br.score;
+				if score < -LARGE {
+					score += self.hmc as i32;
+				} else if score > LARGE {
+					score -= self.hmc as i32;
+				}
+				if br.flag & HF_PRECISE != 0 {
+					return score;
+				}
+				if br.flag & HF_LOW != 0 && score <= alpha {
+					return alpha;
+				}
+				if br.flag & HF_HIGH != 0 && score >= beta {
+					return beta;
+				}
+			}
+		}
+
+		if self.nodes & NODES_BETWEEN_COMMS == 0 {
+			self.listen();
+		}
 		if depth <= 0 {
 			return self.extension(alpha, beta);
 		}
+		self.nodes += 1;
 		if self.hmc + 1 > HALF_DEPTH_LIMIT {
 			return self.eval();
 		}
-		self.nodes += 1;
 
 		let mut moves = self.board.get_legal_moves();
 		if moves.is_empty() {
@@ -193,11 +222,10 @@ impl<'a> Chara<'a> {
 		if self.tpv_flag {
 			full_search = true;
 			self.tpv_flag = false;
-			// dirty!
 			if beta - alpha > 1 {
 				let mut i = 0;
 				while i < moves.len() - 1 {
-					if moves[i] == self.tpv[self.hmc][self.hmc] {
+					if moves[i] == self.tpv[0][self.hmc] {
 						self.tpv_flag = true;
 						break;
 					}
@@ -211,17 +239,20 @@ impl<'a> Chara<'a> {
 		}
 		moves.reverse();
 		
+		let mut hf_cur = HF_LOW;
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
 			let score = if full_search {
 				-self.search(-beta, -alpha, depth - 1)
 			} else {
-				-self.search(-beta, -alpha, depth - 1 - (i as i16 >> 3))
+				-self.search(-beta, -alpha, depth - 1 - (i as i16 >> 2))
 			};
 			self.hmc -= 1;
 			if score > alpha {
 				alpha = score;
+				hf_cur = HF_PRECISE;
+
 				// score is better, use this move as principle (expected) variation
 				// also copy next halfmove pv into this and adjust its length
 				self.tpv[self.hmc][self.hmc] = *mov;
@@ -234,25 +265,30 @@ impl<'a> Chara<'a> {
 			}
 			self.revert_move();
 			if alpha >= beta {
-				alpha = beta; // fail high
-				break;
+				self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
+				if full_search {
+					self.tpv_flag = true;
+				}
+				return beta; // fail high
 			}
 			if self.abort {
-				alpha = 0;
-				break;
+				// this may really ruin a game in just 1 move, but what should I do ;w;
+				// return 0;
+				// return (alpha + beta) >> 1;
+				return beta;
 			}
 		}
 
 		if full_search {
 			self.tpv_flag = true;
 		}
+		self.cache_branches.insert(hash, EvalBr::new(alpha, depth, hf_cur));
 		alpha // fail low
 	}
 
 	fn extension(&mut self, mut alpha: i32, beta: i32) -> i32 {
 		if self.nodes & NODES_BETWEEN_COMMS == 0 {
-			// listen
-			self.time_check();
+			self.listen();
 		}
 		self.nodes += 1;
 
@@ -301,10 +337,6 @@ impl<'a> Chara<'a> {
 	*/
 	fn eval(&mut self) -> i32 {
 		let hash = *self.history_vec.last().unwrap();
-
-		if self.board.hmc == 50 || self.history_set.contains(&hash) {
-			return 0;
-		}
 
 		if self.cache_leaves.contains_key(&hash) {
 			return self.cache_leaves[&hash];
@@ -388,15 +420,24 @@ impl<'a> Chara<'a> {
 		score
 	}
 
-	fn time_check(&mut self) {
+	fn listen(&mut self) {
 		if self.ts.elapsed().as_millis() > self.tl {
 			self.abort = true;
 		}
-		// todo: find a better way
-		if self.cache_leaves.len() > CACHE_LIMIT {
-			println!("#DEBUG\tClearing cache, leaves: {}", self.cache_leaves.len());
+
+		// delet this
+		// println!("\n#DEBUG\tcache of leaves ({} entries ).", self.cache_leaves.len());
+		// println!("#DEBUG\tcache of branches ({} entries ).\n", self.cache_branches.len());
+
+		if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
+			println!("#DEBUG\tClearing cache of leaves ({} entries dropped).", self.cache_leaves.len());
 			self.cache_leaves.clear();
+		} else if self.cache_branches.len() > CACHED_BRANCHES_LIMIT {
+			println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
+			self.cache_branches.clear();
 		}
+
+		// TODO
 	}
 }
 

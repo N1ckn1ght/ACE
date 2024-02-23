@@ -9,10 +9,10 @@ use phf::phf_map;
 
 /* LIMITATIONS */
 
-pub const CACHE_LIMIT: usize = 469762048;   // divide your RAM in bits by 32;
-                                            // might overflow (TODO: fix this)
+pub const CACHED_LEAVES_LIMIT: usize = 1000000;
+pub const CACHED_BRANCHES_LIMIT: usize = 1000000;
 pub const HALF_DEPTH_LIMIT: usize = 64;
-pub const NODES_BETWEEN_COMMS: u64 = 0b0000011111111111;
+pub const NODES_BETWEEN_COMMS: u64 = 0b0001111111111111;
 
 /* SPECIFIED PATHES */
 
@@ -98,6 +98,12 @@ pub const CLB: u8 = 0b1000; // castle long black
 pub const LARGE: i32 = 0x7FFF;
 pub const INF:   i32 = 0xFFFF;
 
+/* Branch cache search flags */
+
+pub const HF_PRECISE: i16 = 1;
+pub const HF_LOW: i16 = 2;
+pub const HF_HIGH: i16 = 4;
+
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
 
 #[inline]
@@ -158,6 +164,9 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
 // since it's not a struct, let's use more inline fuctions
 // let's keep it in Most Valuable Victim - Least Valuable Attacker way
 // [4 - SPECIAL][8 - square from][8 - square to][4 - moving piece][4 - promotion][4 - captured piece]
+// --- additional note ---
+// could be further expanded to 64 bit to store mort sort bits - like, pv, killer moves, etc;
+// this will increase the perfomance and simplicity if there's a lot of contributing factors to pre-sort
 #[inline]
 pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promotion: usize, special: u32 ) -> u32 {
     special | (from << 4 | to << 12 | (!piece & 0b1111) << 20 | promotion << 24 | capture << 28) as u32
@@ -198,6 +207,42 @@ pub fn move_get_capture(mov: u32) -> usize {
     (mov >> 28 & 0b1111) as usize
 }
 
+/* ADDITIONAL DATA STRUCTURES */
+
+#[derive(Copy, Clone)]
+pub struct EvalMove {
+    pub mov: u32,
+    pub score: i32
+}
+
+impl EvalMove {
+    #[inline]
+    pub fn new(mov: u32, score: i32) -> Self {
+        EvalMove {
+            mov,
+            score
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct EvalBr {
+    pub score: i32, 
+    pub depth: i16,
+    pub flag: i16
+}
+
+impl EvalBr {
+    #[inline]
+    pub fn new(score: i32, depth: i16, flag: i16) -> Self {
+        EvalBr {
+            score,
+            depth,
+            flag
+        }
+    }
+}
+
 /* GENERAL FUNCTIONS */
 
 pub fn xor64(mut num: u64) -> u64 {
@@ -205,6 +250,17 @@ pub fn xor64(mut num: u64) -> u64 {
     num ^= num >> 7;
     num ^= num << 17;
     num
+}
+
+pub fn init64(f: fn(&mut[u64]), path: &str) {
+    if Path::new(path).exists() {
+        println!("Found file: {}", path);
+    } else {
+        println!("Creating file: {}", path);
+        let mut vec = vec![0; 64];
+        f(&mut vec);
+        vector_to_file(&vec, path);
+    }
 }
 
 /* FILE IO */
@@ -286,19 +342,6 @@ pub fn file_to_magics(path: &str, magics: &mut [u64], bits: &mut [usize], attack
     vec
 }
 
-/* FRAMEWORK */
-
-pub fn init64(f: fn(&mut[u64]), path: &str) {
-    if Path::new(path).exists() {
-        println!("Found file: {}", path);
-    } else {
-        println!("Creating file: {}", path);
-        let mut vec = vec![0; 64];
-        f(&mut vec);
-        vector_to_file(&vec, path);
-    }
-}
-
 /* TESTING PURPOSES */
 
 pub fn visualise(bitboards: &[u64], columns: usize) {
@@ -331,23 +374,6 @@ pub fn u32_to_str(value: u32) -> String {
 
 pub fn usize_to_str(value: usize) -> String {
     format!("{value:064b}")
-}
-
-/* DATA STRUCTURES */
-
-#[derive(Copy, Clone)]
-pub struct EvalMove {
-    pub mov: u32,
-    pub score: i32
-}
-
-impl EvalMove {
-    pub fn new(mov: u32, score: i32) -> Self {
-        EvalMove {
-            mov,
-            score
-        }
-    }
 }
 
 /* STATIC MAPS (testing/print/converting purposes) */

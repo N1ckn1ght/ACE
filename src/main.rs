@@ -17,7 +17,7 @@ fn main() {
     init_leaping_attacks();
     init_secondary_maps();
 
-    let mut board = Board::import("5k1r/ppp2pq1/6np/1Q1p1b2/3P4/2P1R2P/PP3PPK/RNr5 b - - 1 22");
+    let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
 
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
@@ -30,7 +30,7 @@ fn main() {
             break;
         }
 
-        let best_move = chara.think(50, 2500);
+        let best_move = chara.think(50, 2000, 50);
         println!("Best move: {} ({})", move_transform(best_move.mov), best_move.score);
 
         let mut mov;
