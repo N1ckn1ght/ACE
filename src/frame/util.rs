@@ -9,10 +9,10 @@ use phf::phf_map;
 
 /* LIMITATIONS */
 
-// todo: custom hashmap maybe? this could overflow even now!
+// todo: custom hashmap maybe? this is just inefficient memory usage!
 pub const MEMORY_LIMIT_MB: usize = 512;
 // 96 bit
-pub const CACHED_LEAVES_LIMIT: usize = ( (MEMORY_LIMIT_MB >> 3)    << 18 ) / 3;
+pub const CACHED_LEAVES_LIMIT: usize = ( (MEMORY_LIMIT_MB >> 2)    << 18 ) / 3;
 // 128 bit
 pub const CACHED_BRANCHES_LIMIT: usize = (MEMORY_LIMIT_MB >> 3)    << 16;
 pub const HALF_DEPTH_LIMIT: usize = 64;

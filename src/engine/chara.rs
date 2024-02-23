@@ -149,6 +149,7 @@ impl<'a> Chara<'a> {
 				continue;
 			}
 
+			println!("#DEBUG\t --------------------------------");
 			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score, self.nodes);
 			print!("#DEBUG\tExpected line:");
 			for mov in self.tpv[0].iter().take(self.tpv_len[0]) {
@@ -164,13 +165,16 @@ impl<'a> Chara<'a> {
 				break;
 			}
 		}
+		println!("#DEBUG\t --------------------------------");
 		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
+		println!("#DEBUG\tCache limits (in thousands), leaves: {}/{}, branches: {}/{}", self.cache_leaves.len() / 1000, CACHED_LEAVES_LIMIT / 1000, self.cache_branches.len() / 1000, CACHED_BRANCHES_LIMIT / 1000);
 		println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score, self.nodes);
 		print!("#DEBUG\tExpected line:");
 		for mov in self.tpv[0].iter().take(max(self.tpv_len[0], 1)) {
 			print!(" {}", move_transform(*mov));
 		}
 		println!();
+		println!("#DEBUG\t --------------------------------");
 		EvalMove::new(self.tpv[0][0], score)
 	}
 
