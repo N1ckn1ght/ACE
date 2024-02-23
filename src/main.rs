@@ -19,6 +19,8 @@ fn main() {
 
     let mut board = Board::default();
     // let mut board = Board::import("r1bqkb1r/ppp2ppp/2n5/3p4/2Bpn3/5N2/PPP2PPP/RNBQR1K1 w kq - 0 7");
+    let mut board = Board::import("8/5k2/p1PR2N1/P6p/1P5P/8/5K2/8 w - - 1 54");
+    // let mut board = Board::import("2Q5/7k/R5N1/P6p/1P5P/8/5K2/8 w - - 1 57");
     let mut chara = Chara::init(&mut board);
 
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
@@ -26,7 +28,7 @@ fn main() {
     let mut hmc = 0;
     let scan = [true, true];
     let ab = [50, 1000];
-    // soft limit lol, may overflow by about 1-50 ms
+    // soft limit lol, may overflow by about 1-50 msc5b
     let time = 800;
     let mut abi = 0;
 

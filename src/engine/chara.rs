@@ -137,8 +137,7 @@ impl<'a> Chara<'a> {
 				println!("#DEBUG\tAbort signal reached!");
 				break;
 			}
-			if score > LARGE - HALF_DEPTH_LIMIT as i32 {
-				// mate found lol
+			if score > LARGM {
 				println!("#DEBUG\tMate detected.");
 				break;
 			}
@@ -186,19 +185,18 @@ impl<'a> Chara<'a> {
 		if self.hmc != 0 && self.cache_branches.contains_key(&hash) {
 			let br = self.cache_branches[&hash];
 			if br.depth >= depth {
-				let mut score = br.score;
-				if score < -LARGE {
-					score += self.hmc as i32;
-				} else if score > LARGE {
-					score -= self.hmc as i32;
-				}
 				if br.flag & HF_PRECISE != 0 {
-					return score;
+					if br.score < -LARGM {
+						return br.score + self.hmc as i32;
+					} else if br.score > LARGM {
+						return br.score - self.hmc as i32;
+					}
+					return br.score;
 				}
-				if br.flag & HF_LOW != 0 && score <= alpha {
+				if br.flag & HF_LOW != 0 && br.score <= alpha {
 					return alpha;
 				}
-				if br.flag & HF_HIGH != 0 && score >= beta {
+				if br.flag & HF_HIGH != 0 && br.score >= beta {
 					return beta;
 				}
 			}
@@ -218,8 +216,10 @@ impl<'a> Chara<'a> {
 		let mut moves = self.board.get_legal_moves();
 		if moves.is_empty() {
 			if self.board.is_in_check() {
+				self.cache_branches.insert(hash, EvalBr::new(-LARGE, 0, HF_PRECISE));
 				return -LARGE + self.hmc as i32;
 			}
+			self.cache_branches.insert(hash, EvalBr::new(0, 0, HF_PRECISE));
 			return 0;
 		}
 
@@ -280,7 +280,12 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		self.cache_branches.insert(hash, EvalBr::new(alpha, depth, hf_cur));
+		self.cache_branches.insert(hash, EvalBr::new(alpha, depth, hf_cur));	
+		if alpha < -LARGM {
+			self.cache_branches.get_mut(&hash).unwrap().score -= self.hmc as i32;	
+		} else if alpha > LARGM {
+			self.cache_branches.get_mut(&hash).unwrap().score += self.hmc as i32;
+		}
 		alpha // fail low
 	}
 
@@ -316,9 +321,9 @@ impl<'a> Chara<'a> {
 				self.revert_move();
 				continue;
 			}
-			self.hmc += 1;
+			// self.hmc += 1;
 			alpha = max(alpha, -self.extension(-beta, -alpha));
-			self.hmc -= 1;
+			// self.hmc -= 1;
 			self.revert_move();
 			if alpha >= beta {
 				return beta;

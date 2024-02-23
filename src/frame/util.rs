@@ -99,6 +99,7 @@ pub const CLW: u8 = 0b0100; // castle long white
 pub const CLB: u8 = 0b1000; // castle long black
 
 pub const LARGE: i32 = 0x7FFF;
+pub const LARGM: i32 = 0x7FFF - (HALF_DEPTH_LIMIT << 1) as i32;
 pub const INF:   i32 = 0xFFFF;
 
 /* Branch cache search flags */
