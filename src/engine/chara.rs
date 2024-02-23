@@ -444,6 +444,8 @@ impl<'a> Chara<'a> {
 
 #[cfg(test)]
 mod tests {
+    use test::Bencher;
+
     use super::*;
 
 	#[test]
