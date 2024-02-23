@@ -26,7 +26,8 @@ fn main() {
     let mut hmc = 0;
     let scan = [true, true];
     let ab = [50, 1000];
-    let time = 800;             // soft limit lol, may overflow by about 1-50 ms
+    // soft limit lol, may overflow by about 1-50 ms
+    let time = 800;
     let mut abi = 0;
 
     loop {
@@ -57,6 +58,9 @@ fn main() {
                 hmc -= 1;
                 abi = 1;
                 break;
+            } else if str == "ex" {
+                println!("{}", chara.board.export());
+                continue;
             }
 
             mov = move_transform_back(&str.to_owned(), &legals);

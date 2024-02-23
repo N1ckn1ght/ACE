@@ -225,15 +225,15 @@ impl<'a> Chara<'a> {
 
 		moves.sort();
 		// follow principle variation first
-		let mut full_search = false;
+		let mut reduction = 3;			//  0-8 no reduction,  9-16 1 depth reduction, 33+ it's gonna be extension
 		if self.tpv_flag {
-			full_search = true;
+			reduction = 4;				// 0-15 no reduction, 16-32 1 depth reduction (e.g. from starting pos it's for knights), 33+ 2 depth reduction
 			self.tpv_flag = false;
 			if beta - alpha > 1 {
 				let mut i = 0;
 				while i < moves.len() - 1 {
 					if moves[i] == self.tpv[0][self.hmc] {
-						self.tpv_flag = true;
+						reduction = 6;	// no reduction
 						break;
 					}
 					i += 1;
@@ -250,11 +250,7 @@ impl<'a> Chara<'a> {
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let score = if full_search {
-				-self.search(-beta, -alpha, depth - 1)
-			} else {
-				-self.search(-beta, -alpha, depth - 1 - (i as i16 >> 2))
-			};
+			let score = -self.search(-beta, -alpha, depth - 1 - (i as i16 >> reduction));
 			self.hmc -= 1;
 			if score > alpha {
 				alpha = score;
@@ -273,9 +269,7 @@ impl<'a> Chara<'a> {
 			self.revert_move();
 			if alpha >= beta {
 				self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
-				if full_search {
-					self.tpv_flag = true;
-				}
+				self.tpv_flag = true;
 				return beta; // fail high
 			}
 			if self.abort {
@@ -286,9 +280,6 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		if full_search {
-			self.tpv_flag = true;
-		}
 		self.cache_branches.insert(hash, EvalBr::new(alpha, depth, hf_cur));
 		alpha // fail low
 	}
