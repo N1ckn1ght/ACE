@@ -9,8 +9,11 @@ use phf::phf_map;
 
 /* LIMITATIONS */
 
-pub const CACHED_LEAVES_LIMIT: usize = 1000000;
-pub const CACHED_BRANCHES_LIMIT: usize = 1000000;
+pub const MEMORY_LIMIT_MB: usize = 512; // really rough up, but idk for now
+// 96 bit
+pub const CACHED_LEAVES_LIMIT: usize = ((((MEMORY_LIMIT_MB >> 2) * 3) >> 1) << 18) / 3;
+// 128 bit
+pub const CACHED_BRANCHES_LIMIT: usize = (((MEMORY_LIMIT_MB >> 2) * 3) >> 1) << 16;
 pub const HALF_DEPTH_LIMIT: usize = 64;
 pub const NODES_BETWEEN_COMMS: u64 = 0b0001111111111111;
 

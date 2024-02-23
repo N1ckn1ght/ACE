@@ -30,6 +30,7 @@ pub struct Chara<'a> {
 	pub rng:				ThreadRng,
 
 	/* Search trackers */
+	pub new_game:			bool,					// do we try looking into opening book?
 	pub ts:					Instant,				// timer start
 	pub tl:					u128,					// time limit in ms
 	pub abort:				bool,					// stop search signal
@@ -82,6 +83,7 @@ impl<'a> Chara<'a> {
 			history_set:	HashSet::default(),
 			zobrist,
 			rng:			rand::thread_rng(),
+			new_game:		true,
 			ts:				Instant::now(),
 			tl:				0,
 			abort:			false,
@@ -110,6 +112,12 @@ impl<'a> Chara<'a> {
 	// get the best move
 	pub fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
 		self.ts = Instant::now();
+		
+		if self.new_game {
+			// println!("#DEBUG\tMove from an opening book.");
+		}
+		self.new_game = false;
+
 		self.tl = time_limit_ms;
 		self.abort = false;
 		self.nodes = 0;
@@ -120,7 +128,6 @@ impl<'a> Chara<'a> {
 		let mut depth = 1;
 		let mut k = 1;
 		let mut score = 0;
-
 		loop {
 			self.tpv_flag = true;
 			let temp = self.search(alpha, beta, depth);

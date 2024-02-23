@@ -18,24 +18,47 @@ fn main() {
     init_secondary_maps();
 
     let mut board = Board::default();
+    // let mut board = Board::import("r1bqkb1r/ppp2ppp/2n5/3p4/2Bpn3/5N2/PPP2PPP/RNBQR1K1 w kq - 0 7");
     let mut chara = Chara::init(&mut board);
 
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
-    loop {
-        println!("Processing...\n");
+    let mut hmc = 0;
+    let scan = [true, true];
+    let ab = [50, 1000];
+    let time = 800;             // soft limit lol, may overflow by about 1-50 ms
+    let mut abi = 0;
 
+    loop {
         let legals = chara.board.get_legal_moves();
         if legals.is_empty() {
             break;
         }
 
-        let best_move = chara.think(50, 1000, 50);
-        println!("Best move: {} ({})", move_transform(best_move.mov), best_move.score);
+        if scan[hmc & 1] {
+            println!("Processing...\n");
+            let best_move = chara.think(ab[abi], time, 50);
+            abi = 0;
+            println!("Best move: {} ({})", move_transform(best_move.mov), best_move.score);
+        }
 
         let mut mov;
         loop {
             let str = input();
+
+            if str == "b" {
+                chara.revert_move();
+                hmc -= 2;
+                break;
+            } else if str == "r" {
+                hmc -= 1;
+                break;
+            } else if str == "hr" {
+                hmc -= 1;
+                abi = 1;
+                break;
+            }
+
             mov = move_transform_back(&str.to_owned(), &legals);
             if let Some(i) = mov {
                 chara.make_move(i);
@@ -43,6 +66,8 @@ fn main() {
             }
             println!("Move not found?");
         }
+
+        hmc += 1;
     }
 }
 
