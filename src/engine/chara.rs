@@ -11,10 +11,23 @@ pub struct Chara<'a> {
 
 	/* These weights are stored with respect to the colour, black pieces will provide negative values
 		- Usual order is:
-		- [ Game Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]	*/
+		- [ Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]
+		- [ Phase (0-1) ][ Color (0-1) ]
+		- [ Color (0-1) ][ Specified ... ] */
 	pub pieces_weights:		[[[i32; 64]; 14]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
-	pub turn_mult:			[f32; 2],
-	pub turn_add:			[i32; 2],				// works when it's not a 100% draw
+	pub mobility_base:		   i32,					// score += mobility_base * (mW - mB)
+	pub turn_add:			  [i32;  2],			// works when it's not a 100% draw
+	pub turn_factor:		   i32,					// aka mult, but +- bit shift
+	pub bad_pawn_penalty:	 [[i32;  2];  2],		// isolated, doubled, 1/2 for blocked
+	pub good_pawn_reward:	 [[i32;  2];  2],		// passing with possible protection
+	pub outpost:			 [[i32;  2];  2],		// for knight/bishop
+	pub bishop_pin:			  [i32;  2],			// if bishop is technically pinning smth
+	pub bishop_align:		 [[i32;  2];  2],		// bishop align at king or near
+	pub rook_align:			 [[i32;  2];  2],		// rook align at king or near
+	pub rook_connected:		  [i32;  2],			// rooks are connected per rook
+	pub batteried_queen:	  [i32;  2],			// queen is coordinated with other pieces, part 1/2
+	pub promising_queen:	  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something, part 2/2
+	pub promising_knight:     [i32;  2],			// horse has a fork
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
@@ -63,10 +76,17 @@ impl<'a> Chara<'a> {
 
 		/* Transform other W*/
 
-		let mut turn_mult	= [w.turn_mult_pre; 2];
-		turn_mult[1] = 1.0 / turn_mult[0];
-		let mut turn_add	= [w.turn_add_pre;  2];
-		turn_add [1] =     - turn_add [0];
+		let turn_add		 =  [w.turn_add_pre, -w.turn_add_pre];
+		let bad_pawn_penalty = [[w.bad_pawn_penalty_pre[0], -w.bad_pawn_penalty_pre[0]], [w.bad_pawn_penalty_pre[1], -w.bad_pawn_penalty_pre[1]]];
+		let good_pawn_reward = [[w.good_pawn_reward_pre[0], -w.good_pawn_reward_pre[0]], [w.good_pawn_reward_pre[1], -w.good_pawn_reward_pre[1]]];
+		let outpost			 = [[w.outpost_pre[0], w.outpost_pre[1]], [-w.outpost_pre[0], -w.outpost_pre[1]]];
+		let bishop_pin		 =  [w.bishop_pin_pre, -w.bishop_pin_pre];
+		let bishop_align	 = [[w.bishop_align_at_king_pre[0], w.bishop_align_at_king_pre[1]], [-w.bishop_align_at_king_pre[0], -w.bishop_align_at_king_pre[1]]];
+		let rook_align		 = [[w.rook_align_at_king_pre[0], w.rook_align_at_king_pre[1]], [-w.rook_align_at_king_pre[0], -w.rook_align_at_king_pre[1]]];
+		let rook_connected	 =  [w.rook_connected_pre, -w.rook_connected_pre];
+		let batteried_queen  =  [w.queen_any_battery_pre, -w.queen_any_battery_pre];
+		let promising_queen	 =  [w.queen_strike_possible_pre, -w.queen_strike_possible_pre];
+		let promising_knight =  [w.knight_seems_promising_pre, -w.knight_seems_promising_pre];
 		
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
@@ -75,8 +95,19 @@ impl<'a> Chara<'a> {
 		Self {
 			board,
 			pieces_weights,
-			turn_mult,
+			mobility_base:	w.mobility_base,
 			turn_add,
+			turn_factor:	w.turn_factor,
+			bad_pawn_penalty,
+			good_pawn_reward,
+			outpost,
+			bishop_pin,
+			bishop_align,
+			rook_align,
+			rook_connected,
+			batteried_queen,
+			promising_queen,
+			promising_knight,
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
@@ -364,9 +395,11 @@ impl<'a> Chara<'a> {
 		let phase = (counter < 31) as usize;
 
 		let mut score: i32 = 0;
+		let mut mobilities = [0; 2]; // no special moves of any sort are included
 		let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
 		let occup = sides[0] | sides[1];
 		let kbits = [gtz(self.board.bbs[K]), gtz(self.board.bbs[K2])];
+		let mptr = &self.board.maps;
 
 		/* SCORE APPLICATION BEGIN */
 
@@ -376,6 +409,24 @@ impl<'a> Chara<'a> {
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.pieces_weights[phase][P | ally][csq];
+				mobilities[ally] += (mptr.attacks_pawns[ally][csq] & sides[enemy]).count_ones();
+				if get_bit(sides[ally], csq + 8 - ally << 4) == 0 {
+					mobilities[ally] += 1;
+					if self.is_easily_protected(csq, pawns[ally], occup, ally, enemy) {
+						if self.is_passing(csq, pawns[enemy], ally) {
+							score += self.good_pawn_reward[phase][ally];
+						}
+					} else if mptr.piece_pb[ally][csq - 8 + ally << 4] == 0 {
+						score -= self.bad_pawn_penalty[phase][ally];
+					}
+				} else if mptr.piece_pb[ally][csq - 8 + ally << 4] == 0 {
+						score -= self.bad_pawn_penalty[phase][ally];
+				} else {
+					score -= self.bad_pawn_penalty[phase][ally] >> 1;
+				}
+				if mptr.files[csq] & bb != 0 {
+					score -= self.bad_pawn_penalty[phase][ally];
+				}
 			}
 		}
 
@@ -385,6 +436,13 @@ impl<'a> Chara<'a> {
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.pieces_weights[phase][N | ally][csq];
+				mobilities[ally] += (mptr.attacks_knight[csq] & !sides[ally]).count_ones();
+				if self.is_outpost(csq, self.board.bbs[P | ally], self.board.bbs[P | enemy], ally == 1) {
+					score += self.outpost[ally][0];
+				}
+				if (mptr.attacks_dn[csq] & (self.board.bbs[K | enemy] | self.board.bbs[Q | enemy] | self.board.bbs[R | enemy])).count_ones() > 1 {
+					score += self.promising_knight[ally];
+				}
 			}
 		}
 
@@ -394,6 +452,25 @@ impl<'a> Chara<'a> {
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.pieces_weights[phase][B | ally][csq];
+				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
+				mobilities[ally] += real_atk.count_ones();
+				let imag_atk = self.board.get_sliding_diagonal_attacks(csq, sides[ally], sides[ally]);
+				let mut targets = imag_atk & (self.board.bbs[R | enemy] | self.board.bbs[Q | enemy]);
+				if imag_atk & self.board.bbs[K | enemy] != 0 {
+					targets |= self.board.bbs[K | enemy];
+					score += self.bishop_align[ally][0];
+				} else if imag_atk & mptr.attacks_king[kbits[enemy]] != 0 {
+					score += self.bishop_align[ally][1];
+				}
+				while targets != 0 {
+					let tsq = pop_bit(&mut targets);
+					if self.get_sliding_diagonal_path_unsafe(csq, tsq) & sides[ally] & self.board.bbs[P | enemy] == 0 {
+						score += self.bishop_pin[ally];
+					}
+				}
+				if self.is_outpost(csq, self.board.bbs[P | ally], self.board.bbs[P | enemy], ally == 1) {
+					score += self.outpost[ally][0];
+				}
 			}
 		}
 
@@ -446,13 +523,70 @@ impl<'a> Chara<'a> {
 
 		// TODO
 	}
+
+	/* Auxiliary (used by eval() mostly) */
+
+	#[inline]
+    pub fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+        self.board.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_straight_attacks(sq2, 1 << sq1, 0)
+	}
+
+    #[inline]
+    pub fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+        self.board.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
+	}
+
+    #[inline]
+    pub fn is_passing(&self, sq: usize, enemy_pawns: u64, ally_colour: usize) -> bool {
+        self.board.maps.piece_passing[ally_colour][sq] & enemy_pawns == 0
+    }
+
+    #[inline]
+    pub fn is_protected(&self, sq: usize, ally_pawns: u64, enemy_colour: usize) -> bool {
+        self.board.maps.attacks_pawns[enemy_colour][sq] & ally_pawns != 0
+    }
+
+    #[inline]
+    pub fn is_outpost(&self, sq: usize, ally_pawns: u64, enemy_pawns: u64, colour: bool) -> bool {
+        self.board.maps.piece_pb[colour as usize][sq] & enemy_pawns == 0 && self.is_protected(sq, ally_pawns, !colour as usize)
+    }
+
+    pub fn is_easily_protected(&self, sq: usize, ally_pawns: u64, occupancy: u64, ally_colour: usize, enemy_colour: usize) -> bool {
+        // if there are existing pawns on necessary lanes at all
+        if self.board.maps.piece_pb[enemy_colour][sq] & ally_pawns == 0 {
+            return false;
+        }
+        // if the piece is already protected enough
+        let mut mask = self.board.maps.attacks_pawns[enemy_colour][sq];
+        if mask & ally_pawns != 0 {
+            return true;
+        }
+        // if there's nothing standing in the way of any pawn to protect the piece
+        while mask != 0 {
+            let csq = pop_bit(&mut mask);
+            let lane = self.board.maps.files[csq] & self.board.maps.piece_pb[enemy_colour][sq];
+            let pbit = lane & ally_pawns;
+            if pbit == 0 {
+                continue;
+            }
+            // if we are white - we are interested in leading bit (it's the closest one)
+            // otherwise we need trailing bit
+            let path = if ally_colour == 0 {
+                self.get_sliding_straight_path_unsafe(csq, glz(pbit))
+            } else {
+                self.get_sliding_straight_path_unsafe(csq, gtz(pbit))
+            };
+            if path & occupancy == 0 {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 
 #[cfg(test)]
 mod tests {
-    use test::Bencher;
-
     use super::*;
 
 	#[test]
@@ -488,6 +622,37 @@ mod tests {
 	fn test_chara_eval_initial_3() {
 		let mut board = Board::default();
 		let chara = Chara::init(&mut board);
+		// this test is bad :D
 		assert_eq!(chara.pieces_weights[0][K][gtz(chara.board.bbs[K])], 10);
 	}
+
+	#[test]
+    fn test_board_aux() {
+        let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
+        // let ar_false = [[50, 1], [0, 15], [63, 54], [56, 1], [43, 4], [9, 2], [61, 32], [8, 17], [15, 16], [0, 57], [0, 8]];
+        let mut board = Board::default();
+		let chara = Chara::init(&mut board);
+        for case in ar_true.into_iter() {
+            // assert_ne!(board.get_sliding_straight_path(case[0], case[1]), 0);
+            assert_ne!(chara.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
+        }
+        // for case in ar_false.into_iter() {
+        //     assert_eq!(board.get_sliding_straight_path(case[0], case[1]), 0);
+        // }
+
+        let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
+        // let ar_false = [[0, 10], [56, 6], [39, 31], [3, 40], [2, 23], [5, 34], [63, 1], [62, 0], [49, 46], [23, 16], [2, 3], [7, 14], [1, 8]];
+        for case in ar_true.into_iter() {
+            // assert_ne!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
+            assert_ne!(chara.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
+        }
+        // for case in ar_false.into_iter() {
+        //     assert_eq!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
+        // }
+
+        let board = Board::default();
+        assert_eq!(board.is_in_check(), false);
+        let board = Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+        assert_eq!(board.is_in_check(), true);
+    }
 }

@@ -1,10 +1,19 @@
 pub struct Weights {
     pub pieces_weights_square_related:  [[[i32; 64]; 6]; 2],
     pub pieces_weights_const:            [[i32;  6]; 2],
-    pub turn_mult:						   i32,
+	pub mobility_base:					   i32,
+    pub turn_factor:					   i32,
 	pub turn_add_pre:					   i32,
-	pub bad_pawn_penalty_pre:			  [i32; 2],
-	pub outpost_pre:					  [i32; 2]
+	pub bad_pawn_penalty_pre:			  [i32;  2],
+	pub outpost_pre:					  [i32;  2],
+	pub good_pawn_reward_pre:			  [i32;  2],
+	pub bishop_pin_pre:					   i32,
+	pub bishop_align_at_king_pre:		  [i32;  2],
+	pub rook_align_at_king_pre:			  [i32;  2],
+	pub rook_connected_pre:				   i32,
+	pub queen_any_battery_pre:			   i32,
+	pub queen_strike_possible_pre:		   i32,
+	pub knight_seems_promising_pre:		   i32
 }
 
 impl Default for Weights {
@@ -144,7 +153,7 @@ impl Default for Weights {
 					 -22,  -18,  -18,  -16,   -6,  -18,  -18,  -22,
 					 -33,  -22,  -22,  -40,  -10,  -30,  -22,  -40
 				],
-                // king
+                // king (looking at endspiel q/k, right-upper corner is preferrable for a mate network)
 				[
 					 -50,  -30,  -20,  -20,  -10,   -5,   -5,  -30,
 					 -10,   15,   15,   16,   16,   30,   20,    5,
@@ -158,24 +167,43 @@ impl Default for Weights {
 			]
 		];
 
-        // 0 for a king seems sus but we don't really care bc we don't calc its capture
+        // king weight should not be LARGE really :D
+		// it's for mobility count
         let pieces_weights_const = [
-			[  90,  301,  326,  450, 900, 0 ],
-			[ 100,  300,  330,  500, 900, 0 ]
+			[  90,  301,  326,  440, 880, 0 ],
+			[ 100,  300,  330,  500, 930, 0 ]
 		];
 
-		let turn_mult = 4;	// meaning: += self >> 4 or -= self >> 4
+		let mobility_base = 8;
+		let turn_factor = 4;		// meaning: += self >> 4 or -= self >> 4
 		let turn_add_pre = 10;
-		let bad_pawn_penalty_pre = [45, 50];
+		let bad_pawn_penalty_pre = [24, 32];
+		let good_pawn_reward_pre = [32, 96];
 		let outpost_pre = [35, 22]; 
+		let bishop_pin_pre = 20;
+		let bishop_align_at_king_pre = [14, 4];
+		let rook_align_at_king_pre = [12, 6];
+		let rook_connected_pre = 6;	// per rook
+		let queen_any_battery_pre = 18;
+		let queen_strike_possible_pre = 20;
+		let knight_seems_promising_pre = 10;
 
         Self {
             pieces_weights_square_related,
             pieces_weights_const,
-            turn_mult,
+			mobility_base,
+            turn_factor,
 			turn_add_pre,
 			bad_pawn_penalty_pre,
-			outpost_pre
+			good_pawn_reward_pre,
+			outpost_pre,
+			bishop_pin_pre,
+			bishop_align_at_king_pre,
+			rook_align_at_king_pre,
+			rook_connected_pre,
+			queen_any_battery_pre,
+			queen_strike_possible_pre,
+			knight_seems_promising_pre
         }
     }
 }

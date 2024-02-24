@@ -242,7 +242,7 @@ impl Board {
         }
         if move_get_capture(mov) != E {
             if mov & MSE_EN_PASSANT != 0 {
-                set_bit(&mut self.bbs[move_get_capture(mov)], to + self.turn as usize * 16 - 8);
+                set_bit(&mut self.bbs[move_get_capture(mov)], to + ((self.turn as usize) << 4) - 8);
             } else {
                 set_bit(&mut self.bbs[move_get_capture(mov)], to);
             }
@@ -562,93 +562,11 @@ impl Board {
         self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]] & !ally
     }
 
-    /* TODO (optional):
-        - fn import_pgn
-        - fn export_pgn
-    */
-
-    /* More functions for engine usage */
-
-	// pub fn get_sliding_straight_path(&self, sq1: usize, sq2: usize) -> u64 {
-    //     if sq1 & 7 == sq2 & 7 || sq1 & 56 == sq2 & 56 {
-    //         return self.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.get_sliding_straight_attacks(sq2, 1 << sq1, 0);
-    //     }
-    //     0
-	// }
-
-	// pub fn get_sliding_diagonal_path(&self, sq1: usize, sq2: usize) -> u64 {
-    //     let attack1 = self.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0);
-    //     if attack1 & (1 << sq2) != 0 {
-    //         return attack1 & self.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0);
-    //     }
-    //     0
-	// }
-
-    #[inline]
-    pub fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
-        self.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.get_sliding_straight_attacks(sq2, 1 << sq1, 0)
-	}
-
-    #[inline]
-    pub fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
-        self.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
-	}
-
+    // although it's unused by the board itself
     pub fn is_in_check(&self) -> bool {
         let ally = self.get_occupancies(self.turn);
         let enemy = self.get_occupancies(!self.turn);
         self.is_under_attack(!self.turn, gtz(self.bbs[K | self.turn as usize]), ally | enemy, ally)
-    }
-    
-    /* pub fn is_game_ended(&mut self) -> bool {
-        self.get_legal_moves().len() == 0
-    } */
-
-    #[inline]
-    pub fn is_passing(&self, sq: usize, enemy_pawns: u64, ally_colour: usize) -> bool {
-        self.maps.piece_passing[ally_colour][sq] & enemy_pawns == 0
-    }
-
-    #[inline]
-    pub fn is_protected(&self, sq: usize, ally_pawns: u64, enemy_colour: usize) -> bool {
-        self.maps.attacks_pawns[enemy_colour][sq] & ally_pawns != 0
-    }
-
-    #[inline]
-    pub fn is_outpost(&self, sq: usize, ally_pawns: u64, enemy_pawns: u64, colour: bool) -> bool {
-        self.maps.piece_pb[colour as usize][sq] & enemy_pawns == 0 && self.is_protected(sq, ally_pawns, !colour as usize)
-    }
-
-    pub fn is_easily_protected(&self, sq: usize, ally_pawns: u64, occupancy: u64, ally_colour: usize, enemy_colour: usize) -> bool {
-        // if there are existing pawns on necessary lanes at all
-        if self.maps.piece_pb[enemy_colour][sq] & ally_pawns == 0 {
-            return false;
-        }
-        // if the piece is already protected enough
-        let mut mask = self.maps.attacks_pawns[enemy_colour][sq];
-        if mask & ally_pawns != 0 {
-            return true;
-        }
-        // if there's nothing standing in the way of any pawn to protect the piece
-        while mask != 0 {
-            let csq = pop_bit(&mut mask);
-            let lane = self.maps.files[csq] & self.maps.piece_pb[enemy_colour][sq];
-            let pbit = lane & ally_pawns;
-            if pbit == 0 {
-                continue;
-            }
-            // if we are white - we are interested in leading bit (it's the closest one)
-            // otherwise we need trailing bit
-            let path = if ally_colour == 0 {
-                self.get_sliding_straight_path_unsafe(csq, glz(pbit))
-            } else {
-                self.get_sliding_straight_path_unsafe(csq, gtz(pbit))
-            };
-            if path & occupancy == 0 {
-                return true;
-            }
-        }
-        false
     }
 
     /* Debug and benchmarking */
@@ -805,71 +723,6 @@ mod tests {
         assert_eq!(Board::import("r6r/p1ppqkb1/bn2pnp1/3P4/1p2P3/2NQ3p/PPPBBPPP/R3K2R b KQ - 1 2").get_legal_moves().len(), 51);
         assert_eq!(Board::import("7b/2k5/8/8/2p5/8/6K1/8 w - - 2 4").get_legal_moves().len(), 8);
     }
-
-    // it will break on move encoding change
-    // upd: it's broke on move encoding change :D idk if I shall restore this test
-    /*
-    #[test]
-    fn test_board_legal_moves_specific_1() {
-        let mut board = Board::import("rnbqkbnr/pppp1p1p/8/8/4p1p1/8/PPPPPPPP/RNBQKBNR w KQkq - 0 5");
-        assert_eq!(board.get_legal_moves().len(), 18);
-        board.make_move(54762736897);
-        assert_eq!(board.get_legal_moves().len(), 33);
-        board.make_move(54779917057);
-        assert_eq!(board.get_legal_moves().len(), 18);
-        board.make_move(54762605313);
-        assert_eq!(board.get_legal_moves().len(), 37);
-        board.make_move(54847552768);
-        assert_eq!(board.get_legal_moves().len(), 22);
-        board.make_move(54795765248);
-        assert_eq!(board.get_legal_moves().len(), 38);
-        board.make_move(54814588416);
-        assert_eq!(board.get_legal_moves().len(), 26);
-        board.make_move(54829253120);
-        assert_eq!(board.get_legal_moves().len(), 34);
-        board.make_move(54813931776);
-        assert_eq!(board.get_legal_moves().len(), 28);
-        assert_eq!(board.export(), "r1bqk2r/ppp1np1p/2nb4/3p4/3PpPp1/4BN2/PPP1P1PP/RN1QKB1R w KQkq - 5 9");
-        board.make_move(54795436288);
-        assert_eq!(board.get_legal_moves().len(), 34);
-        board.make_move(54847158784);
-        assert_eq!(board.get_legal_moves().len(), 28);
-        board.make_move(54796424448);
-        assert_eq!(board.get_legal_moves().len(), 35);
-        board.make_move(54915185408);
-        assert_eq!(board.get_legal_moves().len(), 25);
-        board.make_move(54762278400);
-        assert_eq!(board.get_legal_moves().len(), 35);
-        board.make_move(54949198850);
-        assert_eq!(board.get_legal_moves().len(), 27);
-        board.make_move(54828860672);
-        assert_eq!(board.get_legal_moves().len(), 30);
-        board.make_move(54779785473);
-        assert_eq!(board.get_legal_moves().len(), 31);
-        board.make_move(54896296704);
-        assert_eq!(board.get_legal_moves().len(), 31);
-        board.make_move(37598993408);
-        assert_eq!(board.get_legal_moves().len(), 33);
-        assert_eq!(board.export(), "2kr3r/p1pqnp1p/2nb4/1p1p1b2/3P1PpN/N2pB1P1/PPP1P1BP/R3K2R w KQ - 0 14");
-    }
-
-    #[test]
-    fn test_board_legal_moves_specific_2() {
-        let mut board = Board::import("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1R1K b kq - 1 1");
-        assert_eq!(board.get_legal_moves().len(), 46);
-        board.make_move(27128760576);
-        assert_eq!(board.get_legal_moves().len(), 37);
-        assert_eq!(board.export(), "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/P2P2PP/b2Q1R1K w kq - 0 2");
-    }
-
-    #[test]
-    fn test_board_legal_moves_specific_3() {
-        let mut board = Board::import("r3k2r/p1p1qNb1/bn1ppnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 2");
-        board.make_move(33323693312);
-        assert_eq!(board.get_legal_moves().len(), 40);
-        assert_eq!(board.export(), "r3k2N/p1p1q1b1/bn1ppnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQq - 0 2");
-    }
-    */
 
     #[test]
     fn test_board_import_export_advanced() {
@@ -1044,36 +897,6 @@ mod tests {
         // Kiwipete again
         let mut board = Board::import("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
         assert_eq!(board.perft(6), 8031647685);
-    }
-
-    #[test]
-    fn test_board_aux() {
-        let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
-        // let ar_false = [[50, 1], [0, 15], [63, 54], [56, 1], [43, 4], [9, 2], [61, 32], [8, 17], [15, 16], [0, 57], [0, 8]];
-        let board = Board::default();
-        for case in ar_true.into_iter() {
-            // assert_ne!(board.get_sliding_straight_path(case[0], case[1]), 0);
-            assert_ne!(board.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
-        }
-        // for case in ar_false.into_iter() {
-        //     assert_eq!(board.get_sliding_straight_path(case[0], case[1]), 0);
-        // }
-
-        let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
-        // let ar_false = [[0, 10], [56, 6], [39, 31], [3, 40], [2, 23], [5, 34], [63, 1], [62, 0], [49, 46], [23, 16], [2, 3], [7, 14], [1, 8]];
-        let board = Board::default();
-        for case in ar_true.into_iter() {
-            // assert_ne!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
-            assert_ne!(board.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
-        }
-        // for case in ar_false.into_iter() {
-        //     assert_eq!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
-        // }
-
-        let board = Board::default();
-        assert_eq!(board.is_in_check(), false);
-        let board = Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
-        assert_eq!(board.is_in_check(), true);
     }
 
     #[bench]
