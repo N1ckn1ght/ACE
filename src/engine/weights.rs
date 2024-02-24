@@ -1,8 +1,10 @@
 pub struct Weights {
     pub pieces_weights_square_related:  [[[i32; 64]; 6]; 2],
     pub pieces_weights_const:            [[i32;  6]; 2],
-    pub turn_mult_pre:					   f32,
-	pub turn_add_pre:					   i32
+    pub turn_mult:						   i32,
+	pub turn_add_pre:					   i32,
+	pub bad_pawn_penalty_pre:			  [i32; 2],
+	pub outpost_pre:					  [i32; 2]
 }
 
 impl Default for Weights {
@@ -158,18 +160,22 @@ impl Default for Weights {
 
         // 0 for a king seems sus but we don't really care bc we don't calc its capture
         let pieces_weights_const = [
-			[ 100,  300,  300,  450, 900, 0 ],
-			[ 100,  300,  300,  500, 900, 0 ]
+			[  90,  301,  326,  450, 900, 0 ],
+			[ 100,  300,  330,  500, 900, 0 ]
 		];
 
-		let turn_mult_pre = 1.15;
+		let turn_mult = 4;	// meaning: += self >> 4 or -= self >> 4
 		let turn_add_pre = 10;
+		let bad_pawn_penalty_pre = [45, 50];
+		let outpost_pre = [35, 22]; 
 
         Self {
             pieces_weights_square_related,
             pieces_weights_const,
-            turn_mult_pre,
-			turn_add_pre
+            turn_mult,
+			turn_add_pre,
+			bad_pawn_penalty_pre,
+			outpost_pre
         }
     }
 }
