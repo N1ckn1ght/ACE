@@ -13,7 +13,8 @@ pub struct Weights {
 	pub rook_connected_pre:				   i32,
 	pub queen_any_battery_pre:			   i32,
 	pub queen_strike_possible_pre:		   i32,
-	pub knight_seems_promising_pre:		   i32
+	pub knight_seems_promising_pre:		   i32,
+	pub knight_awkward_pre:				   i32
 }
 
 impl Default for Weights {
@@ -35,8 +36,8 @@ impl Default for Weights {
 					  96,  121,   70,   95,   71,   12,   60,    0,
 					  -5,    5,   25,   30,   30,   50,   25,   10,
 					 -15,    5,    5,   20,   25,   10,   10,  -15,
-					 -20,   -2,    0,   15,   20,    0,   10,  -20,
-					 -25,   -3,  -10,    0,    0,  -30,   30,    0,
+					 -20,   -2,    0,   15,   21,    0,   10,  -20,
+					 -25,   -3,  -10,    0,   -3,  -30,   30,    0,
 					 -30,   -1,  -15,  -15,  -15,   30,   30,  -15,
 					   0,    0,    0,    0,    0,    0,    0,    0
 				],
@@ -170,23 +171,24 @@ impl Default for Weights {
         // king weight should not be LARGE really :D
 		// it's for mobility count
         let pieces_weights_const = [
-			[  90,  301,  326,  440, 840, 0 ],
-			[ 100,  300,  330,  500, 900, 0 ]
+			[  90,  306,  326,  440, 840, 0 ],
+			[ 100,  305,  330,  500, 900, 0 ]
 		];
 
-		let mobility_base = 6;
+		let mobility_base = 10;
 		let turn_factor = 4; // meaning: += self >> 4 or -= self >> 4
 		let turn_add_pre = 10;
-		let bad_pawn_penalty_pre = [24, 32];
+		let bad_pawn_penalty_pre = [-24, -32];
 		let good_pawn_reward_pre = [48, 96];
 		let outpost_pre = [30, 15];
-		let bishop_pin_pre = 12;
-		let bishop_align_at_king_pre = [12, 6]; // stackable with pin
-		let rook_align_at_king_pre = [9, 6];
-		let rook_connected_pre = 9;	// per every rook in the rook only battery
-		let queen_any_battery_pre = 12; // one addition per bishop and per rook
-		let queen_strike_possible_pre = 24; // per every attack intersection
-		let knight_seems_promising_pre = 12;
+		let bishop_pin_pre = 16;
+		let bishop_align_at_king_pre = [16, 8]; // stackable with pin
+		let rook_align_at_king_pre = [12, 8];
+		let rook_connected_pre = 12;	// per every rook in the rook only battery
+		let queen_any_battery_pre = 15; // one addition per bishop and per rook
+		let queen_strike_possible_pre = 32; // per every attack intersection
+		let knight_seems_promising_pre = 8;
+		let knight_awkward_pre = -36; // considerably easy to push away
 
         Self {
             pieces_weights_square_related,
@@ -203,7 +205,8 @@ impl Default for Weights {
 			rook_connected_pre,
 			queen_any_battery_pre,
 			queen_strike_possible_pre,
-			knight_seems_promising_pre
+			knight_seems_promising_pre,
+			knight_awkward_pre
         }
     }
 }

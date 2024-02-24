@@ -28,6 +28,7 @@ pub struct Chara<'a> {
 	pub weight_queen_bat:	  [i32;  2],			// queen is coordinated with other pieces, part 1/2
 	pub weight_queen_int:	  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something, part 2/2
 	pub weight_knight_fork:	  [i32;  2],			// horse has a fork
+	pub weight_knight_awk:    [i32;  2],			// easy to push away (penalty)
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
@@ -87,6 +88,7 @@ impl<'a> Chara<'a> {
 		let weight_queen_bat 	=  [w.queen_any_battery_pre, -w.queen_any_battery_pre];
 		let weight_queen_int	=  [w.queen_strike_possible_pre, -w.queen_strike_possible_pre];
 		let weight_knight_fork	=  [w.knight_seems_promising_pre, -w.knight_seems_promising_pre];
+		let weight_knight_awk	=  [w.knight_awkward_pre, -w.knight_awkward_pre];
 		
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
@@ -108,6 +110,7 @@ impl<'a> Chara<'a> {
 			weight_queen_bat,
 			weight_queen_int,
 			weight_knight_fork,
+			weight_knight_awk,
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
@@ -423,15 +426,15 @@ impl<'a> Chara<'a> {
 							score += self.weight_good_pawn[phase][ally];
 						}
 					} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] == 0 {
-						score -= self.weight_bad_pawn[phase][ally];
+						score += self.weight_bad_pawn[phase][ally];
 					}
 				} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] == 0 {
-						score -= self.weight_bad_pawn[phase][ally];
+						score += self.weight_bad_pawn[phase][ally];
 				} else {
-					score -= self.weight_bad_pawn[phase][ally] >> 1;
+					score += self.weight_bad_pawn[phase][ally] >> 1;
 				}
 				if mptr.files[csq] & bb != 0 {
-					score -= self.weight_bad_pawn[phase][ally];
+					score += self.weight_bad_pawn[phase][ally];
 				}
 			}
 		}
@@ -449,6 +452,9 @@ impl<'a> Chara<'a> {
 				}
 				if (mptr.attacks_dn[csq] & (king[enemy] | queens[enemy] | rooks[enemy])).count_ones() > 1 {
 					score += self.weight_knight_fork[ally];
+				}
+				if self.is_easily_protected(csq, pawns[enemy], occup, enemy, ally) {
+					score += self.weight_knight_awk[ally];
 				}
 			}
 		}
