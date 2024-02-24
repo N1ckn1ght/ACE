@@ -170,23 +170,23 @@ impl Default for Weights {
         // king weight should not be LARGE really :D
 		// it's for mobility count
         let pieces_weights_const = [
-			[  90,  301,  326,  440, 880, 0 ],
-			[ 100,  300,  330,  500, 930, 0 ]
+			[  90,  301,  326,  440, 840, 0 ],
+			[ 100,  300,  330,  500, 900, 0 ]
 		];
 
-		let mobility_base = 8;
-		let turn_factor = 4;		// meaning: += self >> 4 or -= self >> 4
+		let mobility_base = 6;
+		let turn_factor = 4; // meaning: += self >> 4 or -= self >> 4
 		let turn_add_pre = 10;
 		let bad_pawn_penalty_pre = [24, 32];
-		let good_pawn_reward_pre = [32, 96];
-		let outpost_pre = [35, 22]; 
-		let bishop_pin_pre = 20;
-		let bishop_align_at_king_pre = [14, 4];
-		let rook_align_at_king_pre = [12, 6];
-		let rook_connected_pre = 6;	// per rook
-		let queen_any_battery_pre = 18;
-		let queen_strike_possible_pre = 20;
-		let knight_seems_promising_pre = 10;
+		let good_pawn_reward_pre = [48, 96];
+		let outpost_pre = [30, 15];
+		let bishop_pin_pre = 12;
+		let bishop_align_at_king_pre = [12, 6]; // stackable with pin
+		let rook_align_at_king_pre = [9, 6];
+		let rook_connected_pre = 9;	// per every rook in the rook only battery
+		let queen_any_battery_pre = 12; // one addition per bishop and per rook
+		let queen_strike_possible_pre = 24; // per every attack intersection
+		let knight_seems_promising_pre = 12;
 
         Self {
             pieces_weights_square_related,

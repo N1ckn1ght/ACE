@@ -14,20 +14,20 @@ pub struct Chara<'a> {
 		- [ Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]
 		- [ Phase (0-1) ][ Color (0-1) ]
 		- [ Color (0-1) ][ Specified ... ] */
-	pub pieces_weights:		[[[i32; 64]; 14]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
-	pub mobility_base:		   i32,					// score += mobility_base * (mW - mB)
-	pub turn_add:			  [i32;  2],			// works when it's not a 100% draw
-	pub turn_factor:		   i32,					// aka mult, but +- bit shift
-	pub bad_pawn_penalty:	 [[i32;  2];  2],		// isolated, doubled, 1/2 for blocked
-	pub good_pawn_reward:	 [[i32;  2];  2],		// passing with possible protection
-	pub outpost:			 [[i32;  2];  2],		// for knight/bishop
-	pub bishop_pin:			  [i32;  2],			// if bishop is technically pinning smth
-	pub bishop_align:		 [[i32;  2];  2],		// bishop align at king or near
-	pub rook_align:			 [[i32;  2];  2],		// rook align at king or near
-	pub rook_connected:		  [i32;  2],			// rooks are connected per rook
-	pub batteried_queen:	  [i32;  2],			// queen is coordinated with other pieces, part 1/2
-	pub promising_queen:	  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something, part 2/2
-	pub promising_knight:     [i32;  2],			// horse has a fork
+	pub weight_pieces:		[[[i32; 64]; 14]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
+	pub weight_mobility:	   i32,					// score += mobility_base * (mW - mB)
+	pub weight_turn:		  [i32;  2],			// works when it's not a 100% draw
+	pub weight_turn_fact:	   i32,					// aka mult, but +- bit shift
+	pub weight_bad_pawn:	 [[i32;  2];  2],		// isolated, doubled, 1/2 for blocked
+	pub weight_good_pawn:	 [[i32;  2];  2],		// passing with possible protection
+	pub weight_outpost:		 [[i32;  2];  2],		// for knight/bishop
+	pub weight_bpin:		  [i32;  2],			// if bishop is technically pinning smth ; also used to discourage self QK pin possibility
+	pub weight_balign:		 [[i32;  2];  2],		// bishop align at king or near
+	pub weight_ralign:		 [[i32;  2];  2],		// rook align at king or near
+	pub weight_rcon:		  [i32;  2],			// rooks are connected per rook
+	pub weight_queen_bat:	  [i32;  2],			// queen is coordinated with other pieces, part 1/2
+	pub weight_queen_int:	  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something, part 2/2
+	pub weight_knight_fork:	  [i32;  2],			// horse has a fork
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
@@ -64,29 +64,29 @@ impl<'a> Chara<'a> {
 
 		/* Transform PW (flip for white, negative for black) and apply coefficients */
 
-		let mut pieces_weights: [[[i32; 64]; 14]; 2] = [[[0; 64]; 14]; 2];
+		let mut weight_pieces: [[[i32; 64]; 14]; 2] = [[[0; 64]; 14]; 2];
 		for i in 0..2 {
 			for j in 0..6 {
 				for k in 0..64 {
-					pieces_weights[i][(j << 1) + 2][k] =  w.pieces_weights_square_related[i][j][flip(k)] + w.pieces_weights_const[i][j];
-					pieces_weights[i][(j << 1) + 3][k] = -w.pieces_weights_square_related[i][j][k      ] - w.pieces_weights_const[i][j];
+					weight_pieces[i][(j << 1) + 2][k] =  w.pieces_weights_square_related[i][j][flip(k)] + w.pieces_weights_const[i][j];
+					weight_pieces[i][(j << 1) + 3][k] = -w.pieces_weights_square_related[i][j][k      ] - w.pieces_weights_const[i][j];
 				}
 			}
 		}
 
 		/* Transform other W*/
 
-		let turn_add		 =  [w.turn_add_pre, -w.turn_add_pre];
-		let bad_pawn_penalty = [[w.bad_pawn_penalty_pre[0], -w.bad_pawn_penalty_pre[0]], [w.bad_pawn_penalty_pre[1], -w.bad_pawn_penalty_pre[1]]];
-		let good_pawn_reward = [[w.good_pawn_reward_pre[0], -w.good_pawn_reward_pre[0]], [w.good_pawn_reward_pre[1], -w.good_pawn_reward_pre[1]]];
-		let outpost			 = [[w.outpost_pre[0], w.outpost_pre[1]], [-w.outpost_pre[0], -w.outpost_pre[1]]];
-		let bishop_pin		 =  [w.bishop_pin_pre, -w.bishop_pin_pre];
-		let bishop_align	 = [[w.bishop_align_at_king_pre[0], w.bishop_align_at_king_pre[1]], [-w.bishop_align_at_king_pre[0], -w.bishop_align_at_king_pre[1]]];
-		let rook_align		 = [[w.rook_align_at_king_pre[0], w.rook_align_at_king_pre[1]], [-w.rook_align_at_king_pre[0], -w.rook_align_at_king_pre[1]]];
-		let rook_connected	 =  [w.rook_connected_pre, -w.rook_connected_pre];
-		let batteried_queen  =  [w.queen_any_battery_pre, -w.queen_any_battery_pre];
-		let promising_queen	 =  [w.queen_strike_possible_pre, -w.queen_strike_possible_pre];
-		let promising_knight =  [w.knight_seems_promising_pre, -w.knight_seems_promising_pre];
+		let weight_turn		 	=  [w.turn_add_pre, -w.turn_add_pre];
+		let weight_bad_pawn	 	= [[w.bad_pawn_penalty_pre[0], -w.bad_pawn_penalty_pre[0]], [w.bad_pawn_penalty_pre[1], -w.bad_pawn_penalty_pre[1]]];
+		let weight_good_pawn	= [[w.good_pawn_reward_pre[0], -w.good_pawn_reward_pre[0]], [w.good_pawn_reward_pre[1], -w.good_pawn_reward_pre[1]]];
+		let weight_outpost		= [[w.outpost_pre[0], w.outpost_pre[1]], [-w.outpost_pre[0], -w.outpost_pre[1]]];
+		let weight_bpin			=  [w.bishop_pin_pre, -w.bishop_pin_pre];
+		let weight_balign		= [[w.bishop_align_at_king_pre[0], w.bishop_align_at_king_pre[1]], [-w.bishop_align_at_king_pre[0], -w.bishop_align_at_king_pre[1]]];
+		let weight_ralign		= [[w.rook_align_at_king_pre[0], w.rook_align_at_king_pre[1]], [-w.rook_align_at_king_pre[0], -w.rook_align_at_king_pre[1]]];
+		let weight_rcon			=  [w.rook_connected_pre, -w.rook_connected_pre];
+		let weight_queen_bat 	=  [w.queen_any_battery_pre, -w.queen_any_battery_pre];
+		let weight_queen_int	=  [w.queen_strike_possible_pre, -w.queen_strike_possible_pre];
+		let weight_knight_fork	=  [w.knight_seems_promising_pre, -w.knight_seems_promising_pre];
 		
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
@@ -94,20 +94,20 @@ impl<'a> Chara<'a> {
 
 		Self {
 			board,
-			pieces_weights,
-			mobility_base:	w.mobility_base,
-			turn_add,
-			turn_factor:	w.turn_factor,
-			bad_pawn_penalty,
-			good_pawn_reward,
-			outpost,
-			bishop_pin,
-			bishop_align,
-			rook_align,
-			rook_connected,
-			batteried_queen,
-			promising_queen,
-			promising_knight,
+			weight_pieces,
+			weight_mobility: w.mobility_base,
+			weight_turn,
+			weight_turn_fact: w.turn_factor,
+			weight_bad_pawn,
+			weight_good_pawn,
+			weight_outpost,
+			weight_bpin,
+			weight_balign,
+			weight_ralign,
+			weight_rcon,
+			weight_queen_bat,
+			weight_queen_int,
+			weight_knight_fork,
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
@@ -398,101 +398,141 @@ impl<'a> Chara<'a> {
 		let mut mobilities = [0; 2]; // no special moves of any sort are included
 		let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
 		let occup = sides[0] | sides[1];
-		let kbits = [gtz(self.board.bbs[K]), gtz(self.board.bbs[K2])];
 		let mptr = &self.board.maps;
+		let pawns = [self.board.bbs[P], self.board.bbs[P2]];
+		let knights = [self.board.bbs[N], self.board.bbs[N2]];
+		let bishops = [self.board.bbs[B], self.board.bbs[B2]];
+		let rooks = [self.board.bbs[R], self.board.bbs[R2]];
+		let queens = [self.board.bbs[Q], self.board.bbs[Q2]];
+		let king = [self.board.bbs[K], self.board.bbs[K2]];
+		let kbits = [gtz(king[0]), gtz(king[1])];
+		let mut cattacks = [0, 0];
 
 		/* SCORE APPLICATION BEGIN */
 
-		let pawns = [self.board.bbs[P], self.board.bbs[P2]];
 		for (ally, mut bb) in pawns.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.pieces_weights[phase][P | ally][csq];
-				mobilities[ally] += (mptr.attacks_pawns[ally][csq] & sides[enemy]).count_ones();
-				if get_bit(sides[ally], csq + 8 - ally << 4) == 0 {
+				score += self.weight_pieces[phase][P | ally][csq];
+				mobilities[ally] += (mptr.attacks_pawns[ally][csq] & sides[enemy]).count_ones() as i32;
+				if get_bit(sides[ally], csq + 8 - (ally << 4)) == 0 {
 					mobilities[ally] += 1;
 					if self.is_easily_protected(csq, pawns[ally], occup, ally, enemy) {
 						if self.is_passing(csq, pawns[enemy], ally) {
-							score += self.good_pawn_reward[phase][ally];
+							score += self.weight_good_pawn[phase][ally];
 						}
-					} else if mptr.piece_pb[ally][csq - 8 + ally << 4] == 0 {
-						score -= self.bad_pawn_penalty[phase][ally];
+					} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] == 0 {
+						score -= self.weight_bad_pawn[phase][ally];
 					}
-				} else if mptr.piece_pb[ally][csq - 8 + ally << 4] == 0 {
-						score -= self.bad_pawn_penalty[phase][ally];
+				} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] == 0 {
+						score -= self.weight_bad_pawn[phase][ally];
 				} else {
-					score -= self.bad_pawn_penalty[phase][ally] >> 1;
+					score -= self.weight_bad_pawn[phase][ally] >> 1;
 				}
 				if mptr.files[csq] & bb != 0 {
-					score -= self.bad_pawn_penalty[phase][ally];
+					score -= self.weight_bad_pawn[phase][ally];
 				}
 			}
 		}
 
-		let knights = [self.board.bbs[N], self.board.bbs[N2]];
 		for (ally, mut bb) in knights.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.pieces_weights[phase][N | ally][csq];
-				mobilities[ally] += (mptr.attacks_knight[csq] & !sides[ally]).count_ones();
-				if self.is_outpost(csq, self.board.bbs[P | ally], self.board.bbs[P | enemy], ally == 1) {
-					score += self.outpost[ally][0];
+				score += self.weight_pieces[phase][N | ally][csq];
+				let atk = mptr.attacks_knight[csq] & !sides[ally];
+				cattacks[ally] |= atk;
+				mobilities[ally] += atk.count_ones() as i32;
+				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
+					score += self.weight_outpost[ally][0];
 				}
-				if (mptr.attacks_dn[csq] & (self.board.bbs[K | enemy] | self.board.bbs[Q | enemy] | self.board.bbs[R | enemy])).count_ones() > 1 {
-					score += self.promising_knight[ally];
+				if (mptr.attacks_dn[csq] & (king[enemy] | queens[enemy] | rooks[enemy])).count_ones() > 1 {
+					score += self.weight_knight_fork[ally];
 				}
 			}
 		}
 
-		let bishops = [self.board.bbs[B], self.board.bbs[B2]];
 		for (ally, mut bb) in bishops.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.pieces_weights[phase][B | ally][csq];
+				score += self.weight_pieces[phase][B | ally][csq];
 				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				mobilities[ally] += real_atk.count_ones();
+				cattacks[ally] |= real_atk;
+				mobilities[ally] += real_atk.count_ones() as i32;
 				let imag_atk = self.board.get_sliding_diagonal_attacks(csq, sides[ally], sides[ally]);
-				let mut targets = imag_atk & (self.board.bbs[R | enemy] | self.board.bbs[Q | enemy]);
-				if imag_atk & self.board.bbs[K | enemy] != 0 {
-					targets |= self.board.bbs[K | enemy];
-					score += self.bishop_align[ally][0];
+				let mut targets = imag_atk & (rooks[enemy] | queens[enemy]);
+				if imag_atk & king[enemy] != 0 {
+					targets |= king[enemy];
+					score += self.weight_balign[ally][0];
 				} else if imag_atk & mptr.attacks_king[kbits[enemy]] != 0 {
-					score += self.bishop_align[ally][1];
+					score += self.weight_balign[ally][1];
 				}
 				while targets != 0 {
 					let tsq = pop_bit(&mut targets);
-					if self.get_sliding_diagonal_path_unsafe(csq, tsq) & sides[ally] & self.board.bbs[P | enemy] == 0 {
-						score += self.bishop_pin[ally];
+					if self.get_sliding_diagonal_path_unsafe(csq, tsq) & sides[ally] & pawns[enemy] == 0 {
+						score += self.weight_bpin[ally];
 					}
 				}
 				if self.is_outpost(csq, self.board.bbs[P | ally], self.board.bbs[P | enemy], ally == 1) {
-					score += self.outpost[ally][0];
+					score += self.weight_outpost[ally][0];
 				}
 			}
 		}
 
-		let rooks = [self.board.bbs[R], self.board.bbs[R2]];
 		for (ally, mut bb) in rooks.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.pieces_weights[phase][R | ally][csq];
+				score += self.weight_pieces[phase][R | ally][csq];
+				let real_atk = self.board.get_sliding_straight_attacks(csq, occup, sides[ally]);
+				mobilities[ally] += real_atk.count_ones() as i32;
+				let imag_atk = self.board.get_sliding_straight_attacks(csq, sides[ally], sides[ally]);
+				if imag_atk & king[enemy] != 0 {
+					score += self.weight_ralign[ally][0];
+				} else if imag_atk & mptr.attacks_king[kbits[enemy]] != 0 {
+					score += self.weight_ralign[ally][1];
+				}
+				if real_atk & rooks[ally] != 0 {
+					score += self.weight_rcon[ally];
+				}
 			}
 		}
-
-		let queens = [self.board.bbs[Q], self.board.bbs[Q2]];
+		
 		for (ally, mut bb) in queens.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.pieces_weights[phase][Q | ally][csq];
+				score += self.weight_pieces[phase][Q | ally][csq];
+				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
+				score += (cattacks[ally] & real_atk & sides[enemy]).count_ones() as i32 * self.weight_queen_int[ally];
+				if real_atk & rooks[ally] != 0 {
+					score += self.weight_queen_bat[ally];
+				}
+				if real_atk & bishops[ally] != 0 {
+					score += self.weight_queen_bat[ally];
+				}
+				if real_atk & king[ally] != 0 {
+					score += self.weight_bpin[enemy];
+				}
 			}
 		}
 
-		score += self.turn_add[self.board.turn as usize];
+		if phase == 0{
+			mobilities[0] -= (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
+			mobilities[1] -= (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;
+		} else {
+			mobilities[0] += (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
+			mobilities[1] += (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;
+		}
+		score += self.weight_mobility * (mobilities[0] - mobilities[1]);
+		if score > 0 {
+			score += score >> self.weight_turn_fact;
+		} else {
+			score -= score >> self.weight_turn_fact;
+		}
+		score += self.weight_turn[self.board.turn as usize];
 
 		/* SCORE APPLICATION END */
 		
@@ -599,7 +639,7 @@ mod tests {
 		let mov = move_transform_back("e7e5", &moves).unwrap();
 		chara.make_move(mov);
 		let eval = chara.eval();
-		assert_eq!(eval, chara.turn_add[0]);
+		assert_eq!(eval, chara.weight_turn[0]);
 	}
 
 	#[test]
@@ -614,7 +654,7 @@ mod tests {
 			let mut board = Board::import(fen);
 			let mut chara = Chara::init(&mut board);
 			let eval = chara.eval();
-			assert_eq!(eval, chara.turn_add[0]);
+			assert_eq!(eval, chara.weight_turn[0]);
 		}
 	}
 
@@ -623,7 +663,7 @@ mod tests {
 		let mut board = Board::default();
 		let chara = Chara::init(&mut board);
 		// this test is bad :D
-		assert_eq!(chara.pieces_weights[0][K][gtz(chara.board.bbs[K])], 10);
+		assert_eq!(chara.weight_pieces[0][K][gtz(chara.board.bbs[K])], 10);
 	}
 
 	#[test]
