@@ -8,13 +8,8 @@ pub struct Weights {
 	pub outpost_pre:					  [i32;  2],
 	pub good_pawn_reward_pre:			  [i32;  2],
 	pub bishop_pin_pre:					   i32,
-	pub bishop_align_at_king_pre:		  [i32;  2],
-	pub rook_align_at_king_pre:			  [i32;  2],
-	pub rook_connected_pre:				   i32,
-	pub queen_any_battery_pre:			   i32,
 	pub queen_strike_possible_pre:		   i32,
-	pub knight_seems_promising_pre:		   i32,
-	pub knight_awkward_pre:				   i32
+	pub knight_seems_promising_pre:		   i32
 }
 
 impl Default for Weights {
@@ -168,27 +163,20 @@ impl Default for Weights {
 			]
 		];
 
-        // king weight should not be LARGE really :D
-		// it's for mobility count
         let pieces_weights_const = [
-			[  90,  306,  326,  440, 840, 0 ],
-			[ 100,  305,  330,  500, 900, 0 ]
+			[ 100,  311,  326,  480, 860, 0 ],
+			[ 100,  310,  330,  540, 910, 0 ]
 		];
 
-		let mobility_base = 10;
-		let turn_factor = 4; // meaning: += self >> 4 or -= self >> 4
+		let mobility_base = 6;
+		let turn_factor = 3; // meaning: += self >> 4 or -= self >> 4
 		let turn_add_pre = 10;
-		let bad_pawn_penalty_pre = [-24, -32];
-		let good_pawn_reward_pre = [48, 96];
-		let outpost_pre = [30, 15];
-		let bishop_pin_pre = 16;
-		let bishop_align_at_king_pre = [16, 8]; // stackable with pin
-		let rook_align_at_king_pre = [12, 8];
-		let rook_connected_pre = 12;	// per every rook in the rook only battery
-		let queen_any_battery_pre = 15; // one addition per bishop and per rook
-		let queen_strike_possible_pre = 32; // per every attack intersection
+		let bad_pawn_penalty_pre = [-16, -24];
+		let good_pawn_reward_pre = [24, 48];
+		let outpost_pre = [30, 15]; // negative for awkward
+		let bishop_pin_pre = 12;
+		let queen_strike_possible_pre = 12; // per every attack intersection
 		let knight_seems_promising_pre = 8;
-		let knight_awkward_pre = -36; // considerably easy to push away
 
         Self {
             pieces_weights_square_related,
@@ -200,13 +188,8 @@ impl Default for Weights {
 			good_pawn_reward_pre,
 			outpost_pre,
 			bishop_pin_pre,
-			bishop_align_at_king_pre,
-			rook_align_at_king_pre,
-			rook_connected_pre,
-			queen_any_battery_pre,
 			queen_strike_possible_pre,
-			knight_seems_promising_pre,
-			knight_awkward_pre
+			knight_seems_promising_pre
         }
     }
 }

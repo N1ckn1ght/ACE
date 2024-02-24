@@ -27,7 +27,7 @@ fn main() {
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut hmc = 0;
-    let scan = [false, true];
+    let scan = [true, true];
     let ab = [64, 1000];
     // soft limit lol, may overflow by about 1-50 msc5b
     let time = 1400;
@@ -41,7 +41,7 @@ fn main() {
 
         if scan[hmc & 1] {
             println!("Processing...\n");
-            let best_move = chara.think(ab[abi], time + 5000 * (hmc < 2) as u128, 50);
+            let best_move = chara.think(ab[abi], time + 2500 * (hmc < 2) as u128, 50);
             abi = 0;
             println!();
             println!("Best move: {} ({})", move_transform(best_move.mov), best_move.score);

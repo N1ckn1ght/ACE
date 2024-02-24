@@ -22,13 +22,8 @@ pub struct Chara<'a> {
 	pub weight_good_pawn:	 [[i32;  2];  2],		// passing with possible protection
 	pub weight_outpost:		 [[i32;  2];  2],		// for knight/bishop
 	pub weight_bpin:		  [i32;  2],			// if bishop is technically pinning smth ; also used to discourage self QK pin possibility
-	pub weight_balign:		 [[i32;  2];  2],		// bishop align at king or near
-	pub weight_ralign:		 [[i32;  2];  2],		// rook align at king or near
-	pub weight_rcon:		  [i32;  2],			// rooks are connected per rook
-	pub weight_queen_bat:	  [i32;  2],			// queen is coordinated with other pieces, part 1/2
-	pub weight_queen_int:	  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something, part 2/2
+	pub weight_queen_int:	  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something
 	pub weight_knight_fork:	  [i32;  2],			// horse has a fork
-	pub weight_knight_awk:    [i32;  2],			// easy to push away (penalty)
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
@@ -82,13 +77,8 @@ impl<'a> Chara<'a> {
 		let weight_good_pawn	= [[w.good_pawn_reward_pre[0], -w.good_pawn_reward_pre[0]], [w.good_pawn_reward_pre[1], -w.good_pawn_reward_pre[1]]];
 		let weight_outpost		= [[w.outpost_pre[0], w.outpost_pre[1]], [-w.outpost_pre[0], -w.outpost_pre[1]]];
 		let weight_bpin			=  [w.bishop_pin_pre, -w.bishop_pin_pre];
-		let weight_balign		= [[w.bishop_align_at_king_pre[0], w.bishop_align_at_king_pre[1]], [-w.bishop_align_at_king_pre[0], -w.bishop_align_at_king_pre[1]]];
-		let weight_ralign		= [[w.rook_align_at_king_pre[0], w.rook_align_at_king_pre[1]], [-w.rook_align_at_king_pre[0], -w.rook_align_at_king_pre[1]]];
-		let weight_rcon			=  [w.rook_connected_pre, -w.rook_connected_pre];
-		let weight_queen_bat 	=  [w.queen_any_battery_pre, -w.queen_any_battery_pre];
 		let weight_queen_int	=  [w.queen_strike_possible_pre, -w.queen_strike_possible_pre];
 		let weight_knight_fork	=  [w.knight_seems_promising_pre, -w.knight_seems_promising_pre];
-		let weight_knight_awk	=  [w.knight_awkward_pre, -w.knight_awkward_pre];
 		
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
@@ -104,13 +94,8 @@ impl<'a> Chara<'a> {
 			weight_good_pawn,
 			weight_outpost,
 			weight_bpin,
-			weight_balign,
-			weight_ralign,
-			weight_rcon,
-			weight_queen_bat,
 			weight_queen_int,
 			weight_knight_fork,
-			weight_knight_awk,
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
@@ -183,7 +168,7 @@ impl<'a> Chara<'a> {
 				continue;
 			}
 
-			println!("#DEBUG\t --------------------------------");
+			println!("#DEBUG\t--------------------------------");
 			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score, self.nodes);
 			print!("#DEBUG\tExpected line:");
 			for mov in self.tpv[0].iter().take(self.tpv_len[0]) {
@@ -199,7 +184,7 @@ impl<'a> Chara<'a> {
 				break;
 			}
 		}
-		println!("#DEBUG\t --------------------------------");
+		println!("#DEBUG\t--------------------------------");
 		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
 		println!("#DEBUG\tCache limits (in thousands), leaves: {}/{}, branches: {}/{}", self.cache_leaves.len() / 1000, CACHED_LEAVES_LIMIT / 1000, self.cache_branches.len() / 1000, CACHED_BRANCHES_LIMIT / 1000);
 		println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score, self.nodes);
@@ -220,7 +205,9 @@ impl<'a> Chara<'a> {
 			return 0;
 		}
 		
-		if self.hmc != 0 && self.cache_branches.contains_key(&hash) {
+		let is_pv = beta - alpha > 1;
+
+		if self.hmc != 0 && !is_pv && self.cache_branches.contains_key(&hash) {
 			let br = self.cache_branches[&hash];
 			if br.depth >= depth {
 				if br.flag & HF_PRECISE != 0 {
@@ -263,15 +250,12 @@ impl<'a> Chara<'a> {
 
 		moves.sort();
 		// follow principle variation first
-		let mut reduction = 3;			//  0-8 no reduction,  9-16 1 depth reduction, 33+ it's gonna be extension
 		if self.tpv_flag {
-			reduction = 4;				// 0-15 no reduction, 16-32 1 depth reduction (e.g. from starting pos it's for knights), 33+ 2 depth reduction
-			self.tpv_flag = false;
-			if beta - alpha > 1 {
+			if is_pv {
 				let mut i = 0;
 				while i < moves.len() - 1 {
 					if moves[i] == self.tpv[0][self.hmc] {
-						reduction = 6;	// no reduction
+						self.tpv_flag = true;
 						break;
 					}
 					i += 1;
@@ -285,11 +269,26 @@ impl<'a> Chara<'a> {
 		moves.reverse();
 		
 		let mut hf_cur = HF_LOW;
+		let reduction = 2;
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let score = -self.search(-beta, -alpha, depth - 1 - (i as i16 >> reduction));
+			let mut score = if i > 3 && (*mov > MSE_CAPTURE_MIN || self.board.is_in_check()) {
+				-self.search(-beta, -alpha, depth - reduction)
+			} else {
+				alpha + 1
+			};
+			if score > alpha {
+				score = -self.search(-alpha - 1, -alpha, depth - 1); // is_pv = false
+				if score > alpha && score < beta {
+					score = -self.search(-beta, -alpha, depth - 1)
+				}
+			}
 			self.hmc -= 1;
+			self.revert_move();
+			if self.abort {
+				return 0;
+			}
 			if score > alpha {
 				alpha = score;
 				hf_cur = HF_PRECISE;
@@ -304,17 +303,10 @@ impl<'a> Chara<'a> {
 				}
 				self.tpv_len[self.hmc] = self.tpv_len[self.hmc + 1];
 			}
-			self.revert_move();
 			if alpha >= beta {
 				self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
 				self.tpv_flag = true;
 				return beta; // fail high
-			}
-			if self.abort {
-				// this may really ruin a game in just 1 move, but what should I do ;w;
-				// return 0;
-				// return (alpha + beta) >> 1;
-				return beta;
 			}
 		}
 
@@ -449,12 +441,11 @@ impl<'a> Chara<'a> {
 				mobilities[ally] += atk.count_ones() as i32;
 				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
 					score += self.weight_outpost[ally][0];
+				} else if self.is_easily_protected(csq, pawns[enemy], occup, enemy, ally) { // "protected" by enemy pawns :D
+					score += self.weight_outpost[enemy][0];
 				}
 				if (mptr.attacks_dn[csq] & (king[enemy] | queens[enemy] | rooks[enemy])).count_ones() > 1 {
 					score += self.weight_knight_fork[ally];
-				}
-				if self.is_easily_protected(csq, pawns[enemy], occup, enemy, ally) {
-					score += self.weight_knight_awk[ally];
 				}
 			}
 		}
@@ -468,21 +459,17 @@ impl<'a> Chara<'a> {
 				cattacks[ally] |= real_atk;
 				mobilities[ally] += real_atk.count_ones() as i32;
 				let imag_atk = self.board.get_sliding_diagonal_attacks(csq, sides[ally], sides[ally]);
-				let mut targets = imag_atk & (rooks[enemy] | queens[enemy]);
-				if imag_atk & king[enemy] != 0 {
-					targets |= king[enemy];
-					score += self.weight_balign[ally][0];
-				} else if imag_atk & mptr.attacks_king[kbits[enemy]] != 0 {
-					score += self.weight_balign[ally][1];
-				}
+				let mut targets = imag_atk & (rooks[enemy] | queens[enemy] | king[enemy]);
 				while targets != 0 {
 					let tsq = pop_bit(&mut targets);
 					if self.get_sliding_diagonal_path_unsafe(csq, tsq) & sides[ally] & pawns[enemy] == 0 {
 						score += self.weight_bpin[ally];
 					}
 				}
-				if self.is_outpost(csq, self.board.bbs[P | ally], self.board.bbs[P | enemy], ally == 1) {
-					score += self.weight_outpost[ally][0];
+				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
+					score += self.weight_outpost[ally][1];
+				} else if self.is_easily_protected(csq, pawns[enemy], occup, enemy, ally) {
+					score += self.weight_outpost[enemy][1];
 				}
 			}
 		}
@@ -494,15 +481,6 @@ impl<'a> Chara<'a> {
 				score += self.weight_pieces[phase][R | ally][csq];
 				let real_atk = self.board.get_sliding_straight_attacks(csq, occup, sides[ally]);
 				mobilities[ally] += real_atk.count_ones() as i32;
-				let imag_atk = self.board.get_sliding_straight_attacks(csq, sides[ally], sides[ally]);
-				if imag_atk & king[enemy] != 0 {
-					score += self.weight_ralign[ally][0];
-				} else if imag_atk & mptr.attacks_king[kbits[enemy]] != 0 {
-					score += self.weight_ralign[ally][1];
-				}
-				if real_atk & rooks[ally] != 0 {
-					score += self.weight_rcon[ally];
-				}
 			}
 		}
 		
@@ -513,12 +491,6 @@ impl<'a> Chara<'a> {
 				score += self.weight_pieces[phase][Q | ally][csq];
 				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
 				score += (cattacks[ally] & real_atk & sides[enemy]).count_ones() as i32 * self.weight_queen_int[ally];
-				if real_atk & rooks[ally] != 0 {
-					score += self.weight_queen_bat[ally];
-				}
-				if real_atk & bishops[ally] != 0 {
-					score += self.weight_queen_bat[ally];
-				}
 				if real_atk & king[ally] != 0 {
 					score += self.weight_bpin[enemy];
 				}
