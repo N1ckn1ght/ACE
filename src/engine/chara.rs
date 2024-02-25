@@ -8,23 +8,7 @@ use super::{weights::Weights, zobrist::Zobrist};
 
 pub struct Chara<'a> {
 	pub board:				&'a mut Board,
-
-	/* These weights are stored with respect to the colour, black pieces will provide negative values
-		- Usual order is:
-		- [ Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]
-		- [ Phase (0-1) ][ Color (0-1) ]
-		- [ Color (0-1) ][ Specified ... ] */
-	pub weight_pieces:		[[[i32; 64]; 14]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
-	pub weight_mobility:	   i32,					// score += mobility_base * (mW - mB)
-	pub weight_turn:		  [i32;  2],			// works when it's not a 100% draw
-	pub weight_turn_fact:	   i32,					// aka mult, but +- bit shift
-	pub weight_bad_pawn:	 [[i32;  2];  2],		// isolated, doubled, 1/4 for blocked
-	pub weight_good_pawn:	 [[i32;  2];  2],		// passing with possible protection
-	pub weight_outpost:		 [[i32;  2];  2],		// for knight/bishop
-	pub weight_bpin:		  [i32;  2],			// if bishop is technically pinning smth ; also used to discourage self QK pin possibility
-	pub weight_queen_int:	  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something
-	pub weight_knight_fork:	  [i32;  2],			// horse has a fork
-	pub weight_open_battery:  [i32;  2],			// TEC Rebels - Keep The Lanes Open (for rooks, of course)
+	pub w:					Weights,
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
@@ -57,48 +41,13 @@ impl<'a> Chara<'a> {
 	// It's a little messy, but any evals are easily modifiable.
 	// No need in modifying something twice to be applied for the different coloir, neither there's a need to write something twice in eval()
     pub fn init(board: &'a mut Board) -> Chara<'a> {
-		let w = Weights::default();
-
-		/* Transform PW (flip for white, negative for black) and apply coefficients */
-
-		let mut weight_pieces: [[[i32; 64]; 14]; 2] = [[[0; 64]; 14]; 2];
-		for i in 0..2 {
-			for j in 0..6 {
-				for k in 0..64 {
-					weight_pieces[i][(j << 1) + 2][k] =  w.pieces_weights_square_related[i][j][flip(k)] + w.pieces_weights_const[i][j];
-					weight_pieces[i][(j << 1) + 3][k] = -w.pieces_weights_square_related[i][j][k      ] - w.pieces_weights_const[i][j];
-				}
-			}
-		}
-
-		/* Transform other W*/
-
-		let weight_turn		 	=  [w.turn_add_pre, -w.turn_add_pre];
-		let weight_bad_pawn	 	= [[w.bad_pawn_penalty_pre[0], -w.bad_pawn_penalty_pre[0]], [w.bad_pawn_penalty_pre[1], -w.bad_pawn_penalty_pre[1]]];
-		let weight_good_pawn	= [[w.good_pawn_reward_pre[0], -w.good_pawn_reward_pre[0]], [w.good_pawn_reward_pre[1], -w.good_pawn_reward_pre[1]]];
-		let weight_outpost		= [[w.outpost_pre[0], w.outpost_pre[1]], [-w.outpost_pre[0], -w.outpost_pre[1]]];
-		let weight_bpin			=  [w.bishop_pin_pre, -w.bishop_pin_pre];
-		let weight_queen_int	=  [w.queen_strike_possible_pre, -w.queen_strike_possible_pre];
-		let weight_knight_fork	=  [w.knight_seems_promising_pre, -w.knight_seems_promising_pre];
-		let weight_open_battery =  [w.open_lane_rook_battery, -w.open_lane_rook_battery];
-		
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
 		cache_perm_vec.push(zobrist.cache_new(board));
 
 		Self {
 			board,
-			weight_pieces,
-			weight_mobility: w.mobility_base,
-			weight_turn,
-			weight_turn_fact: w.turn_factor,
-			weight_bad_pawn,
-			weight_good_pawn,
-			weight_outpost,
-			weight_bpin,
-			weight_queen_int,
-			weight_knight_fork,
-			weight_open_battery,
+			w:				Weights::init(),
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
@@ -281,6 +230,7 @@ impl<'a> Chara<'a> {
 			return 0;
 		}
 
+		// todo: fix this bs :(
 		moves.sort();
 		// follow principle variation first
 		if self.tpv_flag {
@@ -323,7 +273,7 @@ impl<'a> Chara<'a> {
 			self.hmc -= 1;
 			self.revert_move();
 			if self.abort {
-				return 0;
+				return (alpha + beta) >> 1;
 			}
 			if score > alpha {
 				alpha = score;
@@ -352,6 +302,8 @@ impl<'a> Chara<'a> {
 		} else if alpha > LARGM {
 			self.cache_branches.get_mut(&hash).unwrap().score += self.hmc as i32;
 		}
+
+		panic!("test");
 		alpha // fail low
 	}
 
@@ -446,24 +398,24 @@ impl<'a> Chara<'a> {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.weight_pieces[phase][P | ally][csq];
+				score += self.w.pieces[phase][P | ally][csq];
 				mobilities[ally] += (mptr.attacks_pawns[ally][csq] & sides[enemy]).count_ones() as i32;
 				if get_bit(sides[ally], csq + 8 - (ally << 4)) == 0 {
 					mobilities[ally] += 1;
 					if self.is_easily_protected(csq, pawns[ally], occup, ally, enemy) {
 						if self.is_passing(csq, pawns[enemy], ally) {
-							score += self.weight_good_pawn[phase][ally];
+							score += self.w.good_pawn[phase][ally];
 						}
 					} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] & pawns[ally] == 0 {
-						score += self.weight_bad_pawn[phase][ally];
+						score += self.w.bad_pawn[phase][ally];
 					}
 				} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] & pawns[ally] == 0 {
-						score += self.weight_bad_pawn[phase][ally];
+						score += self.w.bad_pawn[phase][ally];
 				} else {
-					score += self.weight_bad_pawn[phase][ally] >> 2;
+					score += self.w.bad_pawn[phase][ally] >> 2;
 				}
 				if mptr.files[csq] & bb != 0 {
-					score += self.weight_bad_pawn[phase][ally];
+					score += self.w.bad_pawn[phase][ally];
 				}
 			}
 		}
@@ -472,15 +424,15 @@ impl<'a> Chara<'a> {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.weight_pieces[phase][N | ally][csq];
+				score += self.w.pieces[phase][N | ally][csq];
 				let atk = mptr.attacks_knight[csq] & !sides[ally];
 				cattacks[ally] |= atk;
 				mobilities[ally] += atk.count_ones() as i32;
 				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
-					score += self.weight_outpost[ally][0];
+					score += self.w.outpost[ally][0];
 				}
 				if (mptr.attacks_dn[csq] & (king[enemy] | queens[enemy] | rooks[enemy])).count_ones() > 1 {
-					score += self.weight_knight_fork[ally];
+					score += self.w.knight_fork[ally];
 				}
 			}
 		}
@@ -489,7 +441,7 @@ impl<'a> Chara<'a> {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.weight_pieces[phase][B | ally][csq];
+				score += self.w.pieces[phase][B | ally][csq];
 				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
 				cattacks[ally] |= real_atk;
 				mobilities[ally] += real_atk.count_ones() as i32;
@@ -498,11 +450,11 @@ impl<'a> Chara<'a> {
 				while targets != 0 {
 					let tsq = pop_bit(&mut targets);
 					if self.get_sliding_diagonal_path_unsafe(csq, tsq) & sides[ally] & pawns[enemy] == 0 {
-						score += self.weight_bpin[ally];
+						score += self.w.bpin[ally];
 					}
 				}
 				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
-					score += self.weight_outpost[ally][1];
+					score += self.w.outpost[ally][1];
 				}
 			}
 		}
@@ -511,11 +463,11 @@ impl<'a> Chara<'a> {
 			// let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.weight_pieces[phase][R | ally][csq];
+				score += self.w.pieces[phase][R | ally][csq];
 				let real_atk = self.board.get_sliding_straight_attacks(csq, occup, sides[ally]);
 				mobilities[ally] += real_atk.count_ones() as i32;
 				if real_atk & bb & mptr.files[csq] != 0 && mptr.files[csq] & pawns[ally] == 0 {
-					score += self.weight_open_battery[ally];
+					score += self.w.open_battery[ally];
 				}
 			}
 		}
@@ -524,11 +476,11 @@ impl<'a> Chara<'a> {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.weight_pieces[phase][Q | ally][csq];
+				score += self.w.pieces[phase][Q | ally][csq];
 				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				score += (cattacks[ally] & real_atk & sides[enemy]).count_ones() as i32 * self.weight_queen_int[ally];
+				score += (cattacks[ally] & real_atk & sides[enemy]).count_ones() as i32 * self.w.queen_int[ally];
 				if real_atk & king[ally] != 0 {
-					score += self.weight_bpin[enemy];
+					score += self.w.bpin[enemy];
 				}
 			}
 		}
@@ -540,13 +492,16 @@ impl<'a> Chara<'a> {
 			mobilities[0] += (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
 			mobilities[1] += (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;
 		}
-		score += self.weight_mobility * (mobilities[0] - mobilities[1]);
+		score += self.w.mobility * (mobilities[0] - mobilities[1]);
 		if score > 0 {
-			score += score >> self.weight_turn_fact;
+			score += score >> self.w.turn_fact;
 		} else {
-			score -= score >> self.weight_turn_fact;
+			score -= score >> self.w.turn_fact;
 		}
-		score += self.weight_turn[self.board.turn as usize];
+		score += self.w.turn[self.board.turn as usize];
+
+		score -= self.w.random_fact;
+		score += self.rng.gen_range(0..=(self.w.random_fact << 1) as u32) as i32;
 
 		/* SCORE APPLICATION END */
 		
@@ -653,7 +608,7 @@ mod tests {
 		let mov = move_transform_back("e7e5", &moves).unwrap();
 		chara.make_move(mov);
 		let eval = chara.eval();
-		assert_eq!(eval, chara.weight_turn[0]);
+		assert_eq!(eval, chara.w.turn[0]);
 	}
 
 	#[test]
@@ -668,7 +623,7 @@ mod tests {
 			let mut board = Board::import(fen);
 			let mut chara = Chara::init(&mut board);
 			let eval = chara.eval();
-			assert_eq!(eval, chara.weight_turn[0]);
+			assert_eq!(eval, chara.w.turn[0]);
 		}
 	}
 
@@ -677,7 +632,7 @@ mod tests {
 		let mut board = Board::default();
 		let chara = Chara::init(&mut board);
 		// this test is bad :D
-		assert_eq!(chara.weight_pieces[0][K][gtz(chara.board.bbs[K])], 10);
+		assert_eq!(chara.w.pieces[0][K][gtz(chara.board.bbs[K])], 10);
 	}
 
 	#[test]
