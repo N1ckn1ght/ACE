@@ -9,7 +9,8 @@ pub struct Weights {
 	pub good_pawn_reward_pre:			  [i32;  2],
 	pub bishop_pin_pre:					   i32,
 	pub queen_strike_possible_pre:		   i32,
-	pub knight_seems_promising_pre:		   i32
+	pub knight_seems_promising_pre:		   i32,
+	pub open_lane_rook_battery:			   i32
 }
 
 impl Default for Weights {
@@ -30,7 +31,7 @@ impl Default for Weights {
 					   0,    0,    0,    0,    0,    0,    0,    0,
 					  96,  121,   70,   95,   71,   12,   60,    0,
 					  -5,    5,   25,   30,   30,   50,   25,   10,
-					 -15,    5,    5,   20,   25,   10,   10,  -15,
+					 -15,    5,    5,   25,   31,   10,   10,  -15,
 					 -20,   -2,    0,   15,   21,    0,   10,  -20,
 					 -25,   -3,  -10,    0,   -3,  -30,   30,    0,
 					 -30,   -1,  -15,  -15,  -15,   30,   30,  -15,
@@ -67,7 +68,7 @@ impl Default for Weights {
 					 -30,  -20,   -5,    0,    5,   -5,    5,  -25,
 					 -46,  -20,  -15,  -10,    5,    0,   -5,  -30,
 					 -40,  -12,  -13,   -1,    0,   10,   -7,  -50,
-					 -15,   -9,    3,   20,   30,    7,  -39,  -10
+					 -15,   -9,    3,   20,   32,   10,  -49,  -20
 				],
                 // queens
 				[
@@ -89,7 +90,7 @@ impl Default for Weights {
 					 -20,  -25,  -30,  -35,  -35,  -20,  -25,  -20,
 					 -15,  -20,  -25,  -30,   -5,  -30,  -20,  -10,
 					   0,    1,   -5,  -25,  -10,  -10,    3,    2,
-					 -20,   30,   20,  -20,   10,  -10,   30,   20
+					 -20,   30,   20,  -20,   10,    0,   30,   20
 				]
             ],
 			// endgame
@@ -158,25 +159,26 @@ impl Default for Weights {
 					 -20,    0,   20,   30,   30,   20,    5,  -10,
 					 -20,    0,   10,   20,   20,   10,    5,  -10,
 					 -25,  -10,    5,   10,   10,    5,   -5,  -15,
-					 -50,  -30,  -30,  -30,  -30,  -30,  -30,  -50
+					 -50,  -40,  -30,  -30,  -30,  -30,  -32,  -50
 				]
 			]
 		];
 
         let pieces_weights_const = [
-			[ 100,  311,  326,  480, 860, 0 ],
-			[ 100,  310,  330,  540, 910, 0 ]
+			[ 100, 311, 326, 540, 930, 0 ],
+			[ 100, 310, 330, 550, 920, 0 ]
 		];
 
-		let mobility_base = 6;
-		let turn_factor = 3; // meaning: += self >> 4 or -= self >> 4
+		let mobility_base = 5;
+		let turn_factor = 4; // meaning: += self >> factor or -= self >> factor
 		let turn_add_pre = 10;
-		let bad_pawn_penalty_pre = [-16, -24];
-		let good_pawn_reward_pre = [24, 48];
-		let outpost_pre = [30, 15]; // negative for awkward
+		let bad_pawn_penalty_pre = [-16, -32];
+		let good_pawn_reward_pre = [18, 36];
+		let outpost_pre = [30, 15];
 		let bishop_pin_pre = 12;
 		let queen_strike_possible_pre = 12; // per every attack intersection
 		let knight_seems_promising_pre = 8;
+		let open_lane_rook_battery = 24;
 
         Self {
             pieces_weights_square_related,
@@ -189,7 +191,8 @@ impl Default for Weights {
 			outpost_pre,
 			bishop_pin_pre,
 			queen_strike_possible_pre,
-			knight_seems_promising_pre
+			knight_seems_promising_pre,
+			open_lane_rook_battery
         }
     }
 }

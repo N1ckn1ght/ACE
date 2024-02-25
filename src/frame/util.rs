@@ -9,14 +9,14 @@ use phf::phf_map;
 
 /* LIMITATIONS */
 
-// todo: custom hashmap maybe? this is just inefficient memory usage!
+// todo: this limit is underused :D
 pub const MEMORY_LIMIT_MB: usize = 512;
 // 96 bit
 pub const CACHED_LEAVES_LIMIT: usize = ( (MEMORY_LIMIT_MB >> 2)    << 18 ) / 3;
 // 128 bit
 pub const CACHED_BRANCHES_LIMIT: usize = (MEMORY_LIMIT_MB >> 3)    << 16;
 pub const HALF_DEPTH_LIMIT: usize = 64;
-pub const NODES_BETWEEN_COMMS: u64 = 0b0000111111111111;
+pub const NODES_BETWEEN_COMMS: u64 = 0b0001111111111111;
 
 /* SPECIFIED PATHES */
 

@@ -18,12 +18,13 @@ pub struct Chara<'a> {
 	pub weight_mobility:	   i32,					// score += mobility_base * (mW - mB)
 	pub weight_turn:		  [i32;  2],			// works when it's not a 100% draw
 	pub weight_turn_fact:	   i32,					// aka mult, but +- bit shift
-	pub weight_bad_pawn:	 [[i32;  2];  2],		// isolated, doubled, 1/2 for blocked
+	pub weight_bad_pawn:	 [[i32;  2];  2],		// isolated, doubled, 1/4 for blocked
 	pub weight_good_pawn:	 [[i32;  2];  2],		// passing with possible protection
 	pub weight_outpost:		 [[i32;  2];  2],		// for knight/bishop
 	pub weight_bpin:		  [i32;  2],			// if bishop is technically pinning smth ; also used to discourage self QK pin possibility
 	pub weight_queen_int:	  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something
 	pub weight_knight_fork:	  [i32;  2],			// horse has a fork
+	pub weight_open_battery:  [i32;  2],			// TEC Rebels - Keep The Lanes Open (for rooks, of course)
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
 	pub cache_leaves:		HashMap<u64, i32>,
@@ -39,7 +40,7 @@ pub struct Chara<'a> {
 	pub rng:				ThreadRng,
 
 	/* Search trackers */
-	pub new_game:			bool,					// do we try looking into opening book?
+	pub book:				i16,					// opening book: 0 - forbidden, 1 - unusable in this game, 2 - will be used
 	pub ts:					Instant,				// timer start
 	pub tl:					u128,					// time limit in ms
 	pub abort:				bool,					// stop search signal
@@ -79,6 +80,7 @@ impl<'a> Chara<'a> {
 		let weight_bpin			=  [w.bishop_pin_pre, -w.bishop_pin_pre];
 		let weight_queen_int	=  [w.queen_strike_possible_pre, -w.queen_strike_possible_pre];
 		let weight_knight_fork	=  [w.knight_seems_promising_pre, -w.knight_seems_promising_pre];
+		let weight_open_battery =  [w.open_lane_rook_battery, -w.open_lane_rook_battery];
 		
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
@@ -96,13 +98,14 @@ impl<'a> Chara<'a> {
 			weight_bpin,
 			weight_queen_int,
 			weight_knight_fork,
+			weight_open_battery,
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
 			history_set:	HashSet::default(),
 			zobrist,
 			rng:			rand::thread_rng(),
-			new_game:		true,
+			book:			2,
 			ts:				Instant::now(),
 			tl:				0,
 			abort:			false,
@@ -110,7 +113,7 @@ impl<'a> Chara<'a> {
 			hmc:			0,
 			tpv:			[[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
 			tpv_len:		[0; HALF_DEPTH_LIMIT],
-			tpv_flag:		false,
+			tpv_flag:		false
 		}
     }
 
@@ -131,11 +134,14 @@ impl<'a> Chara<'a> {
 	// get the best move
 	pub fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
 		self.ts = Instant::now();
-		
-		if self.new_game {
-			// println!("#DEBUG\tMove from an opening book.");
+
+		if self.book > 1 {
+
+			println!("#DEBUG\tMove from an opening book.");
+
+			println!("#DEBUG\tRefuting opening book.");
+			self.book = 1;
 		}
-		self.new_game = false;
 
 		self.tl = time_limit_ms;
 		self.abort = false;
@@ -193,7 +199,7 @@ impl<'a> Chara<'a> {
 			print!(" {}", move_transform(*mov));
 		}
 		println!();
-		println!("#DEBUG\t --------------------------------");
+		println!("#DEBUG\t--------------------------------");
 		EvalMove::new(self.tpv[0][0], score)
 	}
 
@@ -201,7 +207,7 @@ impl<'a> Chara<'a> {
 		self.tpv_len[self.hmc] = self.hmc;
 
 		let hash = *self.history_vec.last().unwrap();
-		if self.board.hmc == 50 || self.history_set.contains(&hash) {
+		if self.hmc != 0 && (self.board.hmc == 50 || self.history_set.contains(&hash)) {
 			return 0;
 		}
 		
@@ -238,9 +244,36 @@ impl<'a> Chara<'a> {
 			return self.eval();
 		}
 
+		let in_check = self.board.is_in_check();
+
+		// Null move prune
+		if !in_check && self.hmc != 0 && depth > 2 {
+			self.hmc += 1;
+			self.board.turn = !self.board.turn;
+			self.history_set.insert(*self.history_vec.last().unwrap());
+			self.history_vec.push(*self.history_vec.last().unwrap() ^ self.zobrist.hash_turn ^ self.zobrist.hash_en_passant[self.board.en_passant]);
+			let old_en_passant = self.board.en_passant;
+			self.board.en_passant = 0;
+
+			let score = -self.search(-beta, -beta + 1, depth - 3);	// reduction = 2
+
+			self.board.turn = !self.board.turn;
+			self.board.en_passant = old_en_passant;
+			self.history_vec.pop();
+			self.history_set.remove(self.history_vec.last().unwrap());
+			self.hmc -= 1;
+
+			if self.abort {
+				return 0;
+			}
+			if score >= beta {
+				return beta;
+			}
+		}
+
 		let mut moves = self.board.get_legal_moves();
 		if moves.is_empty() {
-			if self.board.is_in_check() {
+			if in_check {
 				self.cache_branches.insert(hash, EvalBr::new(-LARGE, 0, HF_PRECISE));
 				return -LARGE + self.hmc as i32;
 			}
@@ -251,16 +284,18 @@ impl<'a> Chara<'a> {
 		moves.sort();
 		// follow principle variation first
 		if self.tpv_flag {
+			self.tpv_flag = false;
 			if is_pv {
 				let mut i = 0;
-				while i < moves.len() - 1 {
+				let len = moves.len();
+				while i < len {
 					if moves[i] == self.tpv[0][self.hmc] {
 						self.tpv_flag = true;
 						break;
 					}
 					i += 1;
 				}
-				while i < moves.len() - 1 {
+				while i < len - 1 {
 					moves.swap(i, i + 1);
 					i += 1;
 				}
@@ -270,10 +305,11 @@ impl<'a> Chara<'a> {
 		
 		let mut hf_cur = HF_LOW;
 		let reduction = 2;
+		// a/b with lmr and pv proving
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let mut score = if i > 3 && (*mov > MSE_CAPTURE_MIN || self.board.is_in_check()) {
+			let mut score = if i > 3 && depth > 2 && (*mov > MSE_CAPTURE_MIN || in_check) {
 				-self.search(-beta, -alpha, depth - reduction)
 			} else {
 				alpha + 1
@@ -351,12 +387,13 @@ impl<'a> Chara<'a> {
 				self.revert_move();
 				continue;
 			}
-			// self.hmc += 1;
 			alpha = max(alpha, -self.extension(-beta, -alpha));
-			// self.hmc -= 1;
 			self.revert_move();
+			if self.abort {
+				return 0;
+			}
 			if alpha >= beta {
-				return beta;
+				return beta; // fail high
 			}
 		}
 
@@ -417,13 +454,13 @@ impl<'a> Chara<'a> {
 						if self.is_passing(csq, pawns[enemy], ally) {
 							score += self.weight_good_pawn[phase][ally];
 						}
-					} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] == 0 {
+					} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] & pawns[ally] == 0 {
 						score += self.weight_bad_pawn[phase][ally];
 					}
-				} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] == 0 {
+				} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] & pawns[ally] == 0 {
 						score += self.weight_bad_pawn[phase][ally];
 				} else {
-					score += self.weight_bad_pawn[phase][ally] >> 1;
+					score += self.weight_bad_pawn[phase][ally] >> 2;
 				}
 				if mptr.files[csq] & bb != 0 {
 					score += self.weight_bad_pawn[phase][ally];
@@ -441,8 +478,6 @@ impl<'a> Chara<'a> {
 				mobilities[ally] += atk.count_ones() as i32;
 				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
 					score += self.weight_outpost[ally][0];
-				} else if self.is_easily_protected(csq, pawns[enemy], occup, enemy, ally) { // "protected" by enemy pawns :D
-					score += self.weight_outpost[enemy][0];
 				}
 				if (mptr.attacks_dn[csq] & (king[enemy] | queens[enemy] | rooks[enemy])).count_ones() > 1 {
 					score += self.weight_knight_fork[ally];
@@ -468,19 +503,20 @@ impl<'a> Chara<'a> {
 				}
 				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
 					score += self.weight_outpost[ally][1];
-				} else if self.is_easily_protected(csq, pawns[enemy], occup, enemy, ally) {
-					score += self.weight_outpost[enemy][1];
 				}
 			}
 		}
 
 		for (ally, mut bb) in rooks.into_iter().enumerate() {
-			let enemy = (ally == 0) as usize;
+			// let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.weight_pieces[phase][R | ally][csq];
 				let real_atk = self.board.get_sliding_straight_attacks(csq, occup, sides[ally]);
 				mobilities[ally] += real_atk.count_ones() as i32;
+				if real_atk & bb & mptr.files[csq] != 0 && mptr.files[csq] & pawns[ally] == 0 {
+					score += self.weight_open_battery[ally];
+				}
 			}
 		}
 		

@@ -19,7 +19,7 @@ fn main() {
     init_leaping_attacks();
     init_secondary_maps();
 
-    // memtest();
+    memtest();
 
     let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
@@ -28,9 +28,10 @@ fn main() {
 
     let mut hmc = 0;
     let scan = [true, true];
-    let ab = [64, 1000];
+    let ab = [112, 16384];
     // soft limit lol, may overflow by about 1-50 msc5b
-    let time = 1400;
+    let time = 2900;
+    let dl = 50;
     let mut abi = 0;
 
     loop {
@@ -41,7 +42,7 @@ fn main() {
 
         if scan[hmc & 1] {
             println!("Processing...\n");
-            let best_move = chara.think(ab[abi], time + 2500 * (hmc < 2) as u128, 50);
+            let best_move = chara.think(ab[abi], time, dl);
             abi = 0;
             println!();
             println!("Best move: {} ({})", move_transform(best_move.mov), best_move.score);
@@ -102,10 +103,4 @@ fn memtest() {
     while chara.cache_leaves.len() < CACHED_LEAVES_LIMIT {
         chara.cache_leaves.insert(rng.gen::<u64>(), rng.gen::<i32>());
     }
-
-    println!("done?");
-    let str = input();
-    println!("cleared");
-
-    return;
 }
