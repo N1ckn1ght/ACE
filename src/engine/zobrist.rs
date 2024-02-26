@@ -59,8 +59,8 @@ impl Zobrist {
 
     pub fn cache_iter(&self, board: &Board, last_move: u32, prev_hash: u64) -> u64 {
         let mut hash = prev_hash;
-        let from  = move_get_from(last_move);
-        let to    = move_get_to(last_move);
+        let from  = move_get_from(last_move, !board.turn);
+        let to    = move_get_to(last_move, !board.turn);
         let piece = move_get_piece(last_move);
         let capt  = move_get_capture(last_move);
         let promo = move_get_promotion(last_move);

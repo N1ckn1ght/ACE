@@ -126,8 +126,8 @@ impl<'a> Chara<'a> {
 			println!("#DEBUG\t--------------------------------");
 			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score, self.nodes);
 			print!("#DEBUG\tExpected line:");
-			for mov in self.tpv[0].iter().take(self.tpv_len[0]) {
-				print!(" {}", move_transform(*mov));
+			for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
+				print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
 			}
 			println!();
 
@@ -144,8 +144,8 @@ impl<'a> Chara<'a> {
 		println!("#DEBUG\tCache limits (in thousands), leaves: {}/{}, branches: {}/{}", self.cache_leaves.len() / 1000, CACHED_LEAVES_LIMIT / 1000, self.cache_branches.len() / 1000, CACHED_BRANCHES_LIMIT / 1000);
 		println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score, self.nodes);
 		print!("#DEBUG\tExpected line:");
-		for mov in self.tpv[0].iter().take(max(self.tpv_len[0], 1)) {
-			print!(" {}", move_transform(*mov));
+		for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
+			print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
 		}
 		println!();
 		println!("#DEBUG\t--------------------------------");
@@ -213,7 +213,7 @@ impl<'a> Chara<'a> {
 			self.hmc -= 1;
 
 			if self.abort {
-				return 0;
+				return (alpha + beta) >> 1;
 			}
 			if score >= beta {
 				return beta;
@@ -230,27 +230,20 @@ impl<'a> Chara<'a> {
 			return 0;
 		}
 
-		// todo: fix this bs :(
-		moves.sort();
 		// follow principle variation first
 		if self.tpv_flag {
 			self.tpv_flag = false;
 			if is_pv {
-				let mut i = 0;
-				let len = moves.len();
-				while i < len {
-					if moves[i] == self.tpv[0][self.hmc] {
+				for mov in moves.iter_mut() {
+					if *mov == self.tpv[0][self.hmc] {
 						self.tpv_flag = true;
+						*mov |= ME_PV1;
 						break;
 					}
-					i += 1;
-				}
-				while i < len - 1 {
-					moves.swap(i, i + 1);
-					i += 1;
 				}
 			}
 		}
+		moves.sort();
 		moves.reverse();
 		
 		let mut hf_cur = HF_LOW;
@@ -259,7 +252,7 @@ impl<'a> Chara<'a> {
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let mut score = if i > 3 && depth > 2 && (*mov > MSE_CAPTURE_MIN || in_check) {
+			let mut score = if i > 3 && depth > 2 && (*mov > ME_CAPTURE_MIN || in_check) {
 				-self.search(-beta, -alpha, depth - reduction)
 			} else {
 				alpha + 1
@@ -303,7 +296,7 @@ impl<'a> Chara<'a> {
 			self.cache_branches.get_mut(&hash).unwrap().score += self.hmc as i32;
 		}
 
-		panic!("test");
+		// panic!("test");
 		alpha // fail low
 	}
 
@@ -335,7 +328,7 @@ impl<'a> Chara<'a> {
 		for mov in moves.iter() {
 			self.make_move(*mov);
 			// extension will consider checks as well as captures
-			if *mov < MSE_CAPTURE_MIN && !self.board.is_in_check() {
+			if *mov < ME_CAPTURE_MIN && !self.board.is_in_check() {
 				self.revert_move();
 				continue;
 			}
@@ -390,7 +383,6 @@ impl<'a> Chara<'a> {
 		let queens = [self.board.bbs[Q], self.board.bbs[Q2]];
 		let king = [self.board.bbs[K], self.board.bbs[K2]];
 		let kbits = [gtz(king[0]), gtz(king[1])];
-		let mut cattacks = [0, 0];
 
 		/* SCORE APPLICATION BEGIN */
 
@@ -426,13 +418,9 @@ impl<'a> Chara<'a> {
 				let csq = pop_bit(&mut bb);
 				score += self.w.pieces[phase][N | ally][csq];
 				let atk = mptr.attacks_knight[csq] & !sides[ally];
-				cattacks[ally] |= atk;
 				mobilities[ally] += atk.count_ones() as i32;
 				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
 					score += self.w.outpost[ally][0];
-				}
-				if (mptr.attacks_dn[csq] & (king[enemy] | queens[enemy] | rooks[enemy])).count_ones() > 1 {
-					score += self.w.knight_fork[ally];
 				}
 			}
 		}
@@ -443,7 +431,6 @@ impl<'a> Chara<'a> {
 				let csq = pop_bit(&mut bb);
 				score += self.w.pieces[phase][B | ally][csq];
 				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				cattacks[ally] |= real_atk;
 				mobilities[ally] += real_atk.count_ones() as i32;
 				let imag_atk = self.board.get_sliding_diagonal_attacks(csq, sides[ally], sides[ally]);
 				let mut targets = imag_atk & (rooks[enemy] | queens[enemy] | king[enemy]);
@@ -478,7 +465,6 @@ impl<'a> Chara<'a> {
 				let csq = pop_bit(&mut bb);
 				score += self.w.pieces[phase][Q | ally][csq];
 				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				score += (cattacks[ally] & real_atk & sides[enemy]).count_ones() as i32 * self.w.queen_int[ally];
 				if real_atk & king[ally] != 0 {
 					score += self.w.bpin[enemy];
 				}
@@ -603,9 +589,9 @@ mod tests {
 		let mut board = Board::default();
 		let mut chara = Chara::init(&mut board);
 		let moves = chara.board.get_legal_moves();
-		chara.make_move(move_transform_back("e2e4", &moves).unwrap());
+		chara.make_move(move_transform_back("e2e4", &moves, chara.board.turn).unwrap());
 		let moves = chara.board.get_legal_moves();
-		let mov = move_transform_back("e7e5", &moves).unwrap();
+		let mov = move_transform_back("e7e5", &moves, chara.board.turn).unwrap();
 		chara.make_move(mov);
 		let eval = chara.eval();
 		assert_eq!(eval, chara.w.turn[0]);

@@ -14,8 +14,6 @@ pub struct Weights {
 	pub good_pawn:		 [[i32;  2];  2],		// passing with possible protection
 	pub outpost:		 [[i32;  2];  2],		// for knight/bishop
 	pub bpin:			  [i32;  2],			// if bishop is technically pinning smth ; also used to discourage self QK pin possibility
-	pub queen_int:		  [i32;  2],			// queen real attack intersect with b/r attacks at enemy something
-	pub knight_fork:	  [i32;  2],			// horse has a fork
 	pub open_battery:	  [i32;  2],			// TEC Rebels - Keep The Lanes Open (for rooks, of course)
 	pub random_fact:	   i32,					// for leaf evaluation (it's a tiebreaker, really. recommended value is 3, but 0 is obv. stronger)
 }
@@ -181,11 +179,9 @@ impl Weights {
 		let turn_add_pre = 10;
 		let bad_pawn_penalty_pre = [-16, -32];
 		let good_pawn_reward_pre = [18, 36];
-		let outpost_pre = [30, 15];
-		let bishop_pin_pre = 12;
-		let queen_strike_possible_pre = 12; // per every attack intersection
-		let knight_seems_promising_pre = 8;
-		let open_lane_rook_battery = 24;
+		let outpost_pre = [20, 12];
+		let bishop_pin_pre = 5;
+		let open_lane_rook_battery = 20;
 
 		/* Transform PW (flip for white, negative for black) and apply coefficients */
 
@@ -206,8 +202,6 @@ impl Weights {
 		let good_pawn		= [[good_pawn_reward_pre[0], -good_pawn_reward_pre[0]], [good_pawn_reward_pre[1], -good_pawn_reward_pre[1]]];
 		let outpost			= [[outpost_pre[0], outpost_pre[1]], [-outpost_pre[0], -outpost_pre[1]]];
 		let bpin			=  [bishop_pin_pre, -bishop_pin_pre];
-		let queen_int		=  [queen_strike_possible_pre, -queen_strike_possible_pre];
-		let knight_fork		=  [knight_seems_promising_pre, -knight_seems_promising_pre];
 		let open_battery	=  [open_lane_rook_battery, -open_lane_rook_battery];
 		let random_fact		=  0;
 
@@ -220,8 +214,6 @@ impl Weights {
 			good_pawn,
 			outpost,
 			bpin,
-			queen_int,
-			knight_fork,
 			open_battery,
 			random_fact,
 		}

@@ -158,8 +158,8 @@ impl Board {
         self.no += 1;
 
         let turn  = self.turn as usize;
-        let from  = move_get_from(mov);
-        let to    = move_get_to(mov);
+        let from  = move_get_from(mov, self.turn);
+        let to    = move_get_to(mov, self.turn);
         let piece = move_get_piece(mov);
         let capt  = move_get_capture(mov);
 
@@ -230,8 +230,8 @@ impl Board {
         self.turn = !self.turn;                            // the previous move was for previous colour
         self.no -= 1;
 
-        let from  = move_get_from(mov);
-        let to    = move_get_to(mov);
+        let from  = move_get_from(mov, self.turn);
+        let to    = move_get_to(mov, self.turn);
         let piece = move_get_piece(mov);
 
         set_bit(&mut self.bbs[piece], from);
@@ -267,19 +267,19 @@ impl Board {
         let mut mask = self.maps.attacks_king[sq] & !ally;
         while mask != 0 {
             let csq = pop_bit(&mut mask);
-            moves.push(move_encode(sq, csq, K | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));            
+            moves.push(move_encode(sq, csq, K | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));            
         }
         // king, special
         if self.castlings & (CSW << turn) != 0 {
             let csq = 6 + 56 * turn;
             if CSMASK << (56 * turn) & both == 0 && !self.is_under_attack(!self.turn, csq - 1, both, ally) && !self.is_under_attack(!self.turn, sq, both, ally) {
-                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_SHORT));
+                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_SHORT, self.turn));
             }
         }
         if self.castlings & (CLW << turn) != 0 {
             let csq = 2 + 56 * turn;
             if CLMASK << (56 * turn) & both == 0 && !self.is_under_attack(!self.turn, csq | 1, both, ally) && !self.is_under_attack(!self.turn, sq, both, ally) {
-                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_LONG));
+                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_LONG, self.turn));
             }
         }
         // knight
@@ -289,7 +289,7 @@ impl Board {
             let mut mask = self.maps.attacks_knight[sq] & !ally;
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, N | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));
+                moves.push(move_encode(sq, csq, N | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));
             }
         }
         // bishop
@@ -299,7 +299,7 @@ impl Board {
             let mut mask = self.get_sliding_diagonal_attacks(sq, both, ally);
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, B | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));
+                moves.push(move_encode(sq, csq, B | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));
             }
         }
         // rook
@@ -309,7 +309,7 @@ impl Board {
             let mut mask = self.get_sliding_straight_attacks(sq, both, ally);
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, R | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));
+                moves.push(move_encode(sq, csq, R | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));
             }
         }
         // queen
@@ -319,7 +319,7 @@ impl Board {
             let mut mask = self.get_sliding_diagonal_attacks(sq, both, ally) | self.get_sliding_straight_attacks(sq, both, ally);
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, Q | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));
+                moves.push(move_encode(sq, csq, Q | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));
             }
         }
         // pawn (a hardcoded if-else)
@@ -333,29 +333,29 @@ impl Board {
                     // promotion
                     while mask != 0 {
                         let csq = pop_bit(&mut mask);
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), Q2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), R2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), B2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), N2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), Q2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), R2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), B2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), N2, MSE_NOTHING, self.turn));
                     }
                     let csq = sq - 8;
                     if get_bit(both, csq) == 0 {
-                        moves.push(move_encode(sq, csq, P2, E, Q2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, E, R2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, E, B2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, E, N2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, E, Q2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, E, R2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, E, B2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, E, N2, MSE_NOTHING, self.turn));
                     }
                 } else {
                     while mask != 0 {
                         let csq = pop_bit(&mut mask);
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), E, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), E, MSE_NOTHING, self.turn));
                     }
                     let csq = sq - 8;
                     if get_bit(both, csq) == 0 {
-                        moves.push(move_encode(sq, csq, P2, E, E, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, E, E, MSE_NOTHING, self.turn));
                         // double pawn move
                         if get_bit(RANK_7, sq) != 0 && get_bit(both, csq - 8) == 0 {
-                            moves.push(move_encode(sq, csq - 8, P2, E, E, MSE_DOUBLE_PAWN));
+                            moves.push(move_encode(sq, csq - 8, P2, E, E, MSE_DOUBLE_PAWN, self.turn));
                         }
                     }
                 }
@@ -363,10 +363,10 @@ impl Board {
             // en passant
             if self.en_passant != 0 {
                 if get_bit(self.bbs[P2], self.en_passant + 7) & RANK_4 != 0 {
-                    moves.push(move_encode(self.en_passant + 7, self.en_passant, P2, P, E, MSE_EN_PASSANT));
+                    moves.push(move_encode(self.en_passant + 7, self.en_passant, P2, P, E, MSE_EN_PASSANT, self.turn));
                 }
                 if get_bit(self.bbs[P2], self.en_passant + 9) & RANK_4 != 0 {
-                    moves.push(move_encode(self.en_passant + 9, self.en_passant, P2, P, E, MSE_EN_PASSANT));
+                    moves.push(move_encode(self.en_passant + 9, self.en_passant, P2, P, E, MSE_EN_PASSANT, self.turn));
                 }
             }
         } else {
@@ -378,29 +378,29 @@ impl Board {
                     // promotion
                     while mask != 0 {
                         let csq = pop_bit(&mut mask);
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), Q, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), R, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), B, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), N, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), Q, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), R, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), B, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), N, MSE_NOTHING, self.turn));
                     }
                     let csq = sq + 8;
                     if get_bit(both, csq) == 0 {
-                        moves.push(move_encode(sq, csq, P, E, Q, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, E, R, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, E, B, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, E, N, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, E, Q, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, E, R, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, E, B, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, E, N, MSE_NOTHING, self.turn));
                     }
                 } else {
                     while mask != 0 {
                         let csq = pop_bit(&mut mask);
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), E, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), E, MSE_NOTHING, self.turn));
                     }
                     let csq = sq + 8;
                     if get_bit(both, csq) == 0 {
-                        moves.push(move_encode(sq, csq, P, E, E, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, E, E, MSE_NOTHING, self.turn));
                         // double pawn move
                         if get_bit(RANK_2, sq) != 0 && get_bit(both, csq + 8) == 0 {
-                            moves.push(move_encode(sq, csq + 8, P, E, E, MSE_DOUBLE_PAWN));
+                            moves.push(move_encode(sq, csq + 8, P, E, E, MSE_DOUBLE_PAWN, self.turn));
                         }
                     }
                 }
@@ -409,10 +409,10 @@ impl Board {
         // en passant
         if self.en_passant != 0 {
             if get_bit(self.bbs[P], self.en_passant - 7) & RANK_5 != 0 {
-                moves.push(move_encode(self.en_passant - 7, self.en_passant, P, P2, E, MSE_EN_PASSANT));
+                moves.push(move_encode(self.en_passant - 7, self.en_passant, P, P2, E, MSE_EN_PASSANT, self.turn));
             }
             if get_bit(self.bbs[P], self.en_passant - 9) & RANK_5 != 0 {
-                moves.push(move_encode(self.en_passant - 9, self.en_passant, P, P2, E, MSE_EN_PASSANT));
+                moves.push(move_encode(self.en_passant - 9, self.en_passant, P, P2, E, MSE_EN_PASSANT, self.turn));
             }
         }
         moves
@@ -592,7 +592,7 @@ impl Board {
         let moves = self.get_legal_moves();
         for mov in moves.iter() {
             self.make_move(*mov);
-            println!("{}\t{}\t{}\t{}", mov, move_transform(*mov), self.perft(depth - 1), self.export());
+            println!("{}\t{}\t{}\t{}", mov, move_transform(*mov, self.turn), self.perft(depth - 1), self.export());
             self.revert_move();
         }
     }

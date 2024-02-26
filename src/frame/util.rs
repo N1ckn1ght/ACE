@@ -89,7 +89,11 @@ pub const MSE_CASTLE_LONG:             u32 = 0b0010;
 pub const MSE_DOUBLE_PAWN:             u32 = 0b0001;
 // Note: there's no MSE_PROMOTION, it's encoded by piece, same as CAPTURE and PIECE
 
-pub const MSE_CAPTURE_MIN: u32 = (P as u32) << 28;
+pub const ME_CAPTURE_MIN: u32 = (P as u32) << 26;
+pub const ME_PV1: u32 = 1 << 31;
+pub const ME_PV2: u32 = 1 << 30;
+pub const ME_KILLER1: u32 = 1 << 25;
+pub const ME_KILLER2: u32 = 1 << 24;
 
 /* board.castlings bits
     - it won't correlate with MSE because of the color bits anyway */
@@ -168,48 +172,49 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
 
 // since it's not a struct, let's use more inline fuctions
 // let's keep it in Most Valuable Victim - Least Valuable Attacker way
-// [4 - SPECIAL][8 - square from][8 - square to][4 - moving piece][4 - promotion][4 - captured piece]
-// --- additional note ---
-// could be further expanded to 64 bit to store mort sort bits - like, pv, killer moves, etc;
-// this will increase the perfomance and simplicity if there's a lot of contributing factors to pre-sort
+// [2 - PV bits][4 - captured piece][2 - killer bits][4 - promotion][[4 - moving piece][6 - square to][6 - square from][4 - SPECIAL]
+// from-to squares are reversed for black pieces
+// note: this is the bottleneck.
 #[inline]
-pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promotion: usize, special: u32 ) -> u32 {
-    special | (from << 4 | to << 12 | (!piece & 0b1111) << 20 | promotion << 24 | capture << 28) as u32
+pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promotion: usize, special: u32, turn: bool) -> u32 {
+    if turn {
+        special | ((!from & 0b111111) << 4 | (!to & 0b111111) << 10 | (!piece & 0b1111) << 16 | promotion << 20 | capture << 26) as u32
+    } else {
+        special | (  from             << 4 |   to             << 10 | (!piece & 0b1111) << 16 | promotion << 20 | capture << 26) as u32
+    }
 }
 
 #[inline]
-pub fn move_get_from(mov: u32) -> usize {
-    (mov >> 4 & 0b11111111) as usize
+pub fn move_get_from(mov: u32, turn: bool) -> usize {
+    if turn {
+        (!mov >> 4 & 0b111111) as usize   
+    } else {
+        ( mov >> 4 & 0b111111) as usize
+    }
 }
 
 #[inline]
-pub fn move_get_from_bb(mov: u32) -> u64 {
-    1 << (mov >> 4 & 0b11111111)
-}
-
-#[inline]
-pub fn move_get_to(mov: u32) -> usize {
-    (mov >> 12 & 0b11111111) as usize
-}
-
-#[inline]
-pub fn move_get_to_bb(mov: u32) -> u64 {
-    1 << (mov >> 12 & 0b11111111)
+pub fn move_get_to(mov: u32, turn: bool) -> usize {
+    if turn {
+        (!mov >> 10 & 0b111111) as usize
+    } else {
+        ( mov >> 10 & 0b111111) as usize
+    }
 }
 
 #[inline]
 pub fn move_get_piece(mov: u32) -> usize {
-    (!mov >> 20 & 0b1111) as usize
+    (!mov >> 16 & 0b1111) as usize
 }
 
 #[inline]
 pub fn move_get_promotion(mov: u32) -> usize {
-    (mov >> 24 & 0b1111) as usize
+    (mov >> 20 & 0b1111) as usize
 }
 
 #[inline]
 pub fn move_get_capture(mov: u32) -> usize {
-    (mov >> 28 & 0b1111) as usize
+    (mov >> 26 & 0b1111) as usize
 }
 
 /* ADDITIONAL DATA STRUCTURES */
@@ -416,9 +421,9 @@ pub static PIECES_REV: phf::Map<u32, char> = phf_map! {
 
 /* INTERFACE */
 
-pub fn move_transform(mov: u32) -> String {
-    let from = move_get_from(mov);
-    let to = move_get_to(mov);
+pub fn move_transform(mov: u32, turn: bool) -> String {
+    let from = move_get_from(mov, turn);
+    let to = move_get_to(mov, turn);
     let promotion = move_get_promotion(mov);
     let mut str = String::new();
     str.push(char::from_u32((from & 7) as u32 + 'a' as u32).unwrap());
@@ -431,7 +436,7 @@ pub fn move_transform(mov: u32) -> String {
     str
 }
 
-pub fn move_transform_back(input: &str, legal_moves: &[u32]) -> Option<u32> {
+pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Option<u32> {
     let command     = input.as_bytes();
     let from        = command[0] as usize - 'a' as usize + (command[1] as usize - '0' as usize) * 8 - 8;
     let to          = command[2] as usize - 'a' as usize + (command[3] as usize - '0' as usize) * 8 - 8;
@@ -440,8 +445,8 @@ pub fn move_transform_back(input: &str, legal_moves: &[u32]) -> Option<u32> {
         promo = PIECES[&(command[4] as char)] & !1;
     }
     for legal in legal_moves.iter() {
-        let mfrom  = move_get_from(*legal);
-        let mto    = move_get_to(*legal);
+        let mfrom  = move_get_from(*legal, turn);
+        let mto    = move_get_to(*legal, turn);
         let mpromo = move_get_promotion(*legal);
         if from == mfrom && to == mto && promo == mpromo {
             return Some(*legal);
@@ -504,9 +509,11 @@ mod tests {
         let promotion = P;
         let capture = N;
         let special = MSE_EN_PASSANT;
-        let mov = move_encode(gtz(from), gtz(to), piece, capture, promotion, special);
-        assert_eq!(move_get_from(mov), gtz(from));
-        assert_eq!(move_get_to(mov), gtz(to));
+        let mov = move_encode(gtz(from), gtz(to), piece, capture, promotion, special, false);
+        let mov2 = move_encode(gtz(from), gtz(to), piece, capture, promotion, special, true);
+        assert_ne!(mov, mov2);
+        assert_eq!(move_get_from(mov, false), gtz(from));
+        assert_eq!(move_get_to(mov, false), gtz(to));
         assert_eq!(move_get_piece(mov), piece);
         assert_eq!(move_get_promotion(mov), promotion);
         assert_eq!(move_get_capture(mov), capture);
@@ -514,13 +521,13 @@ mod tests {
         assert_eq!(mov & MSE_CASTLE_LONG, 0);
         assert_eq!(mov & MSE_DOUBLE_PAWN, 0);
         assert_ne!(mov & MSE_EN_PASSANT, 0);
-        let mov = move_encode(57, 63, P2, R, Q2, MSE_NOTHING);
+        let mov = move_encode(57, 63, P2, R, Q2, MSE_NOTHING, false);
         assert_eq!(move_get_promotion(mov), Q2);
-        let mov = move_encode(57, 63, P2, R, R2, MSE_NOTHING);
+        let mov = move_encode(57, 63, P2, R, R2, MSE_NOTHING, false);
         assert_eq!(move_get_promotion(mov), R2);
-        let mov = move_encode(57, 63, P2, R, B2, MSE_NOTHING);
+        let mov = move_encode(57, 63, P2, R, B2, MSE_NOTHING, false);
         assert_eq!(move_get_promotion(mov), B2);
-        let mov = move_encode(57, 63, P2, R, N2, MSE_NOTHING);
+        let mov = move_encode(57, 63, P2, R, N2, MSE_NOTHING, false);
         assert_eq!(move_get_promotion(mov), N2);
     }
 
@@ -528,19 +535,19 @@ mod tests {
     fn test_utility_move_transform_back() {
         let mut board = Board::default();
         let moves = board.get_legal_moves();
-        let mov = move_transform_back("e2e4", &moves);
+        let mov = move_transform_back("e2e4", &moves, board.turn);
         assert_ne!(mov.is_none(), true);
-        let mov = move_transform_back("e2e4q", &moves);
+        let mov = move_transform_back("e2e4q", &moves, board.turn);
         assert_eq!(mov.is_none(), true);
-        let mov = move_transform_back("e2e5", &moves);
+        let mov = move_transform_back("e2e5", &moves, board.turn);
         assert_eq!(mov.is_none(), true);
         let mut board = Board::import("r1bq1bnr/ppp1kP1p/2np2p1/4p3/8/3B1N2/PPPP1PPP/RNBQK2R w KQ - 1 7");
         let moves = board.get_legal_moves();
-        let mov = move_transform_back("f7g8n", &moves);
+        let mov = move_transform_back("f7g8n", &moves, board.turn);
         assert_ne!(mov.is_none(), true);
-        let mov = move_transform_back("f7f8r", &moves);
+        let mov = move_transform_back("f7f8r", &moves, board.turn);
         assert_eq!(mov.is_none(), true);
-        let mov = move_transform_back("e1g1", &moves);
+        let mov = move_transform_back("e1g1", &moves, board.turn);
         assert_ne!(mov.is_none(), true);
     }
 }
