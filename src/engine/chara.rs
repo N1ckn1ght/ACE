@@ -522,8 +522,8 @@ impl<'a> Chara<'a> {
 		}
 
 		if phase == 0{
-			mobilities[0] -= (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
-			mobilities[1] -= (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;
+			mobilities[0] -= ((mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() << 1) as i32;
+			mobilities[1] -= ((mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() << 1) as i32;
 		} else {
 			mobilities[0] += (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
 			mobilities[1] += (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;

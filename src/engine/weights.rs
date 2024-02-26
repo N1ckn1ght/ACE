@@ -38,7 +38,7 @@ impl Weights {
 					 -5,    5,   25,   30,   30,   50,   25,   10,
 					-15,    5,    5,   25,   31,   10,   10,  -15,
 					-20,   -2,    0,   15,   21,    0,   10,  -21,
-					-25,   -3,  -10,    0,   -3,  -30,   30,    0,
+					-24,   -3,  -10,    0,   -3,  -30,   30,    0,
 					-30,   -1,  -15,  -15,  -15,   30,   30,  -15,
 					  0,    0,    0,    0,    0,    0,    0,    0
 				],
@@ -83,7 +83,7 @@ impl Weights {
 					-25,  -25,  -15,  -15,    0,   15,    0,    0,
 					 -5,  -25,  -10,  -10,    0,    0,    0,    0,
 					-10,    5,  -10,   -1,   -4,    0,   11,    1,
-					-30,    0,   11,    2,    7,    5,   -1,    0,
+					-30,    0,   11,    2,    8,    5,   -1,    0,
 					-10,  -20,   -2,   10,  -15,  -25,  -30,  -50
 				],
 				// king
@@ -94,7 +94,7 @@ impl Weights {
 					-25,  -30,  -35,  -40,  -40,  -30,  -20,  -30,
 					-20,  -25,  -30,  -35,  -35,  -20,  -25,  -20,
 					-15,  -20,  -25,  -30,   -5,  -30,  -20,  -10,
-					  0,    1,   -5,  -25,  -10,  -10,    3,    2,
+					  0,    1,   -5,  -30,  -10,  -10,    3,    2,
 					-20,   30,   20,  -20,   10,    0,   30,   20
 				]
 			],
@@ -174,14 +174,14 @@ impl Weights {
 			[ 100, 310, 330, 550, 920, 0 ]
 		];
 
-		let mobility_base = 5;
+		let mobility_base = 6;
 		let turn_factor = 4; // meaning: += self >> factor or -= self >> factor
 		let turn_add_pre = 10;
 		let bad_pawn_penalty_pre = [-12, -25];
 		let good_pawn_reward_pre = [15, 30];
 		let outpost_pre = [18, 12];
 		let bishop_pin_pre = 4;
-		let open_lane_rook_pre = 12;
+		let open_lane_rook_pre = 14;
 
 		/* Transform PW (flip for white, negative for black) and apply coefficients */
 
