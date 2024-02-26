@@ -22,9 +22,10 @@ fn main() {
     // memtest();
     
     // test boards:
-    // let mut board = Board::import("rn1qkbnr/ppp3pp/3p1p2/4N3/2B1P3/2N5/PPPP1PPP/R1BbK2R w KQkq - 0 6"); // mate in 2
+    // let mut board = Board::import("rn1qkbnr/ppp3pp/3p1p2/4N3/2B1P3/2N5/PPPP1PPP/R1BbK2R w KQkq - 0 6"); // mate in +2
     // let mut board = Board::import("r3k2r/8/8/8/8/8/8/4K3 b - - 0 1"); // mate in -2
-
+    // let mut board = Board::import("8/8/5k2/8/3R4/2K5/8/8 w - - 0 1"); // mate in +??
+    
     let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
     chara.w.random_fact = 0;
@@ -35,7 +36,7 @@ fn main() {
     let scan = [true, true];
     let ab = [80, 16384];
     // soft limit lol, may overflow by about 1-50 msc5b
-    let time = 2990;
+    let time = 980;
     let dl = 50;
     let mut abi = 0;
 

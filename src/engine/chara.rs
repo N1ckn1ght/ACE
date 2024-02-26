@@ -35,6 +35,7 @@ pub struct Chara<'a> {
 													// expected lines of moves length
 	pub tpv_len:			[usize; HALF_DEPTH_LIMIT],
 	pub tpv_flag:			bool,					// if this is a principle variation (in search)
+	pub mate_flag:			bool					// if mate is present
 }
 
 impl<'a> Chara<'a> {
@@ -62,7 +63,8 @@ impl<'a> Chara<'a> {
 			hmc:			0,
 			tpv:			[[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
 			tpv_len:		[0; HALF_DEPTH_LIMIT],
-			tpv_flag:		false
+			tpv_flag:		false,
+			mate_flag:		false
 		}
     }
 
@@ -94,6 +96,7 @@ impl<'a> Chara<'a> {
 
 		self.tl = time_limit_ms;
 		self.abort = false;
+		self.mate_flag = false;
 		self.nodes = 0;
 		for line in self.tpv.iter_mut() { for node in line.iter_mut() { *node = 0 } };
 		for len in self.tpv_len.iter_mut() { *len = 0 };
@@ -112,8 +115,14 @@ impl<'a> Chara<'a> {
 				break;
 			}
 			if score > LARGM {
+				if self.mate_flag {
+					break;
+				}
 				println!("#DEBUG\tMate detected.");
-				break;
+				alpha = -INF;
+				beta = INF;
+				self.mate_flag = true;
+				continue;
 			}
 			if score <= alpha || score >= beta {
 				if k > 15 {
@@ -239,13 +248,11 @@ impl<'a> Chara<'a> {
 		// follow principle variation first
 		if self.tpv_flag {
 			self.tpv_flag = false;
-			if is_pv {
-				for mov in moves.iter_mut() {
-					if *mov == self.tpv[0][self.hmc] {
-						self.tpv_flag = true;
-						*mov |= ME_PV1;
-						break;
-					}
+			for mov in moves.iter_mut() {
+				if *mov == self.tpv[0][self.hmc] {
+					self.tpv_flag = true;
+					*mov |= ME_PV1;
+					break;
 				}
 			}
 		}
