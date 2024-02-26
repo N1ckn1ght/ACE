@@ -33,8 +33,8 @@ fn main() {
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut hmc = 0;
-    let scan = [true, true];
-    let ab = [80, 16384];
+    let scan = [false, true];
+    let ab = [88, 16384];
     // soft limit lol, may overflow by about 1-50 msc5b
     let time = 2950;
     let dl = 50;

@@ -174,7 +174,7 @@ impl Weights {
 			[ 100, 310, 330, 550, 920, 0 ]
 		];
 
-		let mobility_base = 4;
+		let mobility_base = 5;
 		let turn_factor = 4; // meaning: += self >> factor or -= self >> factor
 		let turn_add_pre = 10;
 		let bad_pawn_penalty_pre = [-12, -25];
