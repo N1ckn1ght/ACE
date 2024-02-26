@@ -145,16 +145,22 @@ impl<'a> Chara<'a> {
 			println!("#DEBUG\t--------------------------------");
 			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score_transform(score, self.board.turn), self.nodes);
 
-			print!("#DEBUG\tKillers:");
-			for num in self.killer.iter() {
-				for (i, mov) in num.iter().enumerate().take(depth as usize) {
-					if *mov != 0 {
-						print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
-					} else {
-						print!(" -");
-					}
+			print!("#DEBUG\tKiller 0:");
+			for (i, mov) in self.killer[0].iter().enumerate().take(depth as usize) {
+				if *mov != 0 {
+					print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
+				} else {
+					print!(" -");
 				}
-				print!(" |");
+			}
+			println!();
+			print!("#DEBUG\tKiller 1:");
+			for (i, mov) in self.killer[1].iter().enumerate().take(depth as usize) {
+				if *mov != 0 {
+					print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
+				} else {
+					print!(" -");
+				}
 			}
 			println!();
 
@@ -185,7 +191,7 @@ impl<'a> Chara<'a> {
 		EvalMove::new(self.tpv[0][0], score)
 	}
 
-	fn search(&mut self, mut alpha: i32, beta: i32, depth: i16) -> i32 {
+	fn search(&mut self, mut alpha: i32, beta: i32, mut depth: i16) -> i32 {
 		self.tpv_len[self.hmc] = self.hmc;
 
 		let hash = *self.history_vec.last().unwrap();
@@ -285,13 +291,13 @@ impl<'a> Chara<'a> {
 		moves.reverse();
 		
 		let mut hf_cur = HF_LOW;
-		let reduction = 2;
+		depth += in_check as i16;
 		// a/b with lmr and pv proving
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let mut score = if i > 3 && depth > 2 && (*mov > ME_CAPTURE_MIN || in_check) {
-				-self.search(-beta, -alpha, depth - reduction)
+			let mut score = if i > 2 && depth > 2 && (*mov > ME_CAPTURE_MIN || in_check) {
+				-self.search(-beta, -alpha, depth - 2)
 			} else {
 				alpha + 1
 			};
@@ -494,8 +500,8 @@ impl<'a> Chara<'a> {
 				score += self.w.pieces[phase][R | ally][csq];
 				let real_atk = self.board.get_sliding_straight_attacks(csq, occup, sides[ally]);
 				mobilities[ally] += real_atk.count_ones() as i32;
-				if real_atk & bb & mptr.files[csq] != 0 && mptr.files[csq] & pawns[ally] == 0 {
-					score += self.w.open_battery[ally];
+				if real_atk & mptr.files[csq] & pawns[ally] == 0 {
+					score += self.w.open_lane_rook[ally];
 				}
 			}
 		}
@@ -513,8 +519,8 @@ impl<'a> Chara<'a> {
 		}
 
 		if phase == 0{
-			mobilities[0] -= (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
-			mobilities[1] -= (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;
+			mobilities[0] -= ((mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() * 3) as i32;
+			mobilities[1] -= ((mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() * 3) as i32;
 		} else {
 			mobilities[0] += (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
 			mobilities[1] += (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;

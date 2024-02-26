@@ -36,7 +36,7 @@ fn main() {
     let scan = [true, true];
     let ab = [80, 16384];
     // soft limit lol, may overflow by about 1-50 msc5b
-    let time = 980;
+    let time = 2950;
     let dl = 50;
     let mut abi = 0;
 
