@@ -4,264 +4,386 @@
 use std::{cmp::max, collections::{HashMap, HashSet}, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
-use super::{weights::Weights, zobrist::Zobrist, search::{search, mate}};
+use super::{weights::Weights, zobrist::Zobrist};
 
-// TODO: use i16 instead of floats for faster add/sub operations?
-pub struct Chara {
-	/* These weights are stored with respect to the colour, black pieces will provide negative values
-		- Usual order is:
-		- [ Game Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]	*/
-	pub pieces_weights:		[[[f32; 64]; 12]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
-	pub mobility_weights:	[[[f32; 32]; 12]; 2],	// add/subtract eval depending on piece mobility in mittlespiel/endspiel
-	pub turn_weights:		[[f32; 2]; 2],			// mult/add weights per turn if not a 100% draw
-	pub align_weights:		[[[f32; 6]; 2]; 2],		// add weight per b/r/q pieces aligned (x-ray) against king / against near square in mittelspiel/endspiel
-													// 		for straight aligns it checks if the lane is open (no ally pawn in the way)
-	pub battery_weights:	[[f32; 4]; 2],			// add weight per batteries: b+q / r+r horizontal / r+r vertical / r+q vertical
-													//		note: in case of b+q, r+q, the weight is added per queen; for rooks it's doubled
-	// pub rook_lane_open:	f32,					// add weight, small self-explanatory bonus (obsolete for now because of crazy mobility bonus?)
-	/* TODO: Better pawn structure evaluation (hash them separately) */
-	pub dp_weight:			f32,					// mult weight per pawn if it has other pawns of same color at this file (use as penalty)
-	pub pp_weights:			[f32; 3],				// mult weight per passing / protected by pawn / passing + protected by pawn (unique bonus)
-	pub outpost_weights:	[[f32; 2]; 2],			// add weight per passing knight / bishop that's defended by pawn
-	pub dan_possible:		[[f32; 3]; 2],			// add weight per knight if it is able to check / able to royal fork / able to fork heavy pieces
-	pub random_range:		f32,					// +-(0 - random_range) value per evaluated position on leaves
-	/* Cache to store evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
-	pub cache_leaves:		HashMap<u64, f32>,
+pub struct Chara<'a> {
+	pub board:				&'a mut Board,
+	pub w:					Weights,
+	
+	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
+	pub cache_leaves:		HashMap<u64, i32>,
 	pub cache_branches:		HashMap<u64, EvalBr>,
-	/* Cache to story already made in board moves to track drawish positions */
+	
+	/* Cache for already made in board moves to track drawish positions */
 	pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
 	pub history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
 													// note: it's always 1 hash behind
+	
 	/* Accessible constants */
 	pub zobrist:			Zobrist,
 	pub rng:				ThreadRng,
-	/* Limitations */
+
+	/* Search trackers */
+	pub book:				i16,					// opening book: 0 - forbidden, 1 - unusable in this game, 2 - will be used
 	pub ts:					Instant,				// timer start
-	pub tl:					u128					// time limit in ms
+	pub tl:					u128,					// time limit in ms
+	pub abort:				bool,					// stop search signal
+	pub nodes:				u64,					// nodes searched
+	pub hmc:				usize,					// current distance to root of the search
+													// expected lines of moves
+	pub tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
+													// expected lines of moves length
+	pub tpv_len:			[usize; HALF_DEPTH_LIMIT],
+													// quiet moves that cause a beta cutoff
+	pub killer:				[[u32; HALF_DEPTH_LIMIT]; 2],
+	pub tpv_flag:			bool,					// if this is a principle variation (in search)
+	pub mate_flag:			bool					// if mate is present
 }
 
-/* For more understandable indexing in eval() */
-const TURN_MULT:		usize = 0;
-const TURN_ADD:			usize = 1;
-const ALIGN_BISHOP:		usize = 0;
-const ALIGN_ROOK:		usize = 1;
-const ALIGN_QUEEN:		usize = 2;
-const ALIGN_NEAR:		usize = 3;
-const BATTERY_BQ:		usize = 0;
-const BATTERY_RRH:		usize = 1;
-const BATTERY_RRV:		usize = 2;
-const BATTERY_RQV:		usize = 3;
-const PAWN_PASSING:		usize = 0;
-const PAWN_PROTECTED:	usize = 1;
-const PAWN_COMBINED:	usize = 2;
-const OUTPOST_KNIGHT:	usize = 0;
-const OUTPOST_BISHOP:	usize = 1;
-const DAN_CHECK:		usize = 0;
-const DAN_ROYAL_FORK:	usize = 1;
-const DAN_FORK:			usize = 2;
-
-impl Chara {
+impl<'a> Chara<'a> {
 	// It's a little messy, but any evals are easily modifiable.
 	// No need in modifying something twice to be applied for the different coloir, neither there's a need to write something twice in eval()
-    pub fn init(board: &Board, aggressiveness: f32, greed: f32, random_range: f32) -> Chara {
-		let mut w = Weights::default();
-
-		let piece_wmult: f32					= 1.0  * greed;
-		let piece_square_related_wmult: f32		= 0.75 / (aggressiveness * 0.5  + 0.5 );	// really slight balance-out
-		let mobility_wmult: f32					= 1.0  * (aggressiveness * 0.5  + 0.5 );
-		let align_wmult: f32					= 1.0  *  aggressiveness;
-		let battery_wmult: f32					= 1.0  *  aggressiveness;
-		let pawn_structure_wmult: f32			= 0.5  * (aggressiveness * 0.5  + 0.5 );
-		let minor_piece_pos_wmult: f32			= 1.0  * (aggressiveness * 0.5  + 0.5 );
-
-		// transform (flip for white, negative for black) and apply coefficients
-		let mut pieces_weights: [[[f32; 64]; 12]; 2] = [[[0.0; 64]; 12]; 2];
-		for i in 0..2 {
-			for j in 0..6 {
-				for k in 0..64 {
-					pieces_weights[i][ j << 1     ][k] =  w.pieces_weights_square_related[i][j][flip(k)] * piece_square_related_wmult + w.pieces_weights_const[i][j] * piece_wmult;
-					pieces_weights[i][(j << 1) | 1][k] = -w.pieces_weights_square_related[i][j][k      ] * piece_square_related_wmult - w.pieces_weights_const[i][j] * piece_wmult;
-				}
-			}
-		}
-
-		// transform and apply coefficients
-		let mut mobility_weights = [[[0.0; 32]; 12]; 2];
-		for j in 0..5 {
-			for k in 0..32 {
-				for i in 0..2 {
-					mobility_weights[i][ (j + 1) << 1     ][k] =  w.mobility_weights_const[j][k] * mobility_wmult;
-					mobility_weights[i][((j + 1) << 1) | 1][k] = -w.mobility_weights_const[j][k] * mobility_wmult;
-				}
-			}
-		}
-		for k in 0..32 {
-			mobility_weights[1][10][k] =  w.mobility_weights_const[5][k] * mobility_wmult;
-			mobility_weights[1][11][k] = -w.mobility_weights_const[5][k] * mobility_wmult;
-		}
-
-		/* Apply coefficients */
-		w.turn_weights_pre.iter_mut().for_each(|w| *w *= mobility_wmult);
-		w.align_weights_pre.iter_mut().for_each(|arr| arr.iter_mut().for_each(|w| *w *= align_wmult));
-		w.battery_weights_pre.iter_mut().for_each(|w| *w *= battery_wmult);
-		w.dp_weight += -0.25 + (-pawn_structure_wmult).exp2() * 0.5;
-		w.pp_weights.iter_mut().for_each(|w| *w *= pawn_structure_wmult);
-		w.outpost_weight_pre.iter_mut().for_each(|w| *w *= minor_piece_pos_wmult);
-		w.dan_possible_pre.iter_mut().for_each(|w| *w *= minor_piece_pos_wmult);
-
-		/* Transform */
-		let mut turn_weights	= [w.turn_weights_pre; 2];
-		turn_weights[1][1]		= -turn_weights[0][1];
-		turn_weights[1][0]		= 1.0 / turn_weights[0][0];
-		let mut battery_weights = [w.battery_weights_pre; 2];
-		battery_weights[1].iter_mut().for_each(|w| *w *= -1.0);
-		let mut outpost_weights	= [w.outpost_weight_pre; 2];
-		outpost_weights[1].iter_mut().for_each(|w| *w *= -1.0);
-		let mut dan_possible	= [w.dan_possible_pre; 2];
-		dan_possible[1].iter_mut().for_each(|w| *w *= -1.0);
-		let mut align_weights 	= [[[0.0; 6]; 2]; 2];
-		for i in 0..2 {
-			for k in 0..6 {
-				align_weights[i][0][k] =  w.align_weights_pre[i][k];
-				align_weights[i][1][k] = -w.align_weights_pre[i][k];
-			}
-		}
-
+    pub fn init(board: &'a mut Board) -> Chara<'a> {
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(300);
 		cache_perm_vec.push(zobrist.cache_new(board));
 
 		Self {
-			pieces_weights,
-			mobility_weights,
-			turn_weights,
-			align_weights,
-			battery_weights,
-			dp_weight:		w.dp_weight,
-			pp_weights:		w.pp_weights,
-			outpost_weights,
-			dan_possible,
-			random_range,
+			board,
+			w:				Weights::init(),
 			cache_leaves:	HashMap::default(),
 			cache_branches:	HashMap::default(),
 			history_vec:	cache_perm_vec,
 			history_set:	HashSet::default(),
 			zobrist,
 			rng:			rand::thread_rng(),
+			book:			2,
 			ts:				Instant::now(),
-			tl:				0
+			tl:				0,
+			abort:			false,
+			nodes:			0,
+			hmc:			0,
+			tpv:			[[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
+			tpv_len:		[0; HALF_DEPTH_LIMIT],
+			killer:			[[0; HALF_DEPTH_LIMIT]; 2],
+			tpv_flag:		false,
+			mate_flag:		false
 		}
     }
 
-	pub fn think(&mut self, board: &mut Board, base_aspiration_window: f32, time_limit_ms: u128, mut last_eval: EvalBr) -> Vec<EvalMove> {
-		self.ts = Instant::now();
-		self.tl = time_limit_ms;
-
-		let mut moves = board.get_legal_moves();
-		if moves.is_empty() {
-			return vec![];
-		}
-		moves.sort();
-		moves.reverse();
-
-		let mut moves_evaluated = Vec::with_capacity(moves.len());
-		for mov in moves.into_iter() {
-			moves_evaluated.push(EvalMove::new(mov, EvalBr::new(-LARGE, 0)));
-		}
-
-		// if we have a mate attack, we must follow it;
-		// if enemy has a mate attack, we could actually consider surrendering :D
-		// if (last_eval.score == LARGE && !board.turn) || (last_eval.score == -LARGE && board.turn) {
-		if last_eval.score == LARGE {
-			let depth = last_eval.depth - 2;
-			
-			for me in moves_evaluated.iter_mut() {
-				self.make_move(board, me.mov);
-				me.eval = -mate(self, board, depth - 1);
-				me.eval.depth += 1;
-				self.revert_move(board);
-				if me.eval.score == LARGE {
-					break;
-				}
-			}
-		} else {
-			let mut depth = 2;
-			let mut quit = false;
-
-			loop {
-				let mut alpha = f32::min(0.0, last_eval.score - base_aspiration_window);
-				let     beta  = f32::max(0.0, last_eval.score + base_aspiration_window);
-				// let mut alpha = f32::min(0.0, -LARGE);
-				// let     beta  = f32::max(0.0,  LARGE);
-
-				for me in moves_evaluated.iter_mut() {
-					self.make_move(board, me.mov);
-					me.eval = -search(self, board, -beta, -alpha, depth - 1);
-					me.eval.depth += 1;
-					self.revert_move(board);
-					if self.ts.elapsed().as_millis() > self.tl {
-						quit = true;
-						break;
-					}
-					alpha = f32::max(alpha, me.eval.score);
-					if alpha >= beta {
-						break;
-					}
-				}
-		
-				if quit {
-					break;
-				}
-
-				// debug
-				// break;
-
-				moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.cmp(&a.eval));
-
-				last_eval = moves_evaluated[0].eval;
-				depth += 2;
-				println!("#DEBUG\tCranking up the depth! Now searching -{}- full moves ahead.", depth / 2);
-			}
-		}
-		
-		moves_evaluated.sort_by(|a: &EvalMove, b: &EvalMove| b.eval.depth.cmp(&a.eval.depth).then(b.eval.score.total_cmp(&a.eval.score)));
-
-		// a little bit of randomness in status quo (could ruin everything potentially :D)
-		let mut same = 0;
-		for me in moves_evaluated.iter() {
-			if same == 0 {
-				same = 1;
-				continue;
-			}
-			if me.eval.depth == moves_evaluated[0].eval.depth && me.eval.score + self.random_range >= moves_evaluated[0].eval.score {
-				same += 1;
-				continue;
-			}
-		}
-		if same > 1 {
-			println!("#DEBUG\tChoosing randomly from pool of {} moves...", same);
-			let rnd = self.rng.gen::<usize>() % same;
-			if rnd != 0 {
-				moves_evaluated.swap(0, rnd);
-			}
-		}
-
-		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
-		moves_evaluated
-	}
-
-	pub fn make_move(&mut self, board: &mut Board, mov: u64	) {
+	pub fn make_move(&mut self, mov: u32) {
 		let prev_hash = *self.history_vec.last().unwrap();
 		self.history_set.insert(prev_hash);
-		board.make_move(mov);
-		let hash = self.zobrist.cache_iter(board, mov, prev_hash);
+		self.board.make_move(mov);
+		let hash = self.zobrist.cache_iter(self.board, mov, prev_hash);
 		self.history_vec.push(hash);
 	}
 
-	pub fn revert_move(&mut self, board: &mut Board) {
-		board.revert_move();
+	pub fn revert_move(&mut self) {
+		self.board.revert_move();
 		self.history_vec.pop();
 		self.history_set.remove(self.history_vec.last().unwrap());
+	}
+
+	// get the best move
+	pub fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
+		self.ts = Instant::now();
+
+		if self.book > 1 {
+
+			println!("#DEBUG\tMove from an opening book.");
+
+			println!("#DEBUG\tRefuting opening book.");
+			self.book = 1;
+		}
+
+		self.tl = time_limit_ms;
+		self.abort = false;
+		self.mate_flag = false;
+		self.nodes = 0;
+		for line in self.tpv.iter_mut() { for node in line.iter_mut() { *node = 0 } };
+		for len in self.tpv_len.iter_mut() { *len = 0 };
+		for num in self.killer.iter_mut() { for mov in num.iter_mut() { *mov = 0 } };
+		let mut alpha = -INF;
+		let mut beta  =  INF;
+		let mut depth = 1;
+		let mut k = 1;
+		let mut score = 0;
+		loop {
+			self.tpv_flag = true;
+			let temp = self.search(alpha, beta, depth);
+			if !self.abort {
+				score = temp;	
+			} else {
+				println!("#DEBUG\tAbort signal reached!");
+				break;
+			}
+			if score > LARGM {
+				if self.mate_flag {
+					break;
+				}
+				println!("#DEBUG\tMate detected.");
+				alpha = -INF;
+				beta = INF;
+				self.mate_flag = true;
+				continue;
+			}
+			if score <= alpha || score >= beta {
+				if k > 15 {
+					alpha = -INF;
+					beta = INF;
+					println!("#DEBUG\tAlpha/beta fail! Using INFINITE values now.");
+					continue;
+				}
+				alpha = alpha + base_aspiration_window * k - base_aspiration_window * (k << 2);
+				beta = beta - base_aspiration_window * k + base_aspiration_window * (k << 2);
+				k <<= 1;
+				println!("#DEBUG\tAlpha/beta fail! Using x{} from base aspiration now.", k);
+				continue;
+			}
+
+			println!("#DEBUG\t--------------------------------");
+			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score_transform(score, self.board.turn), self.nodes);
+
+			print!("#DEBUG\tKillers:");
+			for num in self.killer.iter() {
+				for (i, mov) in num.iter().enumerate().take(depth as usize) {
+					if *mov != 0 {
+						print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
+					} else {
+						print!(" -");
+					}
+				}
+				print!(" |");
+			}
+			println!();
+
+			print!("#DEBUG\tExpected line:");
+			for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
+				print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
+			}
+			println!();
+
+			alpha = score - base_aspiration_window;
+			beta = score + base_aspiration_window;
+			k = 1;
+			depth += 1;
+			if depth > depth_limit {
+				break;
+			}
+		}
+		println!("#DEBUG\t--------------------------------");
+		println!("#DEBUG\tCache limits (in thousands), leaves: {}/{}, branches: {}/{}", self.cache_leaves.len() / 1000, CACHED_LEAVES_LIMIT / 1000, self.cache_branches.len() / 1000, CACHED_BRANCHES_LIMIT / 1000);
+		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
+		println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score_transform(score, self.board.turn), self.nodes);
+		print!("#DEBUG\tExpected line:");
+		for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
+			print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
+		}
+		println!();
+		println!("#DEBUG\t--------------------------------");
+		EvalMove::new(self.tpv[0][0], score)
+	}
+
+	fn search(&mut self, mut alpha: i32, beta: i32, depth: i16) -> i32 {
+		self.tpv_len[self.hmc] = self.hmc;
+
+		let hash = *self.history_vec.last().unwrap();
+		if self.hmc != 0 && (self.board.hmc == 50 || self.history_set.contains(&hash)) {
+			return 1;
+		}
+		
+		// if not a "prove"-search
+		if self.hmc != 0 && beta - alpha < 2 && self.cache_branches.contains_key(&hash) {
+			let br = self.cache_branches[&hash];
+			if br.depth >= depth {
+				if br.flag & HF_PRECISE != 0 {
+					if br.score < -LARGM {
+						return br.score + self.hmc as i32;
+					} else if br.score > LARGM {
+						return br.score - self.hmc as i32;
+					}
+					return br.score;
+				}
+				if br.flag & HF_LOW != 0 && br.score <= alpha {
+					return alpha;
+				}
+				if br.flag & HF_HIGH != 0 && br.score >= beta {
+					return beta;
+				}
+			}
+		}
+
+		if self.nodes & NODES_BETWEEN_COMMS == 0 {
+			self.listen();
+		}
+		if depth <= 0 {
+			return self.extension(alpha, beta);
+		}
+		self.nodes += 1;
+		if self.hmc + 1 > HALF_DEPTH_LIMIT {
+			return self.eval();
+		}
+
+		let in_check = self.board.is_in_check();
+
+		// Null move prune
+		if !in_check && self.hmc != 0 && depth > 2 {
+			self.hmc += 1;
+			self.board.turn = !self.board.turn;
+			self.history_set.insert(*self.history_vec.last().unwrap());
+			self.history_vec.push(*self.history_vec.last().unwrap() ^ self.zobrist.hash_turn ^ self.zobrist.hash_en_passant[self.board.en_passant]);
+			let old_en_passant = self.board.en_passant;
+			self.board.en_passant = 0;
+
+			let score = -self.search(-beta, -beta + 1, depth - 3);	// reduction = 2
+
+			self.board.turn = !self.board.turn;
+			self.board.en_passant = old_en_passant;
+			self.history_vec.pop();
+			self.history_set.remove(self.history_vec.last().unwrap());
+			self.hmc -= 1;
+
+			if self.abort {
+				return alpha;
+			}
+			if score >= beta {
+				return beta;
+			}
+		}
+
+		let mut moves = self.board.get_legal_moves();
+		if moves.is_empty() {
+			if in_check {
+				self.cache_branches.insert(hash, EvalBr::new(-LARGE, 0, HF_PRECISE));
+				return -LARGE + self.hmc as i32;
+			}
+			self.cache_branches.insert(hash, EvalBr::new(0, 0, HF_PRECISE));
+			return 0;
+		}
+
+		// follow principle variation first
+		if self.tpv_flag {
+			self.tpv_flag = false;
+			for mov in moves.iter_mut() {
+				if *mov == self.tpv[0][self.hmc] {
+					self.tpv_flag = true;
+					*mov |= ME_PV1;
+					continue;
+				} 
+				if *mov == self.killer[0][self.hmc] {
+					*mov |= ME_KILLER1;
+					continue;
+				}
+				if *mov == self.killer[1][self.hmc] { 
+					*mov |= ME_KILLER2;
+					continue;
+				}
+			}
+		}
+		moves.sort();
+		moves.reverse();
+		
+		let mut hf_cur = HF_LOW;
+		let reduction = 2;
+		// a/b with lmr and pv proving
+		for (i, mov) in moves.iter().enumerate() {
+			self.make_move(*mov);
+			self.hmc += 1;
+			let mut score = if i > 3 && depth > 2 && (*mov > ME_CAPTURE_MIN || in_check) {
+				-self.search(-beta, -alpha, depth - reduction)
+			} else {
+				alpha + 1
+			};
+			if score > alpha {
+				score = -self.search(-alpha - 1, -alpha, depth - 1);
+				if score > alpha && score < beta {
+					score = -self.search(-beta, -alpha, depth - 1)
+				}
+			}
+			self.hmc -= 1;
+			self.revert_move();
+			if self.abort {
+				return alpha;
+			}
+			if score > alpha {
+				alpha = score;
+				hf_cur = HF_PRECISE;
+
+				// score is better, use this move as principle (expected) variation
+				// also copy next halfmove pv into this and adjust its length
+				self.tpv[self.hmc][self.hmc] = *mov & ME_CLEAR;
+				let mut next = self.hmc + 1;
+				while next < self.tpv_len[self.hmc + 1] {
+					self.tpv[self.hmc][next] = self.tpv[self.hmc + 1][next];	
+					next += 1;
+				}
+				self.tpv_len[self.hmc] = self.tpv_len[self.hmc + 1];
+			}
+			if alpha >= beta {
+				self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
+				if *mov < ME_CAPTURE_MIN {
+					self.killer[1][self.hmc] = self.killer[0][self.hmc];
+					self.killer[0][self.hmc] = *mov & ME_CLEAR;
+				}
+				return beta; // fail high
+			}
+		}
+
+		self.cache_branches.insert(hash, EvalBr::new(alpha, depth, hf_cur));	
+		if alpha < -LARGM {
+			self.cache_branches.get_mut(&hash).unwrap().score -= self.hmc as i32;	
+		} else if alpha > LARGM {
+			self.cache_branches.get_mut(&hash).unwrap().score += self.hmc as i32;
+		}
+
+		// panic!("test");
+		alpha // fail low
+	}
+
+	fn extension(&mut self, mut alpha: i32, beta: i32) -> i32 {
+		if self.nodes & NODES_BETWEEN_COMMS == 0 {
+			self.listen();
+		}
+		self.nodes += 1;
+
+		// cuttin even before we get a list of moves
+		alpha = max(alpha, self.eval());
+		if alpha >= beta {
+			return beta; // fail high
+		}
+
+		let mut moves = self.board.get_legal_moves();
+		
+		// if mate or stalemate
+		if moves.is_empty() {
+			if self.board.is_in_check() {
+				return -LARGE + self.hmc as i32;
+			}
+			return 0;
+		}
+
+		moves.sort();
+		moves.reverse();
+
+		for mov in moves.iter() {
+			self.make_move(*mov);
+			// extension will consider checks as well as captures
+			if *mov < ME_CAPTURE_MIN && !self.board.is_in_check() {
+				self.revert_move();
+				continue;
+			}
+			alpha = max(alpha, -self.extension(-beta, -alpha));
+			self.revert_move();
+			if self.abort {
+				return alpha;
+			}
+			if alpha >= beta {
+				return beta; // fail high
+			}
+		}
+
+		alpha // fail low
 	}
 
 	/* Warning!
@@ -269,12 +391,8 @@ impl Chara {
 		1) Search MUST use check extension! Eval does NOT evaluate checks or free captures specifically!
 		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically!
 	*/
-	pub fn eval(&mut self, board: &Board) -> f32 {
+	fn eval(&mut self) -> i32 {
 		let hash = *self.history_vec.last().unwrap();
-
-		if board.hmc == 50 || self.history_set.contains(&hash) {
-			return 0.0;
-		}
 
 		if self.cache_leaves.contains_key(&hash) {
 			return self.cache_leaves[&hash];
@@ -282,186 +400,224 @@ impl Chara {
 
 		/* SETUP SCORE APPLICATION */
 
-		let counter = (board.bbs[N] | board.bbs[N2]).count_ones() * 3 + 
-					  (board.bbs[B] | board.bbs[B2]).count_ones() * 3 + 
-					  (board.bbs[R] | board.bbs[R2]).count_ones() * 4 +
-					  (board.bbs[Q] | board.bbs[Q2]).count_ones() * 8;
+		let counter = (self.board.bbs[N] | self.board.bbs[N2]).count_ones() * 3 + 
+					  (self.board.bbs[B] | self.board.bbs[B2]).count_ones() * 3 + 
+					  (self.board.bbs[R] | self.board.bbs[R2]).count_ones() * 4 +
+					  (self.board.bbs[Q] | self.board.bbs[Q2]).count_ones() * 8;
 
-		if counter < 4 && board.bbs[P] | board.bbs[P2] == 0 {
-			self.cache_leaves.insert(hash, 0.0);
-			return 0.0;
+		if counter < 4 && self.board.bbs[P] | self.board.bbs[P2] == 0 {
+			self.cache_leaves.insert(hash, 0);
+			return 0;
 		}
 
 		let phase = (counter < 31) as usize;
 
-		let mut score: f32 = 0.0;
-		let sides = [board.get_occupancies(false), board.get_occupancies(true)];
+		let mut score: i32 = 0;
+		let mut mobilities = [0; 2]; // no special moves of any sort are included
+		let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
 		let occup = sides[0] | sides[1];
-		let kbits = [gtz(board.bbs[K]), gtz(board.bbs[K2])];
+		let mptr = &self.board.maps;
+		let pawns = [self.board.bbs[P], self.board.bbs[P2]];
+		let knights = [self.board.bbs[N], self.board.bbs[N2]];
+		let bishops = [self.board.bbs[B], self.board.bbs[B2]];
+		let rooks = [self.board.bbs[R], self.board.bbs[R2]];
+		let queens = [self.board.bbs[Q], self.board.bbs[Q2]];
+		let king = [self.board.bbs[K], self.board.bbs[K2]];
+		let kbits = [gtz(king[0]), gtz(king[1])];
 
 		/* SCORE APPLICATION BEGIN */
 
-		let pawns = [board.bbs[P], board.bbs[P2]];
 		for (ally, mut bb) in pawns.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				let mut ts = self.pieces_weights[phase][P | ally][csq];
-				/* Mult penalty per multiplied pawn on the same file */
-				if board.maps.files[csq] & board.bbs[P | ally] != 0 {
-					ts *= self.dp_weight;
-				}
-				/* Mult bonus per passing and/or easily protected pawns */
-				if board.is_passing(csq, board.bbs[P | enemy], ally) {
-					if board.is_easily_protected(csq, board.bbs[P | ally], occup, ally, enemy) {
-						ts *= self.pp_weights[PAWN_COMBINED];
-					} else {
-						ts *= self.pp_weights[PAWN_PASSING];
+				score += self.w.pieces[phase][P | ally][csq];
+				mobilities[ally] += (mptr.attacks_pawns[ally][csq] & sides[enemy]).count_ones() as i32;
+				if get_bit(sides[ally], csq + 8 - (ally << 4)) == 0 {
+					mobilities[ally] += 1;
+					if self.is_easily_protected(csq, pawns[ally], occup, ally, enemy) {
+						if self.is_passing(csq, pawns[enemy], ally) {
+							score += self.w.good_pawn[phase][ally];
+						}
+					} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] & pawns[ally] == 0 {
+						score += self.w.bad_pawn[phase][ally];
 					}
-				} else if board.is_easily_protected(csq, board.bbs[P | ally], occup, ally, enemy) {
-					ts *= self.pp_weights[PAWN_PROTECTED];
+				} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] & pawns[ally] == 0 {
+						score += self.w.bad_pawn[phase][ally];
+				} else {
+					score += self.w.bad_pawn[phase][ally] >> 2;
 				}
-				score += ts;
+				if mptr.files[csq] & bb != 0 {
+					score += self.w.bad_pawn[phase][ally];
+				}
 			}
 		}
 
-		let knights = [board.bbs[N], board.bbs[N2]];
 		for (ally, mut bb) in knights.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				score += self.pieces_weights[phase][N | ally][csq];
-				score += self.mobility_weights[phase][N | ally][(board.maps.attacks_knight[csq] & !sides[ally]).count_ones() as usize];
-				/* Add score if it's an outpost */
-				if board.is_outpost(csq, board.bbs[P | ally], board.bbs[P | enemy], ally != 0) {
-					score += self.outpost_weights[ally][OUTPOST_KNIGHT];
-				}
-				/* Add score if some promising forks are existing */
-				if board.maps.attacks_dn[csq] & board.bbs[K | enemy] != 0 {
-					score += self.dan_possible[ally][DAN_CHECK];
-					if board.maps.attacks_dn[csq] & board.bbs[Q | enemy] != 0 {
-						score += self.dan_possible[ally][DAN_ROYAL_FORK];
-					}
-				} else if board.maps.attacks_dn[csq] & board.bbs[Q | enemy] != 0 && board.maps.attacks_dn[csq] & board.bbs[R | enemy] != 0 {
-					score += self.dan_possible[ally][DAN_FORK];
+				score += self.w.pieces[phase][N | ally][csq];
+				let atk = mptr.attacks_knight[csq] & !sides[ally];
+				mobilities[ally] += atk.count_ones() as i32;
+				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
+					score += self.w.outpost[ally][0];
 				}
 			}
 		}
 
-		let bishops = [board.bbs[B], board.bbs[B2]];
 		for (ally, mut bb) in bishops.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				let real_atk = board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				let imag_atk = board.get_sliding_diagonal_attacks(csq, 0, sides[ally]);
-				score += self.pieces_weights[phase][B | ally][csq];
-				score += self.mobility_weights[phase][B | ally][real_atk.count_ones() as usize];
-				/* Add score if it's an outpost */
-				if board.is_outpost(csq, board.bbs[P | ally], board.bbs[P | enemy], ally != 0) {
-					score += self.outpost_weights[ally][OUTPOST_BISHOP];
-				}
-				/* Add score if it's aligned against a king */
-				if imag_atk & board.bbs[K | enemy] != 0 && board.get_sliding_diagonal_path_unsafe(csq, kbits[enemy]) & board.bbs[P | ally] == 0 {
-					score += self.align_weights[phase][ally][ALIGN_BISHOP];
-				} else {
-					let asq = imag_atk & board.maps.attacks_king[kbits[enemy]];
-					if asq != 0 && board.get_sliding_diagonal_path_unsafe(csq, gtz(asq)) & board.bbs[P | ally] == 0 {
-						score += self.align_weights[phase][ally][ALIGN_BISHOP + ALIGN_NEAR];
+				score += self.w.pieces[phase][B | ally][csq];
+				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
+				mobilities[ally] += real_atk.count_ones() as i32;
+				let imag_atk = self.board.get_sliding_diagonal_attacks(csq, sides[ally], sides[ally]);
+				let mut targets = imag_atk & (rooks[enemy] | queens[enemy] | king[enemy]);
+				while targets != 0 {
+					let tsq = pop_bit(&mut targets);
+					if self.get_sliding_diagonal_path_unsafe(csq, tsq) & sides[ally] & pawns[enemy] == 0 {
+						score += self.w.bpin[ally];
 					}
 				}
-				/* Battery score will be counted per queen */
+				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
+					score += self.w.outpost[ally][1];
+				}
 			}
 		}
 
-		let rooks = [board.bbs[R], board.bbs[R2]];
 		for (ally, mut bb) in rooks.into_iter().enumerate() {
-			let enemy = (ally == 0) as usize;
+			// let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				let real_atk = board.get_sliding_straight_attacks(csq, occup, sides[ally]);
-				let imag_atk = board.get_sliding_straight_attacks(csq, 0, sides[ally]);
-				score += self.pieces_weights[phase][R | ally][csq];
-				score += self.mobility_weights[phase][R | ally][(real_atk).count_ones() as usize];
-				/* Add score if it's aligned against a king */
-				if imag_atk & board.bbs[K | enemy] != 0 && board.get_sliding_straight_path_unsafe(csq, kbits[enemy]) & board.bbs[P | ally] == 0 {
-					score += self.align_weights[phase][ally][ALIGN_ROOK];
-				} else {
-					let asq = imag_atk & board.maps.attacks_king[kbits[enemy]];
-					if asq != 0 && board.get_sliding_straight_path_unsafe(csq, gtz(asq)) & board.bbs[P | ally] == 0 {
-						score += self.align_weights[phase][ally][ALIGN_ROOK + ALIGN_NEAR];
-					}
-				}
-				/* Add score if it's in a rook battery */
-				if real_atk & board.maps.files[csq] & board.bbs[R | ally] != 0 {
-					score += self.battery_weights[ally][BATTERY_RRV];
-				} else if real_atk & board.maps.ranks[csq] & board.bbs[R | ally] != 0 {
-					score += self.battery_weights[ally][BATTERY_RRH];
+				score += self.w.pieces[phase][R | ally][csq];
+				let real_atk = self.board.get_sliding_straight_attacks(csq, occup, sides[ally]);
+				mobilities[ally] += real_atk.count_ones() as i32;
+				if real_atk & bb & mptr.files[csq] != 0 && mptr.files[csq] & pawns[ally] == 0 {
+					score += self.w.open_battery[ally];
 				}
 			}
 		}
-
-		let queens = [board.bbs[Q], board.bbs[Q2]];
+		
 		for (ally, mut bb) in queens.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
-				let rdatk = board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				let idatk = board.get_sliding_diagonal_attacks(csq, 0, sides[ally]);
-				let rsatk = board.get_sliding_straight_attacks(csq, occup, sides[ally]);
-				let isatk = board.get_sliding_straight_attacks(csq, 0, sides[ally]);
-				score += self.pieces_weights[phase][Q | ally][csq];
-				score += self.mobility_weights[phase][Q | ally][(rdatk | rsatk).count_ones() as usize];
-				/* Add score if it's aligned against a king */
-				if idatk & board.bbs[K | enemy] != 0 && board.get_sliding_diagonal_path_unsafe(csq, kbits[enemy]) & board.bbs[P | ally] == 0 {
-					score += self.align_weights[phase][ally][ALIGN_QUEEN];
-				} else if isatk & board.bbs[K | enemy] != 0 && board.get_sliding_straight_path_unsafe(csq, kbits[enemy]) & board.bbs[P | ally] == 0 {
-					score += self.align_weights[phase][ally][ALIGN_QUEEN];
-				} else {
-					let asq = idatk & board.maps.attacks_king[kbits[enemy]];
-					if asq != 0 {
-						if board.get_sliding_diagonal_path_unsafe(csq, gtz(asq)) & board.bbs[P | ally] == 0 {
-							score += self.align_weights[phase][ally][ALIGN_QUEEN + ALIGN_NEAR];
-						}
-					} else {
-						let asq = isatk & board.maps.attacks_king[kbits[enemy]];
-						if asq != 0 && board.get_sliding_straight_path_unsafe(csq, gtz(asq)) & board.bbs[P | ally] == 0 {
-							score += self.align_weights[phase][ally][ALIGN_QUEEN + ALIGN_NEAR];
-						}
-					}
-				}
-				/* Add score if it's in a battery */
-				if rsatk & board.maps.files[csq] & board.bbs[R | ally] != 0 {
-					score += self.battery_weights[ally][BATTERY_RQV];
-				}
-				if rdatk & board.bbs[B | ally] != 0 {
-					score += self.battery_weights[ally][BATTERY_BQ];
+				score += self.w.pieces[phase][Q | ally][csq];
+				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
+				if real_atk & king[ally] != 0 {
+					score += self.w.bpin[enemy];
 				}
 			}
 		}
 
-		score += self.mobility_weights[phase][K ][(board.maps.attacks_king[kbits[0]] & !sides[0]).count_ones() as usize];
-		score += self.mobility_weights[phase][K2][(board.maps.attacks_king[kbits[1]] & !sides[1]).count_ones() as usize];
+		if phase == 0{
+			mobilities[0] -= (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
+			mobilities[1] -= (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;
+		} else {
+			mobilities[0] += (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
+			mobilities[1] += (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;
+		}
+		score += self.w.mobility * (mobilities[0] - mobilities[1]);
+		if score > 0 {
+			score += score >> self.w.turn_fact;
+		} else {
+			score -= score >> self.w.turn_fact;
+		}
+		score += self.w.turn[self.board.turn as usize];
 
-		score *= self.turn_weights[(board.turn ^ (score < 0.0)) as usize][TURN_MULT];
-		score += self.turn_weights[board.turn as usize][TURN_ADD];
-		score += self.rng.gen::<f32>() * self.random_range * 2.0 - self.random_range;
+		score -= self.w.random_fact;
+		score += self.rng.gen_range(0..=(self.w.random_fact << 1) as u32) as i32;
 
 		/* SCORE APPLICATION END */
-
-		if self.cache_leaves.len() + self.cache_branches.len() * 2 > CACHE_LIMIT {
-			println!("#DEBUG\tClearing cache, leaves: {}, branches: {}", self.cache_leaves.len(), self.cache_branches.len());
-			self.cache_leaves.clear();
-			self.cache_branches.clear();
-		}
 		
-		if board.turn {
+		if self.board.turn {
 			score = -score;
 		}
 
 		self.cache_leaves.insert(hash, score);
 		score
 	}
+
+	fn listen(&mut self) {
+		if self.ts.elapsed().as_millis() > self.tl {
+			self.abort = true;
+		}
+
+		// delet this
+		// println!("\n#DEBUG\tcache of leaves ({} entries ).", self.cache_leaves.len());
+		// println!("#DEBUG\tcache of branches ({} entries ).\n", self.cache_branches.len());
+
+		if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
+			println!("#DEBUG\tClearing cache of leaves ({} entries dropped).", self.cache_leaves.len());
+			self.cache_leaves.clear();
+		} else if self.cache_branches.len() > CACHED_BRANCHES_LIMIT {
+			println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
+			self.cache_branches.clear();
+		}
+
+		// TODO
+	}
+
+	/* Auxiliary (used by eval() mostly) */
+
+	#[inline]
+    pub fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+        self.board.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_straight_attacks(sq2, 1 << sq1, 0)
+	}
+
+    #[inline]
+    pub fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+        self.board.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
+	}
+
+    #[inline]
+    pub fn is_passing(&self, sq: usize, enemy_pawns: u64, ally_colour: usize) -> bool {
+        self.board.maps.piece_passing[ally_colour][sq] & enemy_pawns == 0
+    }
+
+    #[inline]
+    pub fn is_protected(&self, sq: usize, ally_pawns: u64, enemy_colour: usize) -> bool {
+        self.board.maps.attacks_pawns[enemy_colour][sq] & ally_pawns != 0
+    }
+
+    #[inline]
+    pub fn is_outpost(&self, sq: usize, ally_pawns: u64, enemy_pawns: u64, colour: bool) -> bool {
+        self.board.maps.piece_pb[colour as usize][sq] & enemy_pawns == 0 && self.is_protected(sq, ally_pawns, !colour as usize)
+    }
+
+    pub fn is_easily_protected(&self, sq: usize, ally_pawns: u64, occupancy: u64, ally_colour: usize, enemy_colour: usize) -> bool {
+        // if there are existing pawns on necessary lanes at all
+        if self.board.maps.piece_pb[enemy_colour][sq] & ally_pawns == 0 {
+            return false;
+        }
+        // if the piece is already protected enough
+        let mut mask = self.board.maps.attacks_pawns[enemy_colour][sq];
+        if mask & ally_pawns != 0 {
+            return true;
+        }
+        // if there's nothing standing in the way of any pawn to protect the piece
+        while mask != 0 {
+            let csq = pop_bit(&mut mask);
+            let lane = self.board.maps.files[csq] & self.board.maps.piece_pb[enemy_colour][sq];
+            let pbit = lane & ally_pawns;
+            if pbit == 0 {
+                continue;
+            }
+            // if we are white - we are interested in leading bit (it's the closest one)
+            // otherwise we need trailing bit
+            let path = if ally_colour == 0 {
+                self.get_sliding_straight_path_unsafe(csq, glz(pbit))
+            } else {
+                self.get_sliding_straight_path_unsafe(csq, gtz(pbit))
+            };
+            if path & occupancy == 0 {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 
@@ -472,14 +628,14 @@ mod tests {
 	#[test]
 	fn test_chara_eval_initial() {
 		let mut board = Board::default();
-		let mut chara = Chara::init(&mut board, 0.8, 1.2, 0.0);
-		let moves = board.get_legal_moves();
-		board.make_move(move_transform_back("e2e4", &moves).unwrap());
-		let moves = board.get_legal_moves();
-		let mov = move_transform_back("e7e5", &moves).unwrap();
-		board.make_move(mov);
-		let eval = chara.eval(&board);
-		assert_eq!((eval * 1000.0).round(), (chara.turn_weights[0][TURN_ADD] * 1000.0).round());
+		let mut chara = Chara::init(&mut board);
+		let moves = chara.board.get_legal_moves();
+		chara.make_move(move_transform_back("e2e4", &moves, chara.board.turn).unwrap());
+		let moves = chara.board.get_legal_moves();
+		let mov = move_transform_back("e7e5", &moves, chara.board.turn).unwrap();
+		chara.make_move(mov);
+		let eval = chara.eval();
+		assert_eq!(eval, chara.w.turn[0]);
 	}
 
 	#[test]
@@ -492,9 +648,47 @@ mod tests {
 		];
 		for fen in fens.into_iter() {
 			let mut board = Board::import(fen);
-			let mut chara = Chara::init(&mut board, 0.8, 1.2, 0.0);
-			let eval = chara.eval(&board);
-			assert_eq!((eval * 1000.0).round(), (chara.turn_weights[0][TURN_ADD] * 1000.0).round());
+			let mut chara = Chara::init(&mut board);
+			let eval = chara.eval();
+			assert_eq!(eval, chara.w.turn[0]);
 		}
 	}
+
+	#[test]
+	fn test_chara_eval_initial_3() {
+		let mut board = Board::default();
+		let chara = Chara::init(&mut board);
+		// this test is bad :D
+		assert_eq!(chara.w.pieces[0][K][gtz(chara.board.bbs[K])], 10);
+	}
+
+	#[test]
+    fn test_board_aux() {
+        let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
+        // let ar_false = [[50, 1], [0, 15], [63, 54], [56, 1], [43, 4], [9, 2], [61, 32], [8, 17], [15, 16], [0, 57], [0, 8]];
+        let mut board = Board::default();
+		let chara = Chara::init(&mut board);
+        for case in ar_true.into_iter() {
+            // assert_ne!(board.get_sliding_straight_path(case[0], case[1]), 0);
+            assert_ne!(chara.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
+        }
+        // for case in ar_false.into_iter() {
+        //     assert_eq!(board.get_sliding_straight_path(case[0], case[1]), 0);
+        // }
+
+        let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
+        // let ar_false = [[0, 10], [56, 6], [39, 31], [3, 40], [2, 23], [5, 34], [63, 1], [62, 0], [49, 46], [23, 16], [2, 3], [7, 14], [1, 8]];
+        for case in ar_true.into_iter() {
+            // assert_ne!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
+            assert_ne!(chara.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
+        }
+        // for case in ar_false.into_iter() {
+        //     assert_eq!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
+        // }
+
+        let board = Board::default();
+        assert_eq!(board.is_in_check(), false);
+        let board = Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+        assert_eq!(board.is_in_check(), true);
+    }
 }

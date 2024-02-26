@@ -15,7 +15,7 @@ pub struct Maps {
 
     pub attacks_king:        Vec<u64>,
     pub attacks_knight:      Vec<u64>,
-    pub attacks_pawns:      [Vec<u64>; 2],
+    pub attacks_pawns:      [Vec<u64>; 2],  // white / black
     
     pub files:               Vec<u64>,
     pub ranks:               Vec<u64>,

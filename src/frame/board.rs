@@ -13,8 +13,7 @@ use super::{util::*, maps::Maps};
 */
 
 pub struct Board {
-    pub bbs:          [u64; 12],    /* bitboards (P - K2)
-                                        - idea: maybe worth adding extra `E` board to remove some if's?.. */
+    pub bbs:          [u64; 14],    // bitboards (E, E|1, P - K2)
     pub turn:         bool,         // is black to move
     pub castlings:    u8,           // castle rights (util.rs has const indices)
     pub en_passant:   usize,        /* en passant target square
@@ -25,7 +24,7 @@ pub struct Board {
     /* Accessible constants */
     pub maps:         Maps,
     /* Takeback funcitonal */
-    pub move_history: Vec<u64>,
+    pub move_history: Vec<u32>,
     pub hmc_history:  Vec<u16>,
     pub enp_history:  Vec<usize>,
     pub cst_history:  Vec<u8>
@@ -39,7 +38,7 @@ impl Default for Board {
 
 impl Board {
     pub fn import(fen: &str) -> Self {
-        let mut bbs = [0; 12];
+        let mut bbs = [0; 14];
         let mut turn = false;
         let mut castlings = 0;
         let mut en_passant = 0;
@@ -129,7 +128,7 @@ impl Board {
 
     /* TODO (optimize): it is possible to generate leval moves using some extra bitboards WITHOUT making and reverting pseudo-legal moves.
        This is proven to be slightly faster (with the exception of en passant, probably), but also depends on the code. */
-    pub fn get_legal_moves(&mut self) -> Vec<u64> {
+    pub fn get_legal_moves(&mut self) -> Vec<u32> {
         let mut moves = self.get_pseudo_legal_moves();
         let mut i = 0;
         let mut len = moves.len();
@@ -149,7 +148,7 @@ impl Board {
         moves
     }
 
-    pub fn make_move(&mut self, mov: u64) {
+    pub fn make_move(&mut self, mov: u32) {
         self.move_history.push(mov);
         self.hmc_history.push(self.hmc);
         self.enp_history.push(self.en_passant);
@@ -159,13 +158,13 @@ impl Board {
         self.no += 1;
 
         let turn  = self.turn as usize;
-        let from  = move_get_from(mov);
-        let to    = move_get_to(mov);
+        let from  = move_get_from(mov, self.turn);
+        let to    = move_get_to(mov, self.turn);
         let piece = move_get_piece(mov);
         let capt  = move_get_capture(mov);
 
         del_bit(&mut self.bbs[piece], from);
-        if capt < E {
+        if capt != E {
             del_bit(&mut self.bbs[capt], to);
             self.hmc = 0;
             if capt | 1 == R | R2 {
@@ -178,7 +177,7 @@ impl Board {
                 }
             }
         }
-        if move_get_promotion(mov) < E {
+        if move_get_promotion(mov) != E {
             set_bit(&mut self.bbs[move_get_promotion(mov)], to);
         } else {
             set_bit(&mut self.bbs[piece], to);
@@ -231,19 +230,19 @@ impl Board {
         self.turn = !self.turn;                            // the previous move was for previous colour
         self.no -= 1;
 
-        let from  = move_get_from(mov);
-        let to    = move_get_to(mov);
+        let from  = move_get_from(mov, self.turn);
+        let to    = move_get_to(mov, self.turn);
         let piece = move_get_piece(mov);
 
         set_bit(&mut self.bbs[piece], from);
-        if move_get_promotion(mov) < E {
+        if move_get_promotion(mov) != E {
             del_bit(&mut self.bbs[move_get_promotion(mov)], to);
         } else {
             del_bit(&mut self.bbs[piece], to);
         }
-        if move_get_capture(mov) < E {
+        if move_get_capture(mov) != E {
             if mov & MSE_EN_PASSANT != 0 {
-                set_bit(&mut self.bbs[move_get_capture(mov)], to + self.turn as usize * 16 - 8);
+                set_bit(&mut self.bbs[move_get_capture(mov)], to + ((self.turn as usize) << 4) - 8);
             } else {
                 set_bit(&mut self.bbs[move_get_capture(mov)], to);
             }
@@ -256,8 +255,8 @@ impl Board {
         }
     }
 
-    pub fn get_pseudo_legal_moves(&self) -> Vec<u64> {
-        let mut moves: Vec<u64  > = Vec::with_capacity(64);
+    pub fn get_pseudo_legal_moves(&self) -> Vec<u32> {
+        let mut moves = Vec::with_capacity(64);
         let turn = self.turn as usize;
         // occupancy masks
         let ally  = self.get_occupancies( self.turn);
@@ -268,19 +267,19 @@ impl Board {
         let mut mask = self.maps.attacks_king[sq] & !ally;
         while mask != 0 {
             let csq = pop_bit(&mut mask);
-            moves.push(move_encode(sq, csq, K | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));            
+            moves.push(move_encode(sq, csq, K | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));            
         }
         // king, special
         if self.castlings & (CSW << turn) != 0 {
             let csq = 6 + 56 * turn;
             if CSMASK << (56 * turn) & both == 0 && !self.is_under_attack(!self.turn, csq - 1, both, ally) && !self.is_under_attack(!self.turn, sq, both, ally) {
-                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_SHORT));
+                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_SHORT, self.turn));
             }
         }
         if self.castlings & (CLW << turn) != 0 {
             let csq = 2 + 56 * turn;
             if CLMASK << (56 * turn) & both == 0 && !self.is_under_attack(!self.turn, csq | 1, both, ally) && !self.is_under_attack(!self.turn, sq, both, ally) {
-                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_LONG));
+                moves.push(move_encode(sq, csq, K | turn, E, E, MSE_CASTLE_LONG, self.turn));
             }
         }
         // knight
@@ -290,7 +289,7 @@ impl Board {
             let mut mask = self.maps.attacks_knight[sq] & !ally;
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, N | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));
+                moves.push(move_encode(sq, csq, N | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));
             }
         }
         // bishop
@@ -300,7 +299,7 @@ impl Board {
             let mut mask = self.get_sliding_diagonal_attacks(sq, both, ally);
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, B | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));
+                moves.push(move_encode(sq, csq, B | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));
             }
         }
         // rook
@@ -310,7 +309,7 @@ impl Board {
             let mut mask = self.get_sliding_straight_attacks(sq, both, ally);
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, R | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));
+                moves.push(move_encode(sq, csq, R | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));
             }
         }
         // queen
@@ -320,7 +319,7 @@ impl Board {
             let mut mask = self.get_sliding_diagonal_attacks(sq, both, ally) | self.get_sliding_straight_attacks(sq, both, ally);
             while mask != 0 {
                 let csq = pop_bit(&mut mask);
-                moves.push(move_encode(sq, csq, Q | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING));
+                moves.push(move_encode(sq, csq, Q | turn, self.get_capture(!self.turn, csq), E, MSE_NOTHING, self.turn));
             }
         }
         // pawn (a hardcoded if-else)
@@ -334,29 +333,29 @@ impl Board {
                     // promotion
                     while mask != 0 {
                         let csq = pop_bit(&mut mask);
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), Q2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), R2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), B2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), N2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), Q2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), R2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), B2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), N2, MSE_NOTHING, self.turn));
                     }
                     let csq = sq - 8;
                     if get_bit(both, csq) == 0 {
-                        moves.push(move_encode(sq, csq, P2, E, Q2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, E, R2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, E, B2, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P2, E, N2, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, E, Q2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, E, R2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, E, B2, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P2, E, N2, MSE_NOTHING, self.turn));
                     }
                 } else {
                     while mask != 0 {
                         let csq = pop_bit(&mut mask);
-                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), E, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, self.get_capture(false, csq), E, MSE_NOTHING, self.turn));
                     }
                     let csq = sq - 8;
                     if get_bit(both, csq) == 0 {
-                        moves.push(move_encode(sq, csq, P2, E, E, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P2, E, E, MSE_NOTHING, self.turn));
                         // double pawn move
                         if get_bit(RANK_7, sq) != 0 && get_bit(both, csq - 8) == 0 {
-                            moves.push(move_encode(sq, csq - 8, P2, E, E, MSE_DOUBLE_PAWN));
+                            moves.push(move_encode(sq, csq - 8, P2, E, E, MSE_DOUBLE_PAWN, self.turn));
                         }
                     }
                 }
@@ -364,10 +363,10 @@ impl Board {
             // en passant
             if self.en_passant != 0 {
                 if get_bit(self.bbs[P2], self.en_passant + 7) & RANK_4 != 0 {
-                    moves.push(move_encode(self.en_passant + 7, self.en_passant, P2, P, E, MSE_EN_PASSANT));
+                    moves.push(move_encode(self.en_passant + 7, self.en_passant, P2, P, E, MSE_EN_PASSANT, self.turn));
                 }
                 if get_bit(self.bbs[P2], self.en_passant + 9) & RANK_4 != 0 {
-                    moves.push(move_encode(self.en_passant + 9, self.en_passant, P2, P, E, MSE_EN_PASSANT));
+                    moves.push(move_encode(self.en_passant + 9, self.en_passant, P2, P, E, MSE_EN_PASSANT, self.turn));
                 }
             }
         } else {
@@ -379,29 +378,29 @@ impl Board {
                     // promotion
                     while mask != 0 {
                         let csq = pop_bit(&mut mask);
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), Q, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), R, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), B, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), N, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), Q, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), R, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), B, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), N, MSE_NOTHING, self.turn));
                     }
                     let csq = sq + 8;
                     if get_bit(both, csq) == 0 {
-                        moves.push(move_encode(sq, csq, P, E, Q, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, E, R, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, E, B, MSE_NOTHING));
-                        moves.push(move_encode(sq, csq, P, E, N, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, E, Q, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, E, R, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, E, B, MSE_NOTHING, self.turn));
+                        moves.push(move_encode(sq, csq, P, E, N, MSE_NOTHING, self.turn));
                     }
                 } else {
                     while mask != 0 {
                         let csq = pop_bit(&mut mask);
-                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), E, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, self.get_capture(true, csq), E, MSE_NOTHING, self.turn));
                     }
                     let csq = sq + 8;
                     if get_bit(both, csq) == 0 {
-                        moves.push(move_encode(sq, csq, P, E, E, MSE_NOTHING));
+                        moves.push(move_encode(sq, csq, P, E, E, MSE_NOTHING, self.turn));
                         // double pawn move
                         if get_bit(RANK_2, sq) != 0 && get_bit(both, csq + 8) == 0 {
-                            moves.push(move_encode(sq, csq + 8, P, E, E, MSE_DOUBLE_PAWN));
+                            moves.push(move_encode(sq, csq + 8, P, E, E, MSE_DOUBLE_PAWN, self.turn));
                         }
                     }
                 }
@@ -410,10 +409,10 @@ impl Board {
         // en passant
         if self.en_passant != 0 {
             if get_bit(self.bbs[P], self.en_passant - 7) & RANK_5 != 0 {
-                moves.push(move_encode(self.en_passant - 7, self.en_passant, P, P2, E, MSE_EN_PASSANT));
+                moves.push(move_encode(self.en_passant - 7, self.en_passant, P, P2, E, MSE_EN_PASSANT, self.turn));
             }
             if get_bit(self.bbs[P], self.en_passant - 9) & RANK_5 != 0 {
-                moves.push(move_encode(self.en_passant - 9, self.en_passant, P, P2, E, MSE_EN_PASSANT));
+                moves.push(move_encode(self.en_passant - 9, self.en_passant, P, P2, E, MSE_EN_PASSANT, self.turn));
             }
         }
         moves
@@ -487,7 +486,7 @@ impl Board {
         }
         let mut skip = 0;
         for (i, piece) in pieces.iter().enumerate() {
-            if *piece < E {
+            if *piece != E {
                 if skip != 0 {
                     fen.push(char::from_u32(skip + '0' as u32).unwrap());
                     skip = 0;
@@ -563,93 +562,11 @@ impl Board {
         self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]] & !ally
     }
 
-    /* TODO (optional):
-        - fn import_pgn
-        - fn export_pgn
-    */
-
-    /* More functions for engine usage */
-
-	// pub fn get_sliding_straight_path(&self, sq1: usize, sq2: usize) -> u64 {
-    //     if sq1 & 7 == sq2 & 7 || sq1 & 56 == sq2 & 56 {
-    //         return self.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.get_sliding_straight_attacks(sq2, 1 << sq1, 0);
-    //     }
-    //     0
-	// }
-
-	// pub fn get_sliding_diagonal_path(&self, sq1: usize, sq2: usize) -> u64 {
-    //     let attack1 = self.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0);
-    //     if attack1 & (1 << sq2) != 0 {
-    //         return attack1 & self.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0);
-    //     }
-    //     0
-	// }
-
-    #[inline]
-    pub fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
-        self.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.get_sliding_straight_attacks(sq2, 1 << sq1, 0)
-	}
-
-    #[inline]
-    pub fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
-        self.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
-	}
-
+    // although it's unused by the board itself
     pub fn is_in_check(&self) -> bool {
         let ally = self.get_occupancies(self.turn);
         let enemy = self.get_occupancies(!self.turn);
         self.is_under_attack(!self.turn, gtz(self.bbs[K | self.turn as usize]), ally | enemy, ally)
-    }
-    
-    /* pub fn is_game_ended(&mut self) -> bool {
-        self.get_legal_moves().len() == 0
-    } */
-
-    #[inline]
-    pub fn is_passing(&self, sq: usize, enemy_pawns: u64, ally_colour: usize) -> bool {
-        self.maps.piece_passing[ally_colour][sq] & enemy_pawns == 0
-    }
-
-    #[inline]
-    pub fn is_protected(&self, sq: usize, ally_pawns: u64, enemy_colour: usize) -> bool {
-        self.maps.attacks_pawns[enemy_colour][sq] & ally_pawns != 0
-    }
-
-    #[inline]
-    pub fn is_outpost(&self, sq: usize, ally_pawns: u64, enemy_pawns: u64, colour: bool) -> bool {
-        self.maps.piece_pb[colour as usize][sq] & enemy_pawns == 0 && self.is_protected(sq, ally_pawns, !colour as usize)
-    }
-
-    pub fn is_easily_protected(&self, sq: usize, ally_pawns: u64, occupancy: u64, ally_colour: usize, enemy_colour: usize) -> bool {
-        // if there are existing pawns on necessary lanes at all
-        if self.maps.piece_pb[enemy_colour][sq] & ally_pawns == 0 {
-            return false;
-        }
-        // if the piece is already protected enough
-        let mut mask = self.maps.attacks_pawns[enemy_colour][sq];
-        if mask & ally_pawns != 0 {
-            return true;
-        }
-        // if there's nothing standing in the way of any pawn to protect the piece
-        while mask != 0 {
-            let csq = pop_bit(&mut mask);
-            let lane = self.maps.files[csq] & self.maps.piece_pb[enemy_colour][sq];
-            let pbit = lane & ally_pawns;
-            if pbit == 0 {
-                continue;
-            }
-            // if we are white - we are interested in leading bit (it's the closest one)
-            // otherwise we need trailing bit
-            let path = if ally_colour == 0 {
-                self.get_sliding_straight_path_unsafe(csq, glz(pbit))
-            } else {
-                self.get_sliding_straight_path_unsafe(csq, gtz(pbit))
-            };
-            if path & occupancy == 0 {
-                return true;
-            }
-        }
-        false
     }
 
     /* Debug and benchmarking */
@@ -675,7 +592,7 @@ impl Board {
         let moves = self.get_legal_moves();
         for mov in moves.iter() {
             self.make_move(*mov);
-            println!("{}\t{}\t{}\t{}", mov, move_transform(*mov), self.perft(depth - 1), self.export());
+            println!("{}\t{}\t{}\t{}", mov, move_transform(*mov, self.turn), self.perft(depth - 1), self.export());
             self.revert_move();
         }
     }
@@ -688,7 +605,7 @@ impl Board {
             let mut arr = [0, 0, 0, 0, 0];
             for mov in moves.iter() { 
                 arr[0] += 1;
-                if move_get_capture(*mov) < E {
+                if move_get_capture(*mov) != E {
                     arr[1] += 1;
                 }
                 if mov & MSE_EN_PASSANT != 0 {
@@ -697,7 +614,7 @@ impl Board {
                 if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
                     arr[3] += 1;
                 }
-                if move_get_promotion(*mov) < E {
+                if move_get_promotion(*mov) != E {
                     arr[4] += 1;
                 }
             }
@@ -805,68 +722,6 @@ mod tests {
         assert_eq!(Board::import("r3k2r/Pnp1pppp/1b3bn1/8/2Pp3q/1Q1BBN2/PP1NPPPp/R3K2R b KQkq c3 0 1").get_legal_moves().len(), 40);
         assert_eq!(Board::import("r6r/p1ppqkb1/bn2pnp1/3P4/1p2P3/2NQ3p/PPPBBPPP/R3K2R b KQ - 1 2").get_legal_moves().len(), 51);
         assert_eq!(Board::import("7b/2k5/8/8/2p5/8/6K1/8 w - - 2 4").get_legal_moves().len(), 8);
-    }
-
-    // it will break on move encoding change
-    #[test]
-    fn test_board_legal_moves_specific_1() {
-        let mut board = Board::import("rnbqkbnr/pppp1p1p/8/8/4p1p1/8/PPPPPPPP/RNBQKBNR w KQkq - 0 5");
-        assert_eq!(board.get_legal_moves().len(), 18);
-        board.make_move(54762736897);
-        assert_eq!(board.get_legal_moves().len(), 33);
-        board.make_move(54779917057);
-        assert_eq!(board.get_legal_moves().len(), 18);
-        board.make_move(54762605313);
-        assert_eq!(board.get_legal_moves().len(), 37);
-        board.make_move(54847552768);
-        assert_eq!(board.get_legal_moves().len(), 22);
-        board.make_move(54795765248);
-        assert_eq!(board.get_legal_moves().len(), 38);
-        board.make_move(54814588416);
-        assert_eq!(board.get_legal_moves().len(), 26);
-        board.make_move(54829253120);
-        assert_eq!(board.get_legal_moves().len(), 34);
-        board.make_move(54813931776);
-        assert_eq!(board.get_legal_moves().len(), 28);
-        assert_eq!(board.export(), "r1bqk2r/ppp1np1p/2nb4/3p4/3PpPp1/4BN2/PPP1P1PP/RN1QKB1R w KQkq - 5 9");
-        board.make_move(54795436288);
-        assert_eq!(board.get_legal_moves().len(), 34);
-        board.make_move(54847158784);
-        assert_eq!(board.get_legal_moves().len(), 28);
-        board.make_move(54796424448);
-        assert_eq!(board.get_legal_moves().len(), 35);
-        board.make_move(54915185408);
-        assert_eq!(board.get_legal_moves().len(), 25);
-        board.make_move(54762278400);
-        assert_eq!(board.get_legal_moves().len(), 35);
-        board.make_move(54949198850);
-        assert_eq!(board.get_legal_moves().len(), 27);
-        board.make_move(54828860672);
-        assert_eq!(board.get_legal_moves().len(), 30);
-        board.make_move(54779785473);
-        assert_eq!(board.get_legal_moves().len(), 31);
-        board.make_move(54896296704);
-        assert_eq!(board.get_legal_moves().len(), 31);
-        board.make_move(37598993408);
-        assert_eq!(board.get_legal_moves().len(), 33);
-        assert_eq!(board.export(), "2kr3r/p1pqnp1p/2nb4/1p1p1b2/3P1PpN/N2pB1P1/PPP1P1BP/R3K2R w KQ - 0 14");
-    }
-
-    #[test]
-    fn test_board_legal_moves_specific_2() {
-        let mut board = Board::import("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1R1K b kq - 1 1");
-        assert_eq!(board.get_legal_moves().len(), 46);
-        board.make_move(27128760576);
-        assert_eq!(board.get_legal_moves().len(), 37);
-        assert_eq!(board.export(), "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/P2P2PP/b2Q1R1K w kq - 0 2");
-    }
-
-    #[test]
-    fn test_board_legal_moves_specific_3() {
-        let mut board = Board::import("r3k2r/p1p1qNb1/bn1ppnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 2");
-        board.make_move(33323693312);
-        assert_eq!(board.get_legal_moves().len(), 40);
-        assert_eq!(board.export(), "r3k2N/p1p1q1b1/bn1ppnp1/3P4/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQq - 0 2");
     }
 
     #[test]
@@ -1042,36 +897,6 @@ mod tests {
         // Kiwipete again
         let mut board = Board::import("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
         assert_eq!(board.perft(6), 8031647685);
-    }
-
-    #[test]
-    fn test_board_aux() {
-        let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
-        // let ar_false = [[50, 1], [0, 15], [63, 54], [56, 1], [43, 4], [9, 2], [61, 32], [8, 17], [15, 16], [0, 57], [0, 8]];
-        let board = Board::default();
-        for case in ar_true.into_iter() {
-            // assert_ne!(board.get_sliding_straight_path(case[0], case[1]), 0);
-            assert_ne!(board.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
-        }
-        // for case in ar_false.into_iter() {
-        //     assert_eq!(board.get_sliding_straight_path(case[0], case[1]), 0);
-        // }
-
-        let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
-        // let ar_false = [[0, 10], [56, 6], [39, 31], [3, 40], [2, 23], [5, 34], [63, 1], [62, 0], [49, 46], [23, 16], [2, 3], [7, 14], [1, 8]];
-        let board = Board::default();
-        for case in ar_true.into_iter() {
-            // assert_ne!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
-            assert_ne!(board.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
-        }
-        // for case in ar_false.into_iter() {
-        //     assert_eq!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
-        // }
-
-        let board = Board::default();
-        assert_eq!(board.is_in_check(), false);
-        let board = Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
-        assert_eq!(board.is_in_check(), true);
     }
 
     #[bench]
