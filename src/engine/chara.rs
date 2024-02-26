@@ -296,7 +296,7 @@ impl<'a> Chara<'a> {
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let mut score = if i > 2 && depth > 2 && (*mov > ME_CAPTURE_MIN || in_check) {
+			let mut score = if i != 0 && depth > 2 && (*mov > ME_CAPTURE_MIN || *mov & !ME_CLEAR != 0 || in_check) {
 				-self.search(-beta, -alpha, depth - 2)
 			} else {
 				alpha + 1
