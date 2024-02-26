@@ -34,6 +34,8 @@ pub struct Chara<'a> {
 	pub tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
 													// expected lines of moves length
 	pub tpv_len:			[usize; HALF_DEPTH_LIMIT],
+													// quiet moves that cause a beta cutoff
+	pub killer:				[[u32; HALF_DEPTH_LIMIT]; 2],
 	pub tpv_flag:			bool,					// if this is a principle variation (in search)
 	pub mate_flag:			bool					// if mate is present
 }
@@ -63,6 +65,7 @@ impl<'a> Chara<'a> {
 			hmc:			0,
 			tpv:			[[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
 			tpv_len:		[0; HALF_DEPTH_LIMIT],
+			killer:			[[0; HALF_DEPTH_LIMIT]; 2],
 			tpv_flag:		false,
 			mate_flag:		false
 		}
@@ -100,6 +103,7 @@ impl<'a> Chara<'a> {
 		self.nodes = 0;
 		for line in self.tpv.iter_mut() { for node in line.iter_mut() { *node = 0 } };
 		for len in self.tpv_len.iter_mut() { *len = 0 };
+		for num in self.killer.iter_mut() { for mov in num.iter_mut() { *mov = 0 } };
 		let mut alpha = -INF;
 		let mut beta  =  INF;
 		let mut depth = 1;
@@ -140,6 +144,20 @@ impl<'a> Chara<'a> {
 
 			println!("#DEBUG\t--------------------------------");
 			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score_transform(score, self.board.turn), self.nodes);
+
+			print!("#DEBUG\tKillers:");
+			for num in self.killer.iter() {
+				for (i, mov) in num.iter().enumerate().take(depth as usize) {
+					if *mov != 0 {
+						print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
+					} else {
+						print!(" -");
+					}
+				}
+				print!(" |");
+			}
+			println!();
+
 			print!("#DEBUG\tExpected line:");
 			for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
 				print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
@@ -155,8 +173,8 @@ impl<'a> Chara<'a> {
 			}
 		}
 		println!("#DEBUG\t--------------------------------");
-		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
 		println!("#DEBUG\tCache limits (in thousands), leaves: {}/{}, branches: {}/{}", self.cache_leaves.len() / 1000, CACHED_LEAVES_LIMIT / 1000, self.cache_branches.len() / 1000, CACHED_BRANCHES_LIMIT / 1000);
+		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
 		println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score_transform(score, self.board.turn), self.nodes);
 		print!("#DEBUG\tExpected line:");
 		for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
@@ -172,12 +190,11 @@ impl<'a> Chara<'a> {
 
 		let hash = *self.history_vec.last().unwrap();
 		if self.hmc != 0 && (self.board.hmc == 50 || self.history_set.contains(&hash)) {
-			return 0;
+			return -1;
 		}
 		
-		let is_pv = beta - alpha > 1;
-
-		if self.hmc != 0 && !is_pv && self.cache_branches.contains_key(&hash) {
+		// if not a "prove"-search
+		if self.hmc != 0 && beta - alpha < 2 && self.cache_branches.contains_key(&hash) {
 			let br = self.cache_branches[&hash];
 			if br.depth >= depth {
 				if br.flag & HF_PRECISE != 0 {
@@ -252,7 +269,15 @@ impl<'a> Chara<'a> {
 				if *mov == self.tpv[0][self.hmc] {
 					self.tpv_flag = true;
 					*mov |= ME_PV1;
-					break;
+					continue;
+				} 
+				if *mov == self.killer[0][self.hmc] {
+					*mov |= ME_KILLER1;
+					continue;
+				}
+				if *mov == self.killer[1][self.hmc] { 
+					*mov |= ME_KILLER2;
+					continue;
 				}
 			}
 		}
@@ -271,7 +296,7 @@ impl<'a> Chara<'a> {
 				alpha + 1
 			};
 			if score > alpha {
-				score = -self.search(-alpha - 1, -alpha, depth - 1); // is_pv = false
+				score = -self.search(-alpha - 1, -alpha, depth - 1);
 				if score > alpha && score < beta {
 					score = -self.search(-beta, -alpha, depth - 1)
 				}
@@ -297,7 +322,10 @@ impl<'a> Chara<'a> {
 			}
 			if alpha >= beta {
 				self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
-				self.tpv_flag = true;
+				if *mov < ME_CAPTURE_MIN {
+					self.killer[1][self.hmc] = self.killer[0][self.hmc];
+					self.killer[0][self.hmc] = *mov & ME_CLEAR;
+				}
 				return beta; // fail high
 			}
 		}
