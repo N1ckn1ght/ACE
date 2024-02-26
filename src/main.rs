@@ -20,6 +20,10 @@ fn main() {
     init_secondary_maps();
 
     // memtest();
+    
+    // test boards:
+    // let mut board = Board::import("rn1qkbnr/ppp3pp/3p1p2/4N3/2B1P3/2N5/PPPP1PPP/R1BbK2R w KQkq - 0 6"); // mate in 2
+    // let mut board = Board::import("r3k2r/8/8/8/8/8/8/4K3 b - - 0 1"); // mate in -2
 
     let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
@@ -46,7 +50,7 @@ fn main() {
             let best_move = chara.think(ab[abi], time, dl);
             abi = 0;
             println!();
-            println!("Best move: {} ({})", move_transform(best_move.mov, chara.board.turn), best_move.score);
+            println!("Best move: {} ({})", move_transform(best_move.mov, chara.board.turn), score_transform(best_move.score, chara.board.turn));
             println!();
         }
 

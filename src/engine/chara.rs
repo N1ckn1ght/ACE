@@ -116,6 +116,12 @@ impl<'a> Chara<'a> {
 				break;
 			}
 			if score <= alpha || score >= beta {
+				if k > 15 {
+					alpha = -INF;
+					beta = INF;
+					println!("#DEBUG\tAlpha/beta fail! Using INFINITE values now.");
+					continue;
+				}
 				alpha = alpha + base_aspiration_window * k - base_aspiration_window * (k << 2);
 				beta = beta - base_aspiration_window * k + base_aspiration_window * (k << 2);
 				k <<= 1;
@@ -124,7 +130,7 @@ impl<'a> Chara<'a> {
 			}
 
 			println!("#DEBUG\t--------------------------------");
-			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score, self.nodes);
+			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score_transform(score, self.board.turn), self.nodes);
 			print!("#DEBUG\tExpected line:");
 			for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
 				print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
@@ -142,7 +148,7 @@ impl<'a> Chara<'a> {
 		println!("#DEBUG\t--------------------------------");
 		println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
 		println!("#DEBUG\tCache limits (in thousands), leaves: {}/{}, branches: {}/{}", self.cache_leaves.len() / 1000, CACHED_LEAVES_LIMIT / 1000, self.cache_branches.len() / 1000, CACHED_BRANCHES_LIMIT / 1000);
-		println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score, self.nodes);
+		println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score_transform(score, self.board.turn), self.nodes);
 		print!("#DEBUG\tExpected line:");
 		for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
 			print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));

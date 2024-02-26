@@ -104,9 +104,9 @@ pub const CSB: u8 = 0b0010; // castle short black
 pub const CLW: u8 = 0b0100; // castle long white
 pub const CLB: u8 = 0b1000; // castle long black
 
-pub const LARGE: i32 = 0x7FFF;
-pub const LARGM: i32 = 0x7FFF - (HALF_DEPTH_LIMIT << 1) as i32;
-pub const INF:   i32 = 0xFFFF;
+pub const LARGE: i32 = 0x00100000; // 0x7FFF recommended, any higher is safer though
+pub const INF:   i32 = 0x01000000; // same applies here, if LARGE ix 0x7FFF, use 0xFFFF
+pub const LARGM: i32 = LARGE - (HALF_DEPTH_LIMIT << 1) as i32;
 
 /* Branch cache search flags */
 
@@ -454,6 +454,24 @@ pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Opti
         }
     }
     None
+}
+
+pub fn score_transform(mut score: i32, turn: bool) -> String {
+    if turn {
+        score = -score;
+    }
+    if score >= 0 {
+        if score > LARGM {
+            let ts = 1 + (LARGE - score) >> 1;
+            return "M+".to_string() + &ts.to_string();
+        }
+        return "+".to_string() + &score.to_string();
+    }
+    if score < -LARGM {
+        let ts = 1 + (LARGE + score) >> 1;
+        return "M-".to_string() + &ts.to_string();
+    }
+    score.to_string()
 }
 
 
