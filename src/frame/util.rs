@@ -448,7 +448,7 @@ pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Opti
     for legal in legal_moves.iter() {
         let mfrom  = move_get_from(*legal, turn);
         let mto    = move_get_to(*legal, turn);
-        let mpromo = move_get_promotion(*legal);
+        let mpromo = move_get_promotion(*legal) & !1;
         if from == mfrom && to == mto && promo == mpromo {
             return Some(*legal);
         }

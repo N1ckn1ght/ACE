@@ -867,7 +867,13 @@ mod tests {
     fn test_board_legal_moves_advanced_15() {
         let mut board = Board::import("q3k2B/2P5/2P3P1/8/8/2p3p1/2p5/b3K2Q w - - 0 1");
         assert_eq!(board.perft(5), 4441461);
-    }    
+    }
+
+    #[test]
+    fn test_board_legal_moves_advanced_16() {
+        let mut board = Board::import("r7/1pp4R/2kp3P/4n3/4p3/2P5/p1P2KP1/8 b - - 0 31");
+        assert_eq!(board.perft(5), 4563829);
+    }
 
     #[test]
     #[ignore]
