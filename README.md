@@ -1,19 +1,21 @@
-Version: 0.3.3
+Version: 0.4.0
 
 ### Progress status:
 
 Pre-calculations - 100%
 
-Board - 100% (17-23 mil. nodes/s)
+Board - 100% (~24 mil. nodes/s)
 
-Engine - 75% (feels like some bugs are still present)
+Engine - 100% (Searches too much nodes per depth I think)
 
-Eval - 40% (it sorta works? could be better/faster/stronger)
+Eval - 100% (Poor strategical thinking, but will do for now)
 
-Interface - 10% (some useful functions and listening)
+Interface - 10% (Some useful functions and listening)
 
 ### TODO:
 
 More testing!
 
 Custom opening book
+
+XBoard support

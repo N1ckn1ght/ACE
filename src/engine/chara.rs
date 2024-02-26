@@ -190,7 +190,7 @@ impl<'a> Chara<'a> {
 
 		let hash = *self.history_vec.last().unwrap();
 		if self.hmc != 0 && (self.board.hmc == 50 || self.history_set.contains(&hash)) {
-			return -1;
+			return 1;
 		}
 		
 		// if not a "prove"-search
