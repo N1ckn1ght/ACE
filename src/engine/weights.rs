@@ -14,7 +14,7 @@ pub struct Weights {
 	pub good_pawn:		 [[i32;  2];  2],		// passing with possible protection
 	pub outpost:		 [[i32;  2];  2],		// for knight/bishop
 	pub bpin:			  [i32;  2],			// if bishop is technically pinning smth ; also used to discourage self QK pin possibility
-	pub open_lane_rook:	  [i32;  2],			// TEC Rebels - Keep The Lanes Open (for rooks, of course)
+	pub open_lane_rook:	  [i32;  2],			// TEC Rebels - Keep The Lanes Open (for rooks, of course) | + x2 bonus if enemy king is on the near lane
 	pub random_fact:	   i32,					// for leaf evaluation (it's a tiebreaker, really. recommended value is 3, but 0 is obv. stronger)
 }
 

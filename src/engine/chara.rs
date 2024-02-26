@@ -494,13 +494,16 @@ impl<'a> Chara<'a> {
 		}
 
 		for (ally, mut bb) in rooks.into_iter().enumerate() {
-			// let enemy = (ally == 0) as usize;
+			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.w.pieces[phase][R | ally][csq];
 				let real_atk = self.board.get_sliding_straight_attacks(csq, occup, sides[ally]);
 				mobilities[ally] += real_atk.count_ones() as i32;
 				if real_atk & mptr.files[csq] & pawns[ally] == 0 {
+					if (mptr.piece_pb[ally][csq] | mptr.piece_pb[enemy][csq]) & king[enemy] != 0 {
+						score += self.w.open_lane_rook[ally] << 1;
+					}
 					score += self.w.open_lane_rook[ally];
 				}
 			}

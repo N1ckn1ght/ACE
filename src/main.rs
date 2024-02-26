@@ -26,16 +26,15 @@ fn main() {
     // let mut board = Board::import("r3k2r/8/8/8/8/8/8/4K3 b - - 0 1"); // mate in -2
     // let mut board = Board::import("8/8/5k2/8/3R4/2K5/8/8 w - - 0 1"); // mate in +??
     
-    let mut board = Board::default();   
-    let mut board = Board::import("r7/1pp4R/2kp4/4n2P/4p3/2P5/p1P2KP1/8 w - - 0 31");
+    let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
 
-    chara.w.random_fact = 3;
+    chara.w.random_fact = 0;
 
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut hmc = 0;
-    let scan = [false, true];
+    let scan = [true, false];
     let ab = [88, 16384];
     // soft limit lol, may overflow by about 1-50 msc5b
     let time = 2950;
