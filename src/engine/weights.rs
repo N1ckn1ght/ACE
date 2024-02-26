@@ -37,7 +37,7 @@ impl Weights {
 					 96,  121,   70,   95,   71,   12,   60,    0,
 					 -5,    5,   25,   30,   30,   50,   25,   10,
 					-15,    5,    5,   25,   31,   10,   10,  -15,
-					-20,   -2,    0,   15,   21,    0,   10,  -20,
+					-20,   -2,    0,   15,   21,    0,   10,  -21,
 					-25,   -3,  -10,    0,   -3,  -30,   30,    0,
 					-30,   -1,  -15,  -15,  -15,   30,   30,  -15,
 					  0,    0,    0,    0,    0,    0,    0,    0
@@ -179,9 +179,9 @@ impl Weights {
 		let turn_add_pre = 10;
 		let bad_pawn_penalty_pre = [-16, -32];
 		let good_pawn_reward_pre = [18, 36];
-		let outpost_pre = [20, 12];
+		let outpost_pre = [18, 12];
 		let bishop_pin_pre = 5;
-		let open_lane_rook_battery = 20;
+		let open_lane_rook_battery = 15;
 
 		/* Transform PW (flip for white, negative for black) and apply coefficients */
 

@@ -23,16 +23,16 @@ fn main() {
 
     let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
-    chara.w.random_fact = 3;
+    chara.w.random_fact = 0;
 
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut hmc = 0;
     let scan = [true, true];
-    let ab = [128, 16384];
+    let ab = [80, 16384];
     // soft limit lol, may overflow by about 1-50 msc5b
     let time = 2990;
-    let dl = 8;
+    let dl = 50;
     let mut abi = 0;
 
     loop {
@@ -59,14 +59,17 @@ fn main() {
                 chara.revert_move();
                 hmc -= 2;
                 break;
-            } else if str == "r" {
+            } 
+            if str == "r" {
                 hmc -= 1;
                 break;
-            } else if str == "hr" {
+            } 
+            if str == "hr" {
                 hmc -= 1;
                 abi = 1;
                 break;
-            } else if str == "ex" {
+            } 
+            if str == "ex" {
                 println!("{}", chara.board.export());
                 continue;
             }

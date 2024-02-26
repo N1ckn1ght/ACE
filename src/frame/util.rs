@@ -94,6 +94,7 @@ pub const ME_PV1: u32 = 1 << 31;
 pub const ME_PV2: u32 = 1 << 30;
 pub const ME_KILLER1: u32 = 1 << 25;
 pub const ME_KILLER2: u32 = 1 << 24;
+pub const ME_CLEAR: u32 = 0b00111100111111111111111111111111;
 
 /* board.castlings bits
     - it won't correlate with MSE because of the color bits anyway */

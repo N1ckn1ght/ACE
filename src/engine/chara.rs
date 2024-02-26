@@ -118,7 +118,7 @@ impl<'a> Chara<'a> {
 			if score <= alpha || score >= beta {
 				alpha = alpha + base_aspiration_window * k - base_aspiration_window * (k << 2);
 				beta = beta - base_aspiration_window * k + base_aspiration_window * (k << 2);
-				k <<= 2;
+				k <<= 1;
 				println!("#DEBUG\tAlpha/beta fail! Using x{} from base aspiration now.", k);
 				continue;
 			}
@@ -213,7 +213,7 @@ impl<'a> Chara<'a> {
 			self.hmc -= 1;
 
 			if self.abort {
-				return (alpha + beta) >> 1;
+				return alpha;
 			}
 			if score >= beta {
 				return beta;
@@ -266,7 +266,7 @@ impl<'a> Chara<'a> {
 			self.hmc -= 1;
 			self.revert_move();
 			if self.abort {
-				return (alpha + beta) >> 1;
+				return alpha;
 			}
 			if score > alpha {
 				alpha = score;
@@ -274,7 +274,7 @@ impl<'a> Chara<'a> {
 
 				// score is better, use this move as principle (expected) variation
 				// also copy next halfmove pv into this and adjust its length
-				self.tpv[self.hmc][self.hmc] = *mov;
+				self.tpv[self.hmc][self.hmc] = *mov & ME_CLEAR;
 				let mut next = self.hmc + 1;
 				while next < self.tpv_len[self.hmc + 1] {
 					self.tpv[self.hmc][next] = self.tpv[self.hmc + 1][next];	
@@ -335,7 +335,7 @@ impl<'a> Chara<'a> {
 			alpha = max(alpha, -self.extension(-beta, -alpha));
 			self.revert_move();
 			if self.abort {
-				return 0;
+				return alpha;
 			}
 			if alpha >= beta {
 				return beta; // fail high
