@@ -33,13 +33,14 @@ pub const PATH_AMK:  &str = "./res/attack_maps_king";
 pub const PATH_AMN:  &str = "./res/attack_maps_knight";
 pub const PATH_AMP:  &str = "./res/attack_maps_pawn_white";
 pub const PATH_AMP2: &str = "./res/attack_maps_pawn_black";
-pub const PATH_SMP:  &str = "./res/step_maps_pawn_white";      // double pawn move (e.g. e2e4) NOT included
+pub const PATH_SMP:  &str = "./res/step_maps_pawn_white";   // double pawn move (e.g. e2e4) NOT included
 pub const PATH_SMP2: &str = "./res/step_maps_pawn_black";
 // secondary maps
-pub const PATH_RNK:  &str = "./res/ranks";                     // disincluding current square
+pub const PATH_RNK:  &str = "./res/ranks";                  // disincluding current square
 pub const PATH_FLS:  &str = "./res/files";
-pub const PATH_FKS:  &str = "./res/flanks";                    // left and right files (edge has one)
-pub const PATH_FFD:  &str = "./res/forward_field";             // all ranks starting from Rank + 1 (colour-dependent)
+pub const PATH_FKS:  &str = "./res/flanks";                 // left and right files (edge has one)
+pub const PATH_FFD:  &str = "./res/forward_field";          // all ranks starting from Rank + 1 (colour-dependent)
+pub const PATH_FFD2: &str = "./res/forward_field";
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 
