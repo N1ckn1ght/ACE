@@ -1,7 +1,5 @@
 // A module to generate additional bit masks that are useful to eval()
-
 // Init them LAST!
-// Will crash if no leaping attack maps (PATH_AMN) are present!
 
 use crate::frame::util::*;
 
@@ -13,10 +11,14 @@ pub fn init_secondary_maps() {
     init64(init_passing_piece_blocked_maps_white, PATH_PBM);
     init64(init_passing_piece_blocked_maps_black, PATH_PBM2);
     init64(init_double_attack_maps_knight, PATH_DAMN);
+    init64(init_flanks, PATH_FKS);
+    init64(init_neighbours, PATH_NEI);
+    init64(init_forward_white, PATH_FWD);
+    init64(init_forward_black, PATH_FWD2);
 }
 
 fn init_double_attack_maps_knight(attacks: &mut[u64]) {
-    let kas = file_to_vector(PATH_AMN);     // !!!
+    let kas = file_to_vector(PATH_AMN);
     for i in 0..64 {
         let mut mask = kas[i];
         while mask != 0 {
@@ -54,10 +56,10 @@ fn init_passing_piece_maps_white(map: &mut[u64]) {
         let mut j = i + 8;
         while j < 64 {
             set_bit(&mut map[i], j);
-            if file > 0 {
+            if file != 0 {
                 set_bit(&mut map[i - 1], j);
             }
-            if file < 7 {
+            if file != 7 {
                 set_bit(&mut map[i + 1], j);
             }
             j += 8;
@@ -71,10 +73,10 @@ fn init_passing_piece_maps_black(map: &mut[u64]) {
         let mut j = file;
         while j < i {
             set_bit(&mut map[i], j);
-            if file > 0 {
+            if file != 0 {
                 set_bit(&mut map[i - 1], j);
             }
-            if file < 7 {
+            if file != 7 {
                 set_bit(&mut map[i + 1], j);
             }
             j += 8;
@@ -83,34 +85,34 @@ fn init_passing_piece_maps_black(map: &mut[u64]) {
 }
 
 fn init_passing_piece_blocked_maps_white(map: &mut[u64]) {
+    let fls = file_to_vector(PATH_FLS);
+    let ppw = file_to_vector(PATH_PPM);
     for i in 0..64 {
-        let file = i & 7;
-        let mut j = i + 8;
-        while j < 64 {
-            if file > 0 {
-                set_bit(&mut map[i - 1], j);
-            }
-            if file < 7 {
-                set_bit(&mut map[i + 1], j);
-            }
-            j += 8;
-        }
+        map[i] = ppw[i] & !fls[i];
     }
 }
 
 fn init_passing_piece_blocked_maps_black(map: &mut[u64]) {
+    let fls = file_to_vector(PATH_FLS);
+    let ppb = file_to_vector(PATH_PPM2);
     for i in 0..64 {
-        let file = i & 7;
-        let mut j = file;
-        while j < i {
-            if file > 0 {
-                set_bit(&mut map[i - 1], j);
-            }
-            if file < 7 {
-                set_bit(&mut map[i + 1], j);
-            }
-            j += 8;
-        }
+        map[i] = ppb[i] & !fls[i];
+    }
+}
+
+fn init_flanks(map: &mut[u64]) {
+    let pbw = file_to_vector(PATH_PBM);
+    let pbb = file_to_vector(PATH_PBM2);
+    for i in 0..64 {
+        map[i] = pbw[i & 7] | pbb[56 | (i & 7)];
+    }
+}
+
+fn init_neighbours(map: &mut[u64]) {
+    let fks = file_to_vector(PATH_FKS);
+    let rnk = file_to_vector(PATH_RNK);
+    for i in 0..64 {
+        map[i] = fks[i] & rnk[i];
     }
 }
 

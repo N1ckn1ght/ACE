@@ -379,7 +379,9 @@ impl<'a> Chara<'a> {
 				self.revert_move();
 				continue;
 			}
+			self.hmc += 1;
 			alpha = max(alpha, -self.extension(-beta, -alpha));
+			self.hmc -= 1;
 			self.revert_move();
 			if self.abort {
 				return alpha;
@@ -416,10 +418,11 @@ impl<'a> Chara<'a> {
 			return 0;
 		}
 
-		let phase = (counter < 31) as usize;
-
+		let mut unphased = [0, 0];
+		// let phase = (counter < 31) as usize;
 		let mut score: i32 = 0;
-		let mut mobilities = [0; 2]; // no special moves of any sort are included
+		let mut mobilities = [0; 2]; // no special moves of any sort are included, nor kings
+		
 		let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
 		let occup = sides[0] | sides[1];
 		let mptr = &self.board.maps;

@@ -20,27 +20,26 @@ pub const NODES_BETWEEN_COMMS: u64 = 0b0001111111111111;
 
 /* SPECIFIED PATHES */
 
-// magic maps
+// magic (sliding pieces attack) maps
 pub const PATH_MR:   &str = "./res/magics_rook";
 pub const PATH_BBR:  &str = "./res/blocker_boards_rook";
 pub const PATH_AMR:  &str = "./res/attack_maps_rook";
 pub const PATH_MB:   &str = "./res/magics_bishop";
 pub const PATH_BBB:  &str = "./res/blocker_boards_bishop";
 pub const PATH_AMB:  &str = "./res/attack_maps_bishop";
-// no attack maps for queen, refer to AMB | AMR after magic operations
-// leaping maps
+// no attack maps for queen specifically, refer to AMB | AMR after magic operations
+// leaping pieces attack maps
 pub const PATH_AMK:  &str = "./res/attack_maps_king";
 pub const PATH_AMN:  &str = "./res/attack_maps_knight";
 pub const PATH_AMP:  &str = "./res/attack_maps_pawn_white";
 pub const PATH_AMP2: &str = "./res/attack_maps_pawn_black";
+pub const PATH_SMP:  &str = "./res/step_maps_pawn_white";      // double pawn move (e.g. e2e4) NOT included
+pub const PATH_SMP2: &str = "./res/step_maps_pawn_black";
 // secondary maps
-pub const PATH_RNK:  &str = "./res/ranks";                              // disincluding current square
+pub const PATH_RNK:  &str = "./res/ranks";                     // disincluding current square
 pub const PATH_FLS:  &str = "./res/files";
-pub const PATH_PPM:  &str = "./res/passing_piece_maps_white";           // all three columns
-pub const PATH_PPM2: &str = "./res/passing_piece_maps_black";
-pub const PATH_PBM:  &str = "./res/passing_piece_blocked_maps_white";   // only left and right columns
-pub const PATH_PBM2: &str = "./res/passing_piece_blocked_maps_black";
-pub const PATH_DAMN: &str = "./res/double_attack_maps_knight";          // two move forward for knights (disincluding current square)
+pub const PATH_FKS:  &str = "./res/flanks";                    // left and right files (edge has one)
+pub const PATH_FFD:  &str = "./res/forward_field";             // all ranks starting from Rank + 1 (colour-dependent)
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 

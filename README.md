@@ -1,16 +1,16 @@
-Version: 0.4.2
+Version: 0.5.0
 
 ### Progress status:
 
 Pre-calculations - 100%
 
-Board - 100% (~24 mil. nodes/s)
+Board - 100% (~24 mil. nps)
 
-Engine - 100% (Searches too much nodes per depth I think)
+Engine - 100% (Inspired by: BBC engine)
 
-Eval - 100% (Poor strategical thinking, but will do for now)
+Eval - 100% (Inspired by: Kaissa engine, PESTO eval)
 
-Interface - 10% (Some useful functions and listening)
+Interface - 10%
 
 ### TODO:
 
