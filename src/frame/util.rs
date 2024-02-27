@@ -39,8 +39,8 @@ pub const PATH_SMP2: &str = "./res/step_maps_pawn_black";
 pub const PATH_RNK:  &str = "./res/ranks";                  // disincluding current square
 pub const PATH_FLS:  &str = "./res/files";
 pub const PATH_FKS:  &str = "./res/flanks";                 // left and right files (edge has one)
-pub const PATH_FFD:  &str = "./res/forward_field";          // all ranks starting from Rank + 1 (colour-dependent)
-pub const PATH_FFD2: &str = "./res/forward_field";
+pub const PATH_FWD:  &str = "./res/forward_field";          // all ranks starting from Rank + 1 (colour-dependent)
+pub const PATH_FWD2: &str = "./res/forward_field";
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 

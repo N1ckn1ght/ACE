@@ -8,14 +8,7 @@ pub struct Weights {
 		- [ Color (0-1) ][ Specified ... ] */
 	pub pieces:			[[[i32; 64]; 14]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
 	pub mobility:		   i32,					// score += mobility_base * (mW - mB)
-	pub turn:			  [i32;  2],			// works when it's not a 100% draw
-	pub turn_fact:		   i32,					// aka mult, but +- bit shift
-	pub bad_pawn:		 [[i32;  2];  2],		// isolated, doubled, 1/4 for blocked
-	pub good_pawn:		 [[i32;  2];  2],		// passing with possible protection
-	pub outpost:		 [[i32;  2];  2],		// for knight/bishop
-	pub bpin:			  [i32;  2],			// if bishop is technically pinning smth ; also used to discourage self QK pin possibility
-	pub open_lane_rook:	  [i32;  2],			// TEC Rebels - Keep The Lanes Open (for rooks, of course) | + x2 bonus if enemy king is on the near lane
-	pub random_fact:	   i32,					// for leaf evaluation (it's a tiebreaker, really. recommended value is 3, but 0 is obv. stronger)
+	
 }
 
 impl Weights {
@@ -170,8 +163,8 @@ impl Weights {
 		];
 
 		let pieces_weights_const = [
-			[ 100, 311, 326, 540, 930, 0 ],
-			[ 100, 310, 330, 550, 920, 0 ]
+			[  950, 3000, 3000, 5000, 10000, 0 ],
+			[ 1050, 3000, 3500, 5000,  9000, 0 ]
 		];
 
 		let mobility_base = 6;
