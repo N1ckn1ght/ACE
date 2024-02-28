@@ -5,10 +5,45 @@ pub struct Weights {
 		- Usual order is:
 		- [ Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]
 		- [ Phase (0-1) ][ Color (0-1) ]
-		- [ Color (0-1) ][ Specified ... ] */
-	pub pieces:			[[[i32; 64]; 14]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
-	pub mobility:		   i32,					// score += mobility_base * (mW - mB)
+		- [ Color (0-1) ][ Specified (if) ... ] */
+	pub heatmap:		[[[i32; 64]; 14]; 2],	// add/subtract eval depending on static positional heatmaps in mittielspiel/endspiel
+												// it includes pure material weights
+												// it also includes some ideas like center control, "pigs on the 7th", etc.
+	pub p_isolated:		  [i32;  2],			// double penalty for pawns on semiopen
+	pub p_doubled:		  [i32;  2],			// penalty, starts from 2nd pawn
+	pub p_phalanga:		  [i32;  2],			// neighboured pawns, starts form 2nd
+	pub p_atks:		  	  [i32;  2],			// per unique square attacked by the pawn
+												// center (assym. btw - d4-e6 w, d3-e5 b) attack weights are in general weights
+	pub p_outpost:		  [i32;  2],			// pawn produced outpost sq such as protected and couldn't be attacked by other pawn
+												// note that sq must be in b6-g7, c5-f7 range.
+												// that also means it's not blocked and could be passing, unless ->
+	pub p_outpost_block:  [i32;  2], 			// pawn that blockades a strong square (technically preventing pawn above to advance further)
+	pub p_ek_int:		  [i32;  2],			// per unique pawn attack that intersect enemy king attack map
+	pub p_semiblocked: 	  [i32;  2],			// pawn blocked by enemy pieces, use for C/F files
+	pub p_blocked:		  [i32;  2],			// pawn blocked by anything, use for D/E files
 	
+	// pub n_outpost:		  [i32;  2],			// knight stays on outpost sq
+	// pub n_center:		  [i32;  2],			// knight stays on center sq
+	// pub nb_atk_pro:		  [i32;  2],			// knight/bishop have real attack on rook/queen/king
+	// pub nb_outpost:		  [i32;  2],			// knight/bishop stays on outpost sq
+	// pub b_atk_pieces:	  [i32;  2],			// bishop attacks enemy piece (disincl. pawn)
+
+	pub rq_open:		   [i32;  2],			// rook/queen on open file
+	pub rq_semiopen:	   [i32;  2],			// rook/queen on semiopen file
+	pub rq_atk_open:	   [i32;  2],			// rook/queen attacks on open files
+	pub rq_atk_semiopen:   [i32;  2],			// rook/queen attacks on semiopen files
+	
+	pub k_opposition:	  [i32;  2],			// king has opposition (endspiel only)
+	pub k_mobility_as_q: [[i32;  2];  2],		// king security (phased)
+
+	pub g_atk_pro:		  [i32;  2],			// per profitable attack
+	pub g_atk_pro_bound:  [i32;  2],			// per profitable attack on pinned piece
+	pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
+	pub g_atk_center:	  [i32;  2],			// per attack on center sqs (incl. pawn), such as d4-e6 w / d3-e5 b
+	pub g_mobility:		  [i32;  2],			// per every square (king moves/en passant are not included)
+
+	// pub s_bishop_pair:	  [i32;  2],			// bishop pair smol bonus
+	// pub s_qnight:		  [i32;  2],			// queen & knight smol bonus
 }
 
 impl Weights {
@@ -163,18 +198,18 @@ impl Weights {
 		];
 
 		let pieces_weights_const = [
-			[  950, 3000, 3000, 5000, 10000, 0 ],
-			[ 1050, 3000, 3500, 5000,  9000, 0 ]
+			[  950, 3000, 3000, 5000, 10000, 32768 ],
+			[ 1050, 3000, 3500, 5000,  9000, 32768 ]
 		];
 
-		let mobility_base = 6;
-		let turn_factor = 4; // meaning: += self >> factor or -= self >> factor
-		let turn_add_pre = 10;
-		let bad_pawn_penalty_pre = [-12, -25];
-		let good_pawn_reward_pre = [15, 30];
-		let outpost_pre = [18, 12];
-		let bishop_pin_pre = 4;
-		let open_lane_rook_pre = 14;
+		// let mobility_base = 6;
+		// let turn_factor = 4; // meaning: += self >> factor or -= self >> factor
+		// let turn_add_pre = 10;
+		// let bad_pawn_penalty_pre = [-12, -25];
+		// let good_pawn_reward_pre = [15, 30];
+		// let outpost_pre = [18, 12];
+		// let bishop_pin_pre = 4;
+		// let open_lane_rook_pre = 14;
 
 		/* Transform PW (flip for white, negative for black) and apply coefficients */
 
@@ -190,13 +225,13 @@ impl Weights {
 
 		/* Transform other W */
 		
-		let turn		 	=  [turn_add_pre, -turn_add_pre];
-		let bad_pawn	 	= [[bad_pawn_penalty_pre[0], -bad_pawn_penalty_pre[0]], [bad_pawn_penalty_pre[1], -bad_pawn_penalty_pre[1]]];
-		let good_pawn		= [[good_pawn_reward_pre[0], -good_pawn_reward_pre[0]], [good_pawn_reward_pre[1], -good_pawn_reward_pre[1]]];
-		let outpost			= [[outpost_pre[0], outpost_pre[1]], [-outpost_pre[0], -outpost_pre[1]]];
-		let bpin			=  [bishop_pin_pre, -bishop_pin_pre];
-		let open_lane_rook	=  [open_lane_rook_pre, -open_lane_rook_pre];
-		let random_fact		=  0;
+		// let turn		 	=  [turn_add_pre, -turn_add_pre];
+		// let bad_pawn	 	= [[bad_pawn_penalty_pre[0], -bad_pawn_penalty_pre[0]], [bad_pawn_penalty_pre[1], -bad_pawn_penalty_pre[1]]];
+		// let good_pawn		= [[good_pawn_reward_pre[0], -good_pawn_reward_pre[0]], [good_pawn_reward_pre[1], -good_pawn_reward_pre[1]]];
+		// let outpost			= [[outpost_pre[0], outpost_pre[1]], [-outpost_pre[0], -outpost_pre[1]]];
+		// let bpin			=  [bishop_pin_pre, -bishop_pin_pre];
+		// let open_lane_rook	=  [open_lane_rook_pre, -open_lane_rook_pre];
+		// let random_fact		=  0;
 
 		Self {
 			pieces,
