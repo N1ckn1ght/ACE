@@ -274,15 +274,15 @@ impl<'a> Chara<'a> {
 			for mov in moves.iter_mut() {
 				if *mov == self.tpv[0][self.hmc] {
 					self.tpv_flag = true;
-					*mov |= ME_PV1;
+					*mov |= MFE_PV1;
 					continue;
 				} 
 				if *mov == self.killer[0][self.hmc] {
-					*mov |= ME_KILLER1;
+					*mov |= MFE_KILLER1;
 					continue;
 				}
 				if *mov == self.killer[1][self.hmc] { 
-					*mov |= ME_KILLER2;
+					*mov |= MFE_KILLER2;
 					continue;
 				}
 			}
@@ -296,7 +296,7 @@ impl<'a> Chara<'a> {
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let mut score = if i != 0 && depth > 2 && (*mov > ME_CAPTURE_MIN || *mov & !ME_CLEAR != 0 || in_check) {
+			let mut score = if i != 0 && depth > 2 && (*mov > ME_CAPTURE_MIN || *mov & !MFE_CLEAR != 0 || in_check) {
 				-self.search(-beta, -alpha, depth - 2)
 			} else {
 				alpha + 1
@@ -318,7 +318,7 @@ impl<'a> Chara<'a> {
 
 				// score is better, use this move as principle (expected) variation
 				// also copy next halfmove pv into this and adjust its length
-				self.tpv[self.hmc][self.hmc] = *mov & ME_CLEAR;
+				self.tpv[self.hmc][self.hmc] = *mov & MFE_CLEAR;
 				let mut next = self.hmc + 1;
 				while next < self.tpv_len[self.hmc + 1] {
 					self.tpv[self.hmc][next] = self.tpv[self.hmc + 1][next];	
@@ -330,7 +330,7 @@ impl<'a> Chara<'a> {
 				self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
 				if *mov < ME_CAPTURE_MIN {
 					self.killer[1][self.hmc] = self.killer[0][self.hmc];
-					self.killer[0][self.hmc] = *mov & ME_CLEAR;
+					self.killer[0][self.hmc] = *mov & MFE_CLEAR;
 				}
 				return beta; // fail high
 			}

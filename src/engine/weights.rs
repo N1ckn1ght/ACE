@@ -21,29 +21,26 @@ pub struct Weights {
 	pub p_ek_int:		  [i32;  2],			// per unique pawn attack that intersect enemy king attack map
 	pub p_semiblocked: 	  [i32;  2],			// pawn blocked by enemy pieces, use for C/F files
 	pub p_blocked:		  [i32;  2],			// pawn blocked by anything, use for D/E files
-	
-	// pub n_outpost:		  [i32;  2],			// knight stays on outpost sq
-	// pub n_center:		  [i32;  2],			// knight stays on center sq
-	// pub nb_atk_pro:		  [i32;  2],			// knight/bishop have real attack on rook/queen/king
-	// pub nb_outpost:		  [i32;  2],			// knight/bishop stays on outpost sq
-	// pub b_atk_pieces:	  [i32;  2],			// bishop attacks enemy piece (disincl. pawn)
-
-	pub rq_open:		   [i32;  2],			// rook/queen on open file
-	pub rq_semiopen:	   [i32;  2],			// rook/queen on semiopen file
-	pub rq_atk_open:	   [i32;  2],			// rook/queen attacks on open files
-	pub rq_atk_semiopen:   [i32;  2],			// rook/queen attacks on semiopen files
-	
+	pub n_center:		  [i32;  2],			// knight stays on center sq
+	pub nb_outpost:		  [i32;  2],			// knight/bishop stays on OR in reach of outpost sq (same weight, could be distinct though)
+	pub rq_open:		  [i32;  2],			// rook/queen on open file
+	pub rq_semiopen:	  [i32;  2],			// rook/queen on semiopen file
+	pub rq_atk_open:	  [i32;  2],			// rook/queen attacks on open files
+	pub rq_atk_semiopen:  [i32;  2],			// rook/queen attacks on semiopen files
 	pub k_opposition:	  [i32;  2],			// king has opposition (endspiel only)
 	pub k_mobility_as_q: [[i32;  2];  2],		// king security (phased)
-
+	pub k_pawn_distance: [[i32;  2];  2],		// distance from passed pawns (phased)
 	pub g_atk_pro:		  [i32;  2],			// per profitable attack
 	pub g_atk_pro_bound:  [i32;  2],			// per profitable attack on pinned piece
 	pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
 	pub g_atk_center:	  [i32;  2],			// per attack on center sqs (incl. pawn), such as d4-e6 w / d3-e5 b
+	pub g_atk_near_king: [[i32;  5];  2],		// [p, n, b, r, q] attacks intersect with enemy king atk map
+	pub g_atk_ppt:		  [i32;  2],			// per attack on (any colour) passed pawn trajectory
+	pub g_ppawn_block:	  [i32;  2],			// passing pawn blocked
+	pub g_atk_ppb:		  [i32;  2],			// per profitable attack on passing pawn blocker
 	pub g_mobility:		  [i32;  2],			// per every square (king moves/en passant are not included)
-
-	// pub s_bishop_pair:	  [i32;  2],			// bishop pair smol bonus
-	// pub s_qnight:		  [i32;  2],			// queen & knight smol bonus
+	pub s_bishop_pair:	  [i32;  2],			// bishop pair smol bonus
+	pub s_qnight:		  [i32;  2],			// queen & knight smol bonus
 }
 
 impl Weights {
