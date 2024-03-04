@@ -6,6 +6,12 @@ use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{weights::Weights, zobrist::Zobrist};
 
+/* CONSTANTS FOR STATIC EVALUATION */
+pub const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
+pub const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
+pub const FILES_CF: u64    =  0b0010010000100100001001000010010000100100001001000010010000100100;
+pub const FILES_DE: u64    =  0b0001100000011000000110000001100000011000000110000001100000011000;
+
 pub struct Chara<'a> {
 	pub board:				&'a mut Board,
 	pub w:					Weights,
@@ -412,20 +418,23 @@ impl<'a> Chara<'a> {
 					  (self.board.bbs[B] | self.board.bbs[B2]).count_ones() * 3 + 
 					  (self.board.bbs[R] | self.board.bbs[R2]).count_ones() * 4 +
 					  (self.board.bbs[Q] | self.board.bbs[Q2]).count_ones() * 8;
+		// 56 - full board, 30 - most likely, endgame?..
 
 		if counter < 4 && self.board.bbs[P] | self.board.bbs[P2] == 0 {
 			self.cache_leaves.insert(hash, 0);
 			return 0;
 		}
 
-		let mut unphased = [0, 0];
-		// let phase = (counter < 31) as usize;
 		let mut score: i32 = 0;
-		let mut mobilities = [0; 2]; // no special moves of any sort are included, nor kings
+		let mut score_pd: [i32; 2] = [0, 0];
+		// [18 - 56] range
+		let phase_diff = f32::max(0.0, f32::min((counter - 18) as f32 * 0.025, 1.0));
+		// score += score_pd[0] as f32 * phase_diff + score_pd[1] as f32 * (1 - phase_diff)
 		
 		let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
 		let occup = sides[0] | sides[1];
 		let mptr = &self.board.maps;
+
 		let pawns = [self.board.bbs[P], self.board.bbs[P2]];
 		let knights = [self.board.bbs[N], self.board.bbs[N2]];
 		let bishops = [self.board.bbs[B], self.board.bbs[B2]];
@@ -434,31 +443,30 @@ impl<'a> Chara<'a> {
 		let king = [self.board.bbs[K], self.board.bbs[K2]];
 		let kbits = [gtz(king[0]), gtz(king[1])];
 
+		let mut pattacks = [0, 0];
+
 		/* SCORE APPLICATION BEGIN */
 
 		for (ally, mut bb) in pawns.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
-				let csq = pop_bit(&mut bb);
-				score += self.w.pieces[phase][P | ally][csq];
-				mobilities[ally] += (mptr.attacks_pawns[ally][csq] & sides[enemy]).count_ones() as i32;
-				if get_bit(sides[ally], csq + 8 - (ally << 4)) == 0 {
-					mobilities[ally] += 1;
-					if self.is_easily_protected(csq, pawns[ally], occup, ally, enemy) {
-						if self.is_passing(csq, pawns[enemy], ally) {
-							score += self.w.good_pawn[phase][ally];
-						}
-					} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] & pawns[ally] == 0 {
-						score += self.w.bad_pawn[phase][ally];
-					}
-				} else if mptr.piece_pb[ally][csq - 8 + (ally << 4)] & pawns[ally] == 0 {
-						score += self.w.bad_pawn[phase][ally];
-				} else {
-					score += self.w.bad_pawn[phase][ally] >> 2;
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][P | ally][sq];
+				score_pd[1] += self.w.heatmap[1][P | ally][sq];
+				if bb & mptr.files[sq] != 0 {
+					score += self.w.p_doubled[ally];
 				}
-				if mptr.files[csq] & bb != 0 {
-					score += self.w.bad_pawn[phase][ally];
+				if pawns[ally] & mptr.flanks[sq] == 0 {
+					score += self.w.p_isolated[ally];
+				} else if pawns[ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
+					score += self.w.p_phalanga[ally];
 				}
+				if (1 << sq) & FILES_CF != 0 {
+					
+				} else if (1 << sq) & FILES_DE != 0 {
+					
+				}
+				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
 			}
 		}
 
@@ -467,11 +475,7 @@ impl<'a> Chara<'a> {
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.w.pieces[phase][N | ally][csq];
-				let atk = mptr.attacks_knight[csq] & !sides[ally];
-				mobilities[ally] += atk.count_ones() as i32;
-				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
-					score += self.w.outpost[ally][0];
-				}
+
 			}
 		}
 
@@ -480,19 +484,7 @@ impl<'a> Chara<'a> {
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.w.pieces[phase][B | ally][csq];
-				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				mobilities[ally] += real_atk.count_ones() as i32;
-				let imag_atk = self.board.get_sliding_diagonal_attacks(csq, sides[ally], sides[ally]);
-				let mut targets = imag_atk & (rooks[enemy] | queens[enemy] | king[enemy]);
-				while targets != 0 {
-					let tsq = pop_bit(&mut targets);
-					if self.get_sliding_diagonal_path_unsafe(csq, tsq) & sides[ally] & pawns[enemy] == 0 {
-						score += self.w.bpin[ally];
-					}
-				}
-				if self.is_outpost(csq, pawns[ally], pawns[enemy], ally == 1) {
-					score += self.w.outpost[ally][1];
-				}
+
 			}
 		}
 
@@ -501,14 +493,7 @@ impl<'a> Chara<'a> {
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.w.pieces[phase][R | ally][csq];
-				let real_atk = self.board.get_sliding_straight_attacks(csq, occup, sides[ally]);
-				mobilities[ally] += real_atk.count_ones() as i32;
-				if real_atk & mptr.files[csq] & pawns[ally] == 0 {
-					if (mptr.piece_pb[ally][csq] | mptr.piece_pb[enemy][csq]) & king[enemy] != 0 {
-						score += self.w.open_lane_rook[ally] << 1;
-					}
-					score += self.w.open_lane_rook[ally];
-				}
+
 			}
 		}
 		
@@ -517,10 +502,7 @@ impl<'a> Chara<'a> {
 			while bb != 0 {
 				let csq = pop_bit(&mut bb);
 				score += self.w.pieces[phase][Q | ally][csq];
-				let real_atk = self.board.get_sliding_diagonal_attacks(csq, occup, sides[ally]);
-				if real_atk & king[ally] != 0 {
-					score += self.w.bpin[enemy];
-				}
+
 			}
 		}
 
