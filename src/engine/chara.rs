@@ -443,7 +443,9 @@ impl<'a> Chara<'a> {
 		let king = [self.board.bbs[K], self.board.bbs[K2]];
 		let kbits = [gtz(king[0]), gtz(king[1])];
 
-		let mut pattacks = [0, 0];
+		let mut pattacks = [0; 2];
+		let mut cattacks = [0; 2];
+		let mut pins = [0; 2];
 
 		/* SCORE APPLICATION BEGIN */
 
@@ -462,38 +464,78 @@ impl<'a> Chara<'a> {
 					score += self.w.p_phalanga[ally];
 				}
 				if (1 << sq) & FILES_CF != 0 {
-					
+					if mptr.files[sq] & mptr.fwd[ally][sq] & sides[enemy] != 0 {
+						score += self.w.p_semiblocked[ally];
+					}
 				} else if (1 << sq) & FILES_DE != 0 {
-					
+					if mptr.files[sq] & mptr.fwd[ally][sq] & occup != 0 {
+						score += self.w.p_blocked[ally];
+					}
 				}
 				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
+			}
+		}
+
+		score += (pattacks[0] & CENTER[0]).count_ones() as i32 * self.w.p_atk_center[0];
+		score += (pattacks[1] & CENTER[1]).count_ones() as i32 * self.w.p_atk_center[1];
+		
+		//(attacks[1][0] & CENTER[1]).count_ones()) as i32;
+
+		let mut outpost_sqs = [pattacks[0] & STRONG[0], pattacks[1] & STRONG[1]];
+		for (ally, mut bb) in outpost_sqs.into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				if (1 << sq) & mptr.flanks[sq] & mptr.fwd[ally][sq] & pawns[enemy] != 0 {
+					del_bit(&mut outpost_sqs[ally], sq);
+					continue;
+				}
+				score += self.w.p_outpost[ally];
+				if mptr.step_pawns[ally][sq] & pawns[enemy] != 0 {
+					score += self.w.p_outpost_block[enemy];
+				}
 			}
 		}
 
 		for (ally, mut bb) in knights.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
-				let csq = pop_bit(&mut bb);
-				score += self.w.pieces[phase][N | ally][csq];
-
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][N | ally][sq];
+				score_pd[1] += self.w.heatmap[0][N | ally][sq];
+				if (1 << sq) & outpost_sqs[ally] != 0 {
+					score += self.w.nb_outpost[ally];
+				}
+				if (1 << sq) & CENTER[ally] != 0 {
+					score += self.w.n_center[ally];
+				}
+				cattacks[ally] += (mptr.attacks_knight[sq] & CENTER[ally]).count_ones();
 			}
 		}
 
 		for (ally, mut bb) in bishops.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
-				let csq = pop_bit(&mut bb);
-				score += self.w.pieces[phase][B | ally][csq];
-
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][B | ally][sq];
+				score_pd[1] += self.w.heatmap[0][B | ally][sq];
+				if (1 << sq) & outpost_sqs[ally] != 0 {
+					score += self.w.nb_outpost[ally];
+				}
+				let atk = self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally]);
+				cattacks[ally] += (atk & CENTER[ally]).count_ones();
+				// if something else blah blah blah
+				pins[enemy] |= self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & (rooks[enemy], queens[enemy], king[enemy]);
 			}
 		}
 
 		for (ally, mut bb) in rooks.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
-				let csq = pop_bit(&mut bb);
-				score += self.w.pieces[phase][R | ally][csq];
-
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][R | ally][sq];
+				score_pd[1] += self.w.heatmap[1][R | ally][sq];
+				attacks[ally][3] |= atk;
 			}
 		}
 		

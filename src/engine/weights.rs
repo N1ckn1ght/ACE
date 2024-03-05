@@ -12,8 +12,7 @@ pub struct Weights {
 	pub p_isolated:		  [i32;  2],			// double penalty for pawns on semiopen
 	pub p_doubled:		  [i32;  2],			// penalty, starts from 2nd pawn
 	pub p_phalanga:		  [i32;  2],			// neighboured pawns, starts form 2nd
-	pub p_atks:		  	  [i32;  2],			// per unique square attacked by the pawn
-												// center (assym. btw - d4-e6 w, d3-e5 b) attack weights are in general weights
+	pub p_atk_center:	  [i32;  2],			// positional bonus per center square attacked (assym.: d4-e6 for w, d3-e5 for b)
 	pub p_outpost:		  [i32;  2],			// pawn produced outpost sq such as protected and couldn't be attacked by other pawn
 												// note that sq must be in b6-g7, c5-f7 range.
 												// that also means it's not blocked and could be passing, unless ->
@@ -33,7 +32,7 @@ pub struct Weights {
 	pub g_atk_pro:		  [i32;  2],			// per profitable attack
 	pub g_atk_pro_bound:  [i32;  2],			// per profitable attack on pinned piece
 	pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
-	pub g_atk_center:	  [i32;  2],			// per attack on center sqs (incl. pawn), such as d4-e6 w / d3-e5 b
+	pub g_atk_center:	  [i32;  2],			// positional bonus per attack on a center square (not like with pawns!)
 	pub g_atk_near_king: [[i32;  5];  2],		// [p, n, b, r, q] attacks intersect with enemy king atk map
 	pub g_atk_ppt:		  [i32;  2],			// per attack on (any colour) passed pawn trajectory
 	pub g_ppawn_block:	  [i32;  2],			// passing pawn blocked
