@@ -30,16 +30,17 @@ pub struct Weights {
 	pub k_mobility_as_q: [[i32;  2];  2],		// king security (phased)
 	pub k_pawn_distance: [[i32;  2];  2],		// distance from passed pawns (phased)
 	pub g_atk_pro:		  [i32;  2],			// per profitable attack
-	pub g_atk_pro_bound:  [i32;  2],			// per profitable attack on pinned piece
+	pub g_atk_pro_pinned: [i32;  2],			// per profitable attack on pinned piece
 	pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
 	pub g_atk_center:	 [[i32;  2];  2],		// positional bonus per attack on a center square (not like with pawns!) (phased)
 	pub g_atk_near_king: [[i32;  5];  2],		// [p, n, b, r, q] attacks intersect with enemy king atk map
 	pub g_atk_ppt:		  [i32;  2],			// per attack on (any colour) passed pawn trajectory
 	pub g_ppawn_block:	  [i32;  2],			// passing pawn blocked
 	pub g_atk_ppb:		  [i32;  2],			// per profitable attack on passing pawn blocker
-	pub g_mobility:		  [i32;  2],			// per every square (king moves/en passant are not included)
+	pub g_mobility:		  [i32;  2],			// per every square (for N, B, R, Q)
 	pub s_bishop_pair:	  [i32;  2],			// bishop pair smol bonus
 	pub s_qnight:		  [i32;  2],			// queen & knight smol bonus
+	pub rand:			   i32					// random weight of [-rand, +rand] will be added to an evaluated leaf
 }
 
 impl Weights {

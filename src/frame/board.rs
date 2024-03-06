@@ -227,7 +227,7 @@ impl Board {
         self.en_passant = self.enp_history.pop().unwrap();
         self.hmc        = self.hmc_history.pop().unwrap();
         self.castlings  = self.cst_history.pop().unwrap();
-        self.turn = !self.turn;                            // the previous move was for previous colour
+        self.turn = !self.turn; // the previous move was for previous colour
         self.no -= 1;
 
         let from  = move_get_from(mov, self.turn);
@@ -473,7 +473,6 @@ impl Board {
         E
     }
 
-    #[allow(dead_code)]
     pub fn export(&self) -> String {
         let mut fen = String::new();
         let mut pieces: [usize; 64] = [E; 64];

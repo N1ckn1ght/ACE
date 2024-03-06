@@ -202,7 +202,7 @@ impl<'a> Chara<'a> {
 
 		let hash = *self.history_vec.last().unwrap();
 		if self.hmc != 0 && (self.board.hmc == 50 || self.history_set.contains(&hash)) {
-			return 1;
+			return self.w.rand;
 		}
 		
 		// if not a "prove"-search
@@ -402,8 +402,9 @@ impl<'a> Chara<'a> {
 
 	/* Warning!
 		Before calling this function, consider the following:
-		1) Search MUST use check extension! Eval does NOT evaluate checks or free captures specifically!
-		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically!
+		1) Search MUST determine if this position is already happened before, eval won't return 0 in case of repetition or 50 useless moves.
+		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically.
+		3) Eval is not good on evaluating checks, and, of course, it's bad on detecting possibilities - it's HCE, wdy want?
 	*/
 	fn eval(&mut self) -> i32 {
 		let hash = *self.history_vec.last().unwrap();
@@ -431,28 +432,29 @@ impl<'a> Chara<'a> {
 		let phase_diff = f32::max(0.0, f32::min((counter - 18) as f32 * 0.025, 1.0));
 		// score += score_pd[0] as f32 * phase_diff + score_pd[1] as f32 * (1 - phase_diff)
 
-		
-
 		let mut pattacks  =  [0; 2];
-		let mut rqattacks =  [0; 2];
 		let mut cattacks  =  [0; 2];
+		let mut mobility  =  [0; 2];
 		let mut pins      =  [0; 2];
 		let mut sof       = [[0; 8]; 2];
-		let pin_targets   =  [];
-		let vic_targets   =  [];
-
-		// there is a board.get_occupanices method though
-		let sides = [];
-		let occup = sides[0] | sides[1];
-		let kbits = [gtz(king[0]), gtz(king[1])];
+		let mut pass      =  [0; 2];
 
 		// quality of life fr
 		let bptr = &self.board.bbs;
 		let mptr = &self.board.maps;
 
+		let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
+		let occup = sides[0] | sides[1];
+		let kbits = [gtz(bptr[K]), gtz(bptr[K2])];
+
+		let rpin = [bptr[N] | bptr[B] | bptr[Q], bptr[N2] | bptr[B2] | bptr[Q2]]; // if attack is on Q, it's profitable (most likely will be detected by extension)
+		let bpin = [bptr[N] | bptr[R] | bptr[Q], bptr[N2] | bptr[R2] | bptr[Q2]]; // if attack is on R/Q, it's profitable
+		let rvic = [bptr[K] | bptr[Q],           bptr[K2] | bptr[Q2]];
+		let bvic = [rvic[0] | bptr[R],           rvic[1]  | bptr[R2]];
+
 		/* SCORE APPLICATION BEGIN */
 
-		for (ally, mut bb) in pawns.into_iter().enumerate() {
+		for (ally, mut bb) in [bptr[P], bptr[P2]].into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let sq = pop_bit(&mut bb);
@@ -461,9 +463,9 @@ impl<'a> Chara<'a> {
 				if bb & mptr.files[sq] != 0 {
 					score += self.w.p_doubled[ally];
 				}
-				if pawns[ally] & mptr.flanks[sq] == 0 {
+				if bptr[P | ally] & mptr.flanks[sq] == 0 {
 					score += self.w.p_isolated[ally];
-				} else if pawns[ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
+				} else if bptr[P | ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
 					score += self.w.p_phalanga[ally];
 				}
 				if (1 << sq) & FILES_CF != 0 {
@@ -479,27 +481,71 @@ impl<'a> Chara<'a> {
 				sof[ally][sq & 7] = 1;
 			}
 		}
-
 		score += (pattacks[0] & CENTER[0]).count_ones() as i32 * self.w.p_atk_center[0];
 		score += (pattacks[1] & CENTER[1]).count_ones() as i32 * self.w.p_atk_center[1];
-
 		let mut outpost_sqs = [pattacks[0] & STRONG[0], pattacks[1] & STRONG[1]];
 		for (ally, mut bb) in outpost_sqs.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let sq = pop_bit(&mut bb);
-				if (1 << sq) & mptr.flanks[sq] & mptr.fwd[ally][sq] & pawns[enemy] != 0 {
+				if (1 << sq) & mptr.flanks[sq] & mptr.fwd[ally][sq] & bptr[P | enemy] != 0 {
 					del_bit(&mut outpost_sqs[ally], sq);
 					continue;
 				}
 				score += self.w.p_outpost[ally];
-				if mptr.step_pawns[ally][sq] & pawns[enemy] != 0 {
+				if mptr.step_pawns[ally][sq] & bptr[P | enemy] != 0 {
 					score += self.w.p_outpost_block[enemy];
 				}
 			}
 		}
 
-		for (ally, mut bb) in knights.into_iter().enumerate() {
+		for (ally, mut bb) in [bptr[B], bptr[B2]].into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][B | ally][sq];
+				score_pd[1] += self.w.heatmap[0][B | ally][sq];
+				if (1 << sq) & outpost_sqs[ally] != 0 {
+					score += self.w.nb_outpost[ally];
+				}
+				let atk = self.board.get_sliding_diagonal_attacks(sq, occup, occup & !bpin[enemy]);
+				cattacks[ally] += (atk & CENTER[ally]).count_ones();
+				let profit = (atk & bvic[enemy]).count_ones();
+				score += match profit {
+					0 => 0,
+					1 => self.w.g_atk_pro[ally],
+					_ => self.w.g_atk_pro_double[ally]
+				};
+				let pinned_to = self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & !atk & bvic[enemy];
+				while pinned_to != 0 {
+					let csq = pop_bit(&mut pinned_to);
+					pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & bpin[enemy];
+				}
+			}
+		}
+
+		for (ally, mut bb) in [bptr[R], bptr[R2]].into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][R | ally][sq];
+				score_pd[1] += self.w.heatmap[1][R | ally][sq];
+				let atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally])
+				rqattacks[ally] |= atk;
+				
+			}
+		}
+		
+		for (ally, mut bb) in [bptr[Q], bptr[Q2]].into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][Q | ally][sq];
+				score_pd[1] += self.w.heatmap[1][Q | ally][sq];
+			}
+		}
+
+		for (ally, mut bb) in [bptr[N], bptr[N2]].into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let sq = pop_bit(&mut bb);
@@ -515,46 +561,7 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		for (ally, mut bb) in bishops.into_iter().enumerate() {
-			let enemy = (ally == 0) as usize;
-			while bb != 0 {
-				let sq = pop_bit(&mut bb);
-				score_pd[0] += self.w.heatmap[0][B | ally][sq];
-				score_pd[1] += self.w.heatmap[0][B | ally][sq];
-				if (1 << sq) & outpost_sqs[ally] != 0 {
-					score += self.w.nb_outpost[ally];
-				}
-				let atk = self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally] | pawns[enemy] | bishops[enemy]);
-				cattacks[ally] += (atk & CENTER[ally]).count_ones();
-				// todo: fix this, it shows pin issue instead of pinned piece
-				let victims = self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & (rooks[enemy] | queens[enemy] | king[enemy]);
-				while victims != 0 {
-					let csq = pop_bit(&mut victims);
-					
-				}
-			}
-		}
-
-		for (ally, mut bb) in rooks.into_iter().enumerate() {
-			let enemy = (ally == 0) as usize;
-			while bb != 0 {
-				let sq = pop_bit(&mut bb);
-				score_pd[0] += self.w.heatmap[0][R | ally][sq];
-				score_pd[1] += self.w.heatmap[1][R | ally][sq];
-				let atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally])
-				rqattacks[ally] |= atk;
-				
-			}
-		}
-		
-		for (ally, mut bb) in queens.into_iter().enumerate() {
-			let enemy = (ally == 0) as usize;
-			while bb != 0 {
-				let sq = pop_bit(&mut bb);
-				score_pd[0] += self.w.heatmap[0][Q | ally][sq];
-				score_pd[1] += self.w.heatmap[1][Q | ally][sq];
-			}
-		}
+		// repeat for !knights
 
 
 
