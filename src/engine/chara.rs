@@ -468,15 +468,16 @@ impl<'a> Chara<'a> {
 				} else if bptr[P | ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
 					score += self.w.p_phalanga[ally];
 				}
-				if (1 << sq) & FILES_CF != 0 {
-					if mptr.files[sq] & mptr.fwd[ally][sq] & sides[enemy] != 0 {
-						score += self.w.p_semiblocked[ally];
-					}
-				} else if (1 << sq) & FILES_DE != 0 {
-					if mptr.files[sq] & mptr.fwd[ally][sq] & occup != 0 {
-						score += self.w.p_blocked[ally];
-					}
-				}
+				// redo this lol it's a nail mechanic
+				// if (1 << sq) & FILES_CF != 0 {
+				// 	if mptr.files[sq] & mptr.fwd[ally][sq] & sides[enemy] != 0 {
+				// 		score += self.w.p_semiblocked[ally];
+				// 	}
+				// } else if (1 << sq) & FILES_DE != 0 {
+				// 	if mptr.files[sq] & mptr.fwd[ally][sq] & occup != 0 {
+				// 		score += self.w.p_blocked[ally];
+				// 	}
+				// }
 				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
 				sof[ally][sq & 7] = 1;
 			}
