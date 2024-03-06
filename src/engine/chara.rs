@@ -430,22 +430,25 @@ impl<'a> Chara<'a> {
 		// [18 - 56] range
 		let phase_diff = f32::max(0.0, f32::min((counter - 18) as f32 * 0.025, 1.0));
 		// score += score_pd[0] as f32 * phase_diff + score_pd[1] as f32 * (1 - phase_diff)
-		
-		let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
-		let occup = sides[0] | sides[1];
-		let mptr = &self.board.maps;
 
-		let pawns = [self.board.bbs[P], self.board.bbs[P2]];
-		let knights = [self.board.bbs[N], self.board.bbs[N2]];
-		let bishops = [self.board.bbs[B], self.board.bbs[B2]];
-		let rooks = [self.board.bbs[R], self.board.bbs[R2]];
-		let queens = [self.board.bbs[Q], self.board.bbs[Q2]];
-		let king = [self.board.bbs[K], self.board.bbs[K2]];
+		
+
+		let mut pattacks  =  [0; 2];
+		let mut rqattacks =  [0; 2];
+		let mut cattacks  =  [0; 2];
+		let mut pins      =  [0; 2];
+		let mut sof       = [[0; 8]; 2];
+		let pin_targets   =  [];
+		let vic_targets   =  [];
+
+		// there is a board.get_occupanices method though
+		let sides = [];
+		let occup = sides[0] | sides[1];
 		let kbits = [gtz(king[0]), gtz(king[1])];
 
-		let mut pattacks = [0; 2];
-		let mut cattacks = [0; 2];
-		let mut pins = [0; 2];
+		// quality of life fr
+		let bptr = &self.board.bbs;
+		let mptr = &self.board.maps;
 
 		/* SCORE APPLICATION BEGIN */
 
@@ -473,13 +476,12 @@ impl<'a> Chara<'a> {
 					}
 				}
 				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
+				sof[ally][sq & 7] = 1;
 			}
 		}
 
 		score += (pattacks[0] & CENTER[0]).count_ones() as i32 * self.w.p_atk_center[0];
 		score += (pattacks[1] & CENTER[1]).count_ones() as i32 * self.w.p_atk_center[1];
-		
-		//(attacks[1][0] & CENTER[1]).count_ones()) as i32;
 
 		let mut outpost_sqs = [pattacks[0] & STRONG[0], pattacks[1] & STRONG[1]];
 		for (ally, mut bb) in outpost_sqs.into_iter().enumerate() {
@@ -522,10 +524,14 @@ impl<'a> Chara<'a> {
 				if (1 << sq) & outpost_sqs[ally] != 0 {
 					score += self.w.nb_outpost[ally];
 				}
-				let atk = self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally]);
+				let atk = self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally] | pawns[enemy] | bishops[enemy]);
 				cattacks[ally] += (atk & CENTER[ally]).count_ones();
-				// if something else blah blah blah
-				pins[enemy] |= self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & (rooks[enemy], queens[enemy], king[enemy]);
+				// todo: fix this, it shows pin issue instead of pinned piece
+				let victims = self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & (rooks[enemy] | queens[enemy] | king[enemy]);
+				while victims != 0 {
+					let csq = pop_bit(&mut victims);
+					
+				}
 			}
 		}
 
@@ -535,18 +541,22 @@ impl<'a> Chara<'a> {
 				let sq = pop_bit(&mut bb);
 				score_pd[0] += self.w.heatmap[0][R | ally][sq];
 				score_pd[1] += self.w.heatmap[1][R | ally][sq];
-				attacks[ally][3] |= atk;
+				let atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally])
+				rqattacks[ally] |= atk;
+				
 			}
 		}
 		
 		for (ally, mut bb) in queens.into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
-				let csq = pop_bit(&mut bb);
-				score += self.w.pieces[phase][Q | ally][csq];
-
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][Q | ally][sq];
+				score_pd[1] += self.w.heatmap[1][Q | ally][sq];
 			}
 		}
+
+
 
 		if phase == 0{
 			mobilities[0] -= ((mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() << 1) as i32;
@@ -607,53 +617,6 @@ impl<'a> Chara<'a> {
     pub fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
         self.board.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
 	}
-
-    #[inline]
-    pub fn is_passing(&self, sq: usize, enemy_pawns: u64, ally_colour: usize) -> bool {
-        self.board.maps.piece_passing[ally_colour][sq] & enemy_pawns == 0
-    }
-
-    #[inline]
-    pub fn is_protected(&self, sq: usize, ally_pawns: u64, enemy_colour: usize) -> bool {
-        self.board.maps.attacks_pawns[enemy_colour][sq] & ally_pawns != 0
-    }
-
-    #[inline]
-    pub fn is_outpost(&self, sq: usize, ally_pawns: u64, enemy_pawns: u64, colour: bool) -> bool {
-        self.board.maps.piece_pb[colour as usize][sq] & enemy_pawns == 0 && self.is_protected(sq, ally_pawns, !colour as usize)
-    }
-
-    pub fn is_easily_protected(&self, sq: usize, ally_pawns: u64, occupancy: u64, ally_colour: usize, enemy_colour: usize) -> bool {
-        // if there are existing pawns on necessary lanes at all
-        if self.board.maps.piece_pb[enemy_colour][sq] & ally_pawns == 0 {
-            return false;
-        }
-        // if the piece is already protected enough
-        let mut mask = self.board.maps.attacks_pawns[enemy_colour][sq];
-        if mask & ally_pawns != 0 {
-            return true;
-        }
-        // if there's nothing standing in the way of any pawn to protect the piece
-        while mask != 0 {
-            let csq = pop_bit(&mut mask);
-            let lane = self.board.maps.files[csq] & self.board.maps.piece_pb[enemy_colour][sq];
-            let pbit = lane & ally_pawns;
-            if pbit == 0 {
-                continue;
-            }
-            // if we are white - we are interested in leading bit (it's the closest one)
-            // otherwise we need trailing bit
-            let path = if ally_colour == 0 {
-                self.get_sliding_straight_path_unsafe(csq, glz(pbit))
-            } else {
-                self.get_sliding_straight_path_unsafe(csq, gtz(pbit))
-            };
-            if path & occupancy == 0 {
-                return true;
-            }
-        }
-        false
-    }
 }
 
 

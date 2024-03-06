@@ -32,7 +32,7 @@ pub struct Weights {
 	pub g_atk_pro:		  [i32;  2],			// per profitable attack
 	pub g_atk_pro_bound:  [i32;  2],			// per profitable attack on pinned piece
 	pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
-	pub g_atk_center:	  [i32;  2],			// positional bonus per attack on a center square (not like with pawns!)
+	pub g_atk_center:	 [[i32;  2];  2],		// positional bonus per attack on a center square (not like with pawns!) (phased)
 	pub g_atk_near_king: [[i32;  5];  2],		// [p, n, b, r, q] attacks intersect with enemy king atk map
 	pub g_atk_ppt:		  [i32;  2],			// per attack on (any colour) passed pawn trajectory
 	pub g_ppawn_block:	  [i32;  2],			// passing pawn blocked
