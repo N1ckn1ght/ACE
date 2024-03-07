@@ -454,6 +454,7 @@ impl<'a> Chara<'a> {
 
 		/* SCORE APPLICATION BEGIN */
 
+		// pawn quick detections
 		for (ally, mut bb) in [bptr[P], bptr[P2]].into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
@@ -468,20 +469,41 @@ impl<'a> Chara<'a> {
 				} else if bptr[P | ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
 					score += self.w.p_phalanga[ally];
 				}
-				// redo this lol it's a nail mechanic
-				// if (1 << sq) & FILES_CF != 0 {
-				// 	if mptr.files[sq] & mptr.fwd[ally][sq] & sides[enemy] != 0 {
-				// 		score += self.w.p_semiblocked[ally];
-				// 	}
-				// } else if (1 << sq) & FILES_DE != 0 {
-				// 	if mptr.files[sq] & mptr.fwd[ally][sq] & occup != 0 {
-				// 		score += self.w.p_blocked[ally];
-				// 	}
-				// }
 				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
+				if (mptr.files[sq] | mptr.flanks[sq]) & mptr.fwd[ally][sq] & bptr[P | enemy] == 0 {
+					score += self.w.p_passing[ally];
+					pass[ally] |= mptr.files[sq] & mptr.fwd[ally][sq];
+				}
 				sof[ally][sq & 7] = 1;
 			}
 		}
+		// 8 consequtive IFs for nails detection
+		if get_bit(bptr[P], 10) != 0 && get_bit(sides[1], 18) != 0 {
+			score += self.w.p_semiblocked[0];
+		}
+		if get_bit(bptr[P], 13) != 0 && get_bit(sides[1], 21) != 0 {
+			score += self.w.p_semiblocked[0];
+		}
+		if get_bit(bptr[P], 11) != 0 && get_bit(occup, 19) != 0 {
+			score += self.w.p_blocked[0];
+		}
+		if get_bit(bptr[P], 12) != 0 && get_bit(occup, 20) != 0 {
+			score += self.w.p_blocked[0];
+		}
+		if get_bit(bptr[P], 50) != 0 && get_bit(sides[0], 42) != 0 {
+			score += self.w.p_semiblocked[1];
+		}
+		if get_bit(bptr[P], 53) != 0 && get_bit(sides[0], 45) != 0 {
+			score += self.w.p_semiblocked[1];
+		}
+		if get_bit(bptr[P], 51) != 0 && get_bit(occup, 43) != 0 {
+			score += self.w.p_blocked[1];
+		}
+		if get_bit(bptr[P], 52) != 0 && get_bit(occup, 44) != 0 {
+			score += self.w.p_blocked[1];
+		}
+		score += (pattacks[0] & (mptr.attacks_king[kbits[1]] | bptr[K2])).count_ones() as i32 * self.w.p_ek_int[0];
+		score += (pattacks[1] & (mptr.attacks_king[kbits[0]] | bptr[K ])).count_ones() as i32 * self.w.p_ek_int[1];
 		score += (pattacks[0] & CENTER[0]).count_ones() as i32 * self.w.p_atk_center[0];
 		score += (pattacks[1] & CENTER[1]).count_ones() as i32 * self.w.p_atk_center[1];
 		let mut outpost_sqs = [pattacks[0] & STRONG[0], pattacks[1] & STRONG[1]];

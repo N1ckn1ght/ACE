@@ -18,8 +18,9 @@ pub struct Weights {
 												// that also means it's not blocked and could be passing, unless ->
 	pub p_outpost_block:  [i32;  2], 			// pawn that blockades a strong square (technically preventing pawn above to advance further)
 	pub p_ek_int:		  [i32;  2],			// per unique pawn attack that intersect enemy king attack map
-	pub p_semiblocked: 	  [i32;  2],			// pawn blocked by enemy pieces, use for C/F files
-	pub p_blocked:		  [i32;  2],			// pawn blocked by anything, use for D/E files
+	pub p_semiblocked: 	  [i32;  2],			// pawn blocked on starting square by enemy pieces, use for C/F files
+	pub p_blocked:		  [i32;  2],			// pawn blocked on starting square by anything, use for D/E files
+	pub p_passing:		  [i32;  2],			// relatively small additional bonus per passing pawn
 	pub n_center:		  [i32;  2],			// knight stays on center sq
 	pub nb_outpost:		  [i32;  2],			// knight/bishop stays on OR in reach of outpost sq (same weight, could be distinct though)
 	pub rq_open:		  [i32;  2],			// rook/queen on open file
