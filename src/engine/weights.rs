@@ -22,16 +22,17 @@ pub struct Weights {
 	pub p_blocked:		  [i32;  2],			// pawn blocked on starting square by anything, use for D/E files
 	pub p_passing:		  [i32;  2],			// relatively small additional bonus per passing pawn
 	pub n_center:		  [i32;  2],			// knight stays on center sq
-	pub nb_outpost:		  [i32;  2],			// knight/bishop stays on OR in reach of outpost sq (same weight, could be distinct though)
-	pub rq_open:		  [i32;  2],			// rook/queen on open file
-	pub rq_semiopen:	  [i32;  2],			// rook/queen on semiopen file
-	pub rq_atk_open:	  [i32;  2],			// rook/queen attacks on open files
-	pub rq_atk_semiopen:  [i32;  2],			// rook/queen attacks on semiopen files
+	pub nb_outpost:		  [i32;  2],			// knight/bishop stays on outpost sq
+	pub nb_outpost_reach: [i32;  2],			// knight/bishop may reach an outpost sq easily
+	pub rq_open:		  [i32;  2],			// rook/queen on open file (will apply with atk_open!)
+	pub rq_semiopen:	  [i32;  2],			// rook/queen on semiopen file (will apply with atk_semiopen!)
+	pub rq_atk_open:	  [i32;  2],			// rook/queen attacks any open file
+	pub rq_atk_semiopen:  [i32;  2],			// rook/queen attacks any semiopen file
 	pub k_opposition:	  [i32;  2],			// king has opposition (endspiel only)
 	pub k_mobility_as_q: [[i32;  2];  2],		// king security (phased)
 	pub k_pawn_distance: [[i32;  2];  2],		// distance from passed pawns (phased)
-	pub g_atk_pro:		  [i32;  2],			// per profitable attack
-	pub g_atk_pro_pinned: [i32;  2],			// per profitable attack on pinned piece
+	pub g_atk_pro:		  [i32;  2],			// per profitable attack (lazy check for pawns)
+	pub g_atk_pro_pinned: [i32;  2],			// per profitable attack on pinned piece (lazy check for pawns)
 	pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
 	pub g_atk_center:	 [[i32;  2];  2],		// positional bonus per attack on a center square (not like with pawns!) (phased)
 	pub g_atk_near_king: [[i32;  5];  2],		// [p, n, b, r, q] attacks intersect with enemy king atk map
@@ -196,8 +197,8 @@ impl Weights {
 		];
 
 		let pieces_weights_const = [
-			[  950, 3000, 3000, 5000, 10000, 32768 ],
-			[ 1050, 3000, 3500, 5000,  9000, 32768 ]
+			[  950, 3000, 3000, 5000, 10000, 0 ],
+			[ 1050, 3000, 3500, 5000,  9000, 0 ]
 		];
 
 		// let mobility_base = 6;

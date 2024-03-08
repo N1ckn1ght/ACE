@@ -432,12 +432,12 @@ impl<'a> Chara<'a> {
 		let phase_diff = f32::max(0.0, f32::min((counter - 18) as f32 * 0.025, 1.0));
 		// score += score_pd[0] as f32 * phase_diff + score_pd[1] as f32 * (1 - phase_diff)
 
-		let mut pattacks  =  [0; 2];
-		let mut cattacks  =  [0; 2];
-		let mut mobility  =  [0; 2];
-		let mut pins      =  [0; 2];
-		let mut sof       = [[0; 8]; 2];
-		let mut pass      =  [0; 2];
+		let mut pattacks     = [0; 2];
+		let mut cattacks     = [0; 2];
+		let mut mobility     = [0; 2];
+		let mut pins         = [0; 2];
+		let mut sof			 = [0; 2];
+		let mut pass         = [0; 2];
 
 		// quality of life fr
 		let bptr = &self.board.bbs;
@@ -474,7 +474,7 @@ impl<'a> Chara<'a> {
 					score += self.w.p_passing[ally];
 					pass[ally] |= mptr.files[sq] & mptr.fwd[ally][sq];
 				}
-				sof[ally][sq & 7] = 1;
+				sof[ally] |= mptr.files[sq];
 			}
 		}
 		// 8 consequtive IFs for nails detection
@@ -511,7 +511,7 @@ impl<'a> Chara<'a> {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let sq = pop_bit(&mut bb);
-				if (1 << sq) & mptr.flanks[sq] & mptr.fwd[ally][sq] & bptr[P | enemy] != 0 {
+				if mptr.flanks[sq] & mptr.fwd[ally][sq] & bptr[P | enemy] != 0 {
 					del_bit(&mut outpost_sqs[ally], sq);
 					continue;
 				}
@@ -522,16 +522,82 @@ impl<'a> Chara<'a> {
 			}
 		}
 
+		for (ally, mut bb) in [bptr[Q], bptr[Q2]].into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][Q | ally][sq];
+				score_pd[1] += self.w.heatmap[1][Q | ally][sq];
+				let atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally]) | self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally]);
+				if get_bit(sof[ally], sq) == 0 {
+					if get_bit(sof[enemy], sq) == 0 {
+						score += self.w.rq_open[ally];
+					} else {
+						score += self.w.rq_semiopen[ally];
+					}
+				}
+				if atk & !sof[ally] != 0 {
+					if atk & (!sof[ally] & !sof[enemy]) != 0 {
+						score += self.w.rq_atk_open[ally];
+					} else {
+						score += self.w.rq_atk_semiopen[ally];
+					}
+				}
+				if atk & CENTER[ally] != 0 {
+					score_pd[0] += self.w.g_atk_center[0][ally];
+					score_pd[1] += self.w.g_atk_center[1][ally];
+				}
+				if atk & (mptr.attacks_king[kbits[enemy]] | bptr[K | enemy]) != 0 {
+					score += self.w.g_atk_near_king[ally][4];
+				}
+				if atk & pass[enemy] != 0 {
+					score += self.w.g_atk_ppt[ally];
+				}
+				if atk & pass[ally] & sides[enemy] != 0 {
+					score += self.w.g_atk_ppb[ally];
+				}
+				if get_bit(pass[enemy], sq) != 0 {
+					score += self.w.g_ppawn_block[ally];
+				}
+			}
+		}
+
+		for (ally, mut bb) in [bptr[R], bptr[R2]].into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				score_pd[0] += self.w.heatmap[0][R | ally][sq];
+				score_pd[1] += self.w.heatmap[1][R | ally][sq];
+				let atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally]);
+				if get_bit(sof[ally], sq) == 0 {
+					if get_bit(sof[enemy], sq) == 0 {
+						score += self.w.rq_open[ally];
+					} else {
+						score += self.w.rq_semiopen[ally];
+					}
+				}
+				if atk & !sof[ally] != 0 {
+					if atk & (!sof[ally] & !sof[enemy]) != 0 {
+						score += self.w.rq_atk_open[ally];
+					} else {
+						score += self.w.rq_atk_semiopen[ally];
+					}
+				}
+			}
+		}
+
 		for (ally, mut bb) in [bptr[B], bptr[B2]].into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let sq = pop_bit(&mut bb);
 				score_pd[0] += self.w.heatmap[0][B | ally][sq];
 				score_pd[1] += self.w.heatmap[0][B | ally][sq];
-				if (1 << sq) & outpost_sqs[ally] != 0 {
-					score += self.w.nb_outpost[ally];
-				}
 				let atk = self.board.get_sliding_diagonal_attacks(sq, occup, occup & !bpin[enemy]);
+				if get_bit(outpost_sqs[ally], sq) != 0 {
+					score += self.w.nb_outpost[ally];
+				} else if outpost_sqs[ally] & atk != 0 {
+					score += self.w.nb_outpost_reach[ally];
+				}
 				cattacks[ally] += (atk & CENTER[ally]).count_ones();
 				let profit = (atk & bvic[enemy]).count_ones();
 				score += match profit {
@@ -547,44 +613,23 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		for (ally, mut bb) in [bptr[R], bptr[R2]].into_iter().enumerate() {
-			let enemy = (ally == 0) as usize;
-			while bb != 0 {
-				let sq = pop_bit(&mut bb);
-				score_pd[0] += self.w.heatmap[0][R | ally][sq];
-				score_pd[1] += self.w.heatmap[1][R | ally][sq];
-				let atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally])
-				rqattacks[ally] |= atk;
-				
-			}
-		}
-		
-		for (ally, mut bb) in [bptr[Q], bptr[Q2]].into_iter().enumerate() {
-			let enemy = (ally == 0) as usize;
-			while bb != 0 {
-				let sq = pop_bit(&mut bb);
-				score_pd[0] += self.w.heatmap[0][Q | ally][sq];
-				score_pd[1] += self.w.heatmap[1][Q | ally][sq];
-			}
-		}
-
 		for (ally, mut bb) in [bptr[N], bptr[N2]].into_iter().enumerate() {
 			let enemy = (ally == 0) as usize;
 			while bb != 0 {
 				let sq = pop_bit(&mut bb);
 				score_pd[0] += self.w.heatmap[0][N | ally][sq];
 				score_pd[1] += self.w.heatmap[0][N | ally][sq];
-				if (1 << sq) & outpost_sqs[ally] != 0 {
+				if get_bit(outpost_sqs[ally], sq) != 0 {
 					score += self.w.nb_outpost[ally];
+				} else if outpost_sqs[ally] & mptr.attacks_knight[sq] != 0 {
+					score += self.w.nb_outpost_reach[ally];
 				}
-				if (1 << sq) & CENTER[ally] != 0 {
+				if get_bit(CENTER[ally], sq) != 0 {
 					score += self.w.n_center[ally];
 				}
 				cattacks[ally] += (mptr.attacks_knight[sq] & CENTER[ally]).count_ones();
 			}
 		}
-
-		// repeat for !knights
 
 
 
