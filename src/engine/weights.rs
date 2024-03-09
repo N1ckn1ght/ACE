@@ -17,7 +17,6 @@ pub struct Weights {
 												// note that sq must be in b6-g7, c5-f7 range.
 												// that also means it's not blocked and could be passing, unless ->
 	pub p_outpost_block:  [i32;  2], 			// pawn that blockades a strong square (technically preventing pawn above to advance further)
-	pub p_ek_int:		  [i32;  2],			// per unique pawn attack that intersect enemy king attack map
 	pub p_semiblocked: 	  [i32;  2],			// pawn blocked on starting square by enemy pieces, use for C/F files
 	pub p_blocked:		  [i32;  2],			// pawn blocked on starting square by anything, use for D/E files
 	pub p_passing:		  [i32;  2],			// relatively small additional bonus per passing pawn
@@ -28,20 +27,22 @@ pub struct Weights {
 	pub rq_semiopen:	  [i32;  2],			// rook/queen on semiopen file (will apply with atk_semiopen!)
 	pub rq_atk_open:	  [i32;  2],			// rook/queen attacks any open file
 	pub rq_atk_semiopen:  [i32;  2],			// rook/queen attacks any semiopen file
-	pub k_opposition:	  [i32;  2],			// king has opposition (endspiel only)
+	pub k_opposition:	 [[i32;  2];  2],		// king has opposition (phased)
 	pub k_mobility_as_q: [[i32;  2];  2],		// king security (phased)
 	pub k_pawn_distance: [[i32;  2];  2],		// distance from passed pawns (phased)
 	pub g_atk_pro:		  [i32;  2],			// per profitable attack (lazy check for pawns)
 	pub g_atk_pro_pinned: [i32;  2],			// per profitable attack on pinned piece (lazy check for pawns)
 	pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
 	pub g_atk_center:	 [[i32;  2];  2],		// positional bonus per attack on a center square (not like with pawns!) (phased)
-	pub g_atk_near_king: [[i32;  5];  2],		// [p, n, b, r, q] attacks intersect with enemy king atk map
+	pub g_atk_near_king: [[i32;  5];  2],		// [p, n, b, r, q] attacks intersect with enemy king atk map (lazy check for pawns)
 	pub g_atk_ppt:		  [i32;  2],			// per attack on (any colour) passed pawn trajectory
 	pub g_ppawn_block:	  [i32;  2],			// passing pawn blocked
 	pub g_atk_ppb:		  [i32;  2],			// per profitable attack on passing pawn blocker
-	pub g_mobility:		  [i32;  2],			// per every square (for N, B, R, Q)
+	pub g_mobility:		   i32,					// per every square (for N, B, R, Q)
 	pub s_bishop_pair:	  [i32;  2],			// bishop pair smol bonus
 	pub s_qnight:		  [i32;  2],			// queen & knight smol bonus
+	pub s_turn:			  [i32;  2],
+	pub s_turn_shift:	   i32,					// score +/-= score >>= this shift
 	pub rand:			   i32					// random weight of [-rand, +rand] will be added to an evaluated leaf
 }
 

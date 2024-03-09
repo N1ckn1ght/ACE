@@ -404,7 +404,7 @@ impl<'a> Chara<'a> {
 		Before calling this function, consider the following:
 		1) Search MUST determine if this position is already happened before, eval won't return 0 in case of repetition or 50 useless moves.
 		2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically.
-		3) Eval is not good on evaluating checks, and, of course, it's bad on detecting possibilities - it's HCE, wdy want?
+		3) Eval is not great on evaluating checks and detecting possibilities - it's HCE, wdy want?
 	*/
 	fn eval(&mut self) -> i32 {
 		let hash = *self.history_vec.last().unwrap();
@@ -430,13 +430,13 @@ impl<'a> Chara<'a> {
 		let mut score_pd: [i32; 2] = [0, 0];
 		// [18 - 56] range
 		let phase_diff = f32::max(0.0, f32::min((counter - 18) as f32 * 0.025, 1.0));
-		// score += score_pd[0] as f32 * phase_diff + score_pd[1] as f32 * (1 - phase_diff)
 
 		let mut pattacks     = [0; 2];
 		let mut cattacks     = [0; 2];
 		let mut mobility     = [0; 2];
 		let mut pins         = [0; 2];
 		let mut sof			 = [0; 2];
+		let mut ppt          = [0; 2];
 		let mut pass         = [0; 2];
 
 		// quality of life fr
@@ -472,9 +472,20 @@ impl<'a> Chara<'a> {
 				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
 				if (mptr.files[sq] | mptr.flanks[sq]) & mptr.fwd[ally][sq] & bptr[P | enemy] == 0 {
 					score += self.w.p_passing[ally];
-					pass[ally] |= mptr.files[sq] & mptr.fwd[ally][sq];
+					pass[ally] |= 1 << sq;
+					ppt[ally] |= mptr.files[sq] & mptr.fwd[ally][sq];
 				}
 				sof[ally] |= mptr.files[sq];
+
+				let mut profit = mptr.attacks_pawns[ally][sq] & sides[enemy] & !bptr[P | enemy];
+				if profit != 0 {
+					pop_bit(&mut profit);
+					if profit != 0 {
+						score += self.w.g_atk_pro[ally];
+					} else {
+						score += self.w.g_atk_pro_double[ally];
+					}
+				}
 			}
 		}
 		// 8 consequtive IFs for nails detection
@@ -502,8 +513,8 @@ impl<'a> Chara<'a> {
 		if get_bit(bptr[P], 52) != 0 && get_bit(occup, 44) != 0 {
 			score += self.w.p_blocked[1];
 		}
-		score += (pattacks[0] & (mptr.attacks_king[kbits[1]] | bptr[K2])).count_ones() as i32 * self.w.p_ek_int[0];
-		score += (pattacks[1] & (mptr.attacks_king[kbits[0]] | bptr[K ])).count_ones() as i32 * self.w.p_ek_int[1];
+		score += (pattacks[0] & (mptr.attacks_king[kbits[1]] | bptr[K2])).count_ones() as i32 * self.w.g_atk_near_king[0][0];
+		score += (pattacks[1] & (mptr.attacks_king[kbits[0]] | bptr[K ])).count_ones() as i32 * self.w.g_atk_near_king[1][0];
 		score += (pattacks[0] & CENTER[0]).count_ones() as i32 * self.w.p_atk_center[0];
 		score += (pattacks[1] & CENTER[1]).count_ones() as i32 * self.w.p_atk_center[1];
 		let mut outpost_sqs = [pattacks[0] & STRONG[0], pattacks[1] & STRONG[1]];
@@ -528,7 +539,12 @@ impl<'a> Chara<'a> {
 				let sq = pop_bit(&mut bb);
 				score_pd[0] += self.w.heatmap[0][Q | ally][sq];
 				score_pd[1] += self.w.heatmap[1][Q | ally][sq];
-				let atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally]) | self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally]);
+				
+				let opr = self.board.get_sliding_straight_opportunities(sq, occup) & self.board.get_sliding_diagonal_opportunities(sq, occup);
+				let atk = opr & !sides[ally];
+				cattacks[ally] += (opr & CENTER[ally]).count_ones();
+				mobility[ally] += atk.count_ones();
+
 				if get_bit(sof[ally], sq) == 0 {
 					if get_bit(sof[enemy], sq) == 0 {
 						score += self.w.rq_open[ally];
@@ -543,21 +559,33 @@ impl<'a> Chara<'a> {
 						score += self.w.rq_atk_semiopen[ally];
 					}
 				}
-				if atk & CENTER[ally] != 0 {
-					score_pd[0] += self.w.g_atk_center[0][ally];
-					score_pd[1] += self.w.g_atk_center[1][ally];
-				}
-				if atk & (mptr.attacks_king[kbits[enemy]] | bptr[K | enemy]) != 0 {
+				if opr & (mptr.attacks_king[kbits[enemy]] | bptr[K | enemy]) != 0 {
 					score += self.w.g_atk_near_king[ally][4];
 				}
-				if atk & pass[enemy] != 0 {
+				if atk & ppt[enemy] != 0 {
 					score += self.w.g_atk_ppt[ally];
 				}
-				if atk & pass[ally] & sides[enemy] != 0 {
+				if atk & ppt[ally] & sides[enemy] != 0 {
 					score += self.w.g_atk_ppb[ally];
 				}
-				if get_bit(pass[enemy], sq) != 0 {
+				if get_bit(ppt[enemy], sq) != 0 {
 					score += self.w.g_ppawn_block[ally];
+				}
+
+				let mut rook_pinned_to   = self.board.get_sliding_straight_attacks(sq, occup & !atk, sides[ally]) & !atk & bptr[K | enemy];
+				let mut bishop_pinned_to = self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & !atk & bptr[K | enemy];
+				while rook_pinned_to != 0 {
+					let csq = pop_bit(&mut rook_pinned_to);
+					pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & rpin[enemy];
+				}
+				while bishop_pinned_to != 0 {
+					let csq = pop_bit(&mut bishop_pinned_to);
+					pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & bpin[enemy];
+				}
+
+				let profit = atk & bptr[K | enemy];
+				if profit != 0 {
+					score += self.w.g_atk_pro[ally];
 				}
 			}
 		}
@@ -568,7 +596,12 @@ impl<'a> Chara<'a> {
 				let sq = pop_bit(&mut bb);
 				score_pd[0] += self.w.heatmap[0][R | ally][sq];
 				score_pd[1] += self.w.heatmap[1][R | ally][sq];
-				let atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally]);
+
+				let opr = self.board.get_sliding_straight_opportunities(sq, occup);
+				let atk = opr & !sides[ally];
+				cattacks[ally] += (opr & CENTER[ally]).count_ones();
+				mobility[ally] += atk.count_ones();
+				
 				if get_bit(sof[ally], sq) == 0 {
 					if get_bit(sof[enemy], sq) == 0 {
 						score += self.w.rq_open[ally];
@@ -581,6 +614,34 @@ impl<'a> Chara<'a> {
 						score += self.w.rq_atk_open[ally];
 					} else {
 						score += self.w.rq_atk_semiopen[ally];
+					}
+				}
+				if opr & (mptr.attacks_king[kbits[enemy]] | bptr[K | enemy]) != 0 {
+					score += self.w.g_atk_near_king[ally][3];
+				}
+				if atk & ppt[enemy] != 0 {
+					score += self.w.g_atk_ppt[ally];
+				}
+				if atk & ppt[ally] & sides[enemy] != 0 {
+					score += self.w.g_atk_ppb[ally];
+				}
+				if get_bit(ppt[enemy], sq) != 0 {
+					score += self.w.g_ppawn_block[ally];
+				}
+				
+				let mut pinned_to = self.board.get_sliding_straight_attacks(sq, occup & !atk, sides[ally]) & !atk & rvic[enemy];
+				while pinned_to != 0 {
+					let csq = pop_bit(&mut pinned_to);
+					pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & rpin[enemy];
+				}
+
+				let mut profit = atk & rvic[enemy];
+				if profit != 0 {
+					pop_bit(&mut profit);
+					if profit != 0 {
+						score += self.w.g_atk_pro[ally];
+					} else {
+						score += self.w.g_atk_pro_double[ally];
 					}
 				}
 			}
@@ -592,23 +653,44 @@ impl<'a> Chara<'a> {
 				let sq = pop_bit(&mut bb);
 				score_pd[0] += self.w.heatmap[0][B | ally][sq];
 				score_pd[1] += self.w.heatmap[0][B | ally][sq];
-				let atk = self.board.get_sliding_diagonal_attacks(sq, occup, occup & !bpin[enemy]);
+
+				let opr = self.board.get_sliding_diagonal_opportunities(sq, occup);
+				let atk = opr & !sides[ally];
+				cattacks[ally] += (opr & CENTER[ally]).count_ones();
+				mobility[ally] += atk.count_ones();
+
 				if get_bit(outpost_sqs[ally], sq) != 0 {
 					score += self.w.nb_outpost[ally];
 				} else if outpost_sqs[ally] & atk != 0 {
 					score += self.w.nb_outpost_reach[ally];
 				}
-				cattacks[ally] += (atk & CENTER[ally]).count_ones();
-				let profit = (atk & bvic[enemy]).count_ones();
-				score += match profit {
-					0 => 0,
-					1 => self.w.g_atk_pro[ally],
-					_ => self.w.g_atk_pro_double[ally]
-				};
-				let pinned_to = self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & !atk & bvic[enemy];
+				if opr & (mptr.attacks_king[kbits[enemy]] | bptr[K | enemy]) != 0 {
+					score += self.w.g_atk_near_king[ally][2];
+				}
+				if atk & ppt[enemy] != 0 {
+					score += self.w.g_atk_ppt[ally];
+				}
+				if atk & ppt[ally] & sides[enemy] != 0 {
+					score += self.w.g_atk_ppb[ally];
+				}
+				if get_bit(ppt[enemy], sq) != 0 {
+					score += self.w.g_ppawn_block[ally];
+				}
+				
+				let mut pinned_to = self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & !atk & bvic[enemy];
 				while pinned_to != 0 {
 					let csq = pop_bit(&mut pinned_to);
 					pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & bpin[enemy];
+				}
+
+				let mut profit = atk & bvic[enemy];
+				if profit != 0 {
+					pop_bit(&mut profit);
+					if profit != 0 {
+						score += self.w.g_atk_pro[ally];
+					} else {
+						score += self.w.g_atk_pro_double[ally];
+					}
 				}
 			}
 		}
@@ -619,37 +701,123 @@ impl<'a> Chara<'a> {
 				let sq = pop_bit(&mut bb);
 				score_pd[0] += self.w.heatmap[0][N | ally][sq];
 				score_pd[1] += self.w.heatmap[0][N | ally][sq];
+
+				let mut opr = mptr.attacks_knight[sq];
+				let atk = opr & !sides[ally];
+				cattacks[ally] += (opr & CENTER[ally]).count_ones();
+				mobility[ally] += atk.count_ones();
+
 				if get_bit(outpost_sqs[ally], sq) != 0 {
 					score += self.w.nb_outpost[ally];
 				} else if outpost_sqs[ally] & mptr.attacks_knight[sq] != 0 {
 					score += self.w.nb_outpost_reach[ally];
 				}
+				if opr & (mptr.attacks_king[kbits[enemy]] | bptr[K | enemy]) != 0 {
+					score += self.w.g_atk_near_king[ally][1];
+				}
+				if atk & ppt[enemy] != 0 {
+					score += self.w.g_atk_ppt[ally];
+				}
+				if atk & ppt[ally] & sides[enemy] != 0 {
+					score += self.w.g_atk_ppb[ally];
+				}
+				if get_bit(ppt[enemy], sq) != 0 {
+					score += self.w.g_ppawn_block[ally];
+				}
 				if get_bit(CENTER[ally], sq) != 0 {
 					score += self.w.n_center[ally];
 				}
-				cattacks[ally] += (mptr.attacks_knight[sq] & CENTER[ally]).count_ones();
+
+				let mut profit = atk & bvic[enemy];
+				if profit != 0 {
+					pop_bit(&mut profit);
+					if profit != 0 {
+						score += self.w.g_atk_pro[ally];
+					} else {
+						score += self.w.g_atk_pro_double[ally];
+					}
+				}
 			}
 		}
 
+		score += self.w.g_atk_pro_pinned[0] * (pattacks[0] & pins[1]).count_ones() as i32;
+		score += self.w.g_atk_pro_pinned[1] * (pattacks[1] & pins[0]).count_ones() as i32;
 
-
-		if phase == 0{
-			mobilities[0] -= ((mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() << 1) as i32;
-			mobilities[1] -= ((mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() << 1) as i32;
-		} else {
-			mobilities[0] += (mptr.attacks_king[kbits[0]] & !sides[0]).count_ones() as i32;
-			mobilities[1] += (mptr.attacks_king[kbits[1]] & !sides[1]).count_ones() as i32;
+		for (ally, mut bb) in [bptr[B], bptr[B2]].into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				let mut atk = self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally]) & pins[enemy];
+				while atk != 0 {
+					pop_bit(&mut atk);
+					score += self.w.g_atk_pro_pinned[ally];
+				}
+			}
 		}
-		score += self.w.mobility * (mobilities[0] - mobilities[1]);
-		if score > 0 {
-			score += score >> self.w.turn_fact;
-		} else {
-			score -= score >> self.w.turn_fact;
-		}
-		score += self.w.turn[self.board.turn as usize];
 
-		score -= self.w.random_fact;
-		score += self.rng.gen_range(0..=(self.w.random_fact << 1) as u32) as i32;
+		for (ally, mut bb) in [bptr[R], bptr[R2]].into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				let mut atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally]) & pins[enemy];
+				while atk != 0 {
+					pop_bit(&mut atk);
+					score += self.w.g_atk_pro_pinned[ally];
+				}
+			}
+		}
+
+		for (ally, mut bb) in [bptr[Q], bptr[Q2]].into_iter().enumerate() {
+			let enemy = (ally == 0) as usize;
+			while bb != 0 {
+				let sq = pop_bit(&mut bb);
+				let mut atk = (self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally]) | self.board.get_sliding_straight_attacks(sq, occup, sides[ally])) & pins[enemy];
+				while atk != 0 {
+					pop_bit(&mut atk);
+					score += self.w.g_atk_pro_pinned[ally];
+				}
+			}
+		}
+
+		score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
+		score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
+		if mptr.attacks_king[kbits[0]] & pass[0] != 0 {
+			score_pd[0] += self.w.k_pawn_distance[0][0];
+			score_pd[1] += self.w.k_pawn_distance[1][0];
+		}
+		if mptr.attacks_king[kbits[1]] & pass[1] != 0 {
+			score_pd[0] += self.w.k_pawn_distance[0][1];
+			score_pd[1] += self.w.k_pawn_distance[1][1];
+		}
+		if ((kbits[0] & 7) as i32 - (kbits[1] & 7) as i32).abs() + ((kbits[0] >> 3) as i32  - (kbits[1] >> 3) as i32).abs() == 2 {
+			score_pd[0] += self.w.k_opposition[0][!self.board.turn as usize];
+			score_pd[1] += self.w.k_opposition[1][!self.board.turn as usize];
+		}
+
+		if bptr[K] != 0 && bptr[Q] != 0 {
+			score += self.w.s_qnight[0];
+		}
+		if bptr[K2] != 0 && bptr[Q2] != 0 {
+			score += self.w.s_qnight[1];
+		}
+		if (bptr[B] & bptr[B] - 1) != 0 {
+			score += self.w.s_bishop_pair[0];
+		}
+		if (bptr[B2] & bptr[B2] - 1) != 0 {
+			score += self.w.s_bishop_pair[1];
+		}
+		
+		score += ((score_pd[0] as f32 * phase_diff) + (score_pd[1] as f32 * (1.0 - phase_diff))) as i32;
+		score += self.w.g_mobility * (mobility[0].count_ones() as i32 - mobility[1].count_ones() as i32);
+		if self.board.turn ^ (score > 0) {
+			score += score >> self.w.s_turn_shift;
+		} else {
+			score -= score >> self.w.s_turn_shift;
+		}
+		score += self.w.s_turn[self.board.turn as usize];
+
+		score -= self.w.rand;
+		score += self.rng.gen_range(0..=(self.w.rand << 1)) as i32;
 
 		/* SCORE APPLICATION END */
 		
@@ -709,7 +877,7 @@ mod tests {
 		let mov = move_transform_back("e7e5", &moves, chara.board.turn).unwrap();
 		chara.make_move(mov);
 		let eval = chara.eval();
-		assert_eq!(eval, chara.w.turn[0]);
+		assert_eq!(eval, chara.w.s_turn[0]);
 	}
 
 	#[test]
@@ -724,41 +892,23 @@ mod tests {
 			let mut board = Board::import(fen);
 			let mut chara = Chara::init(&mut board);
 			let eval = chara.eval();
-			assert_eq!(eval, chara.w.turn[0]);
+			assert_eq!(eval, chara.w.s_turn[0]);
 		}
-	}
-
-	#[test]
-	fn test_chara_eval_initial_3() {
-		let mut board = Board::default();
-		let chara = Chara::init(&mut board);
-		// this test is bad :D
-		assert_eq!(chara.w.pieces[0][K][gtz(chara.board.bbs[K])], 10);
 	}
 
 	#[test]
     fn test_board_aux() {
         let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
-        // let ar_false = [[50, 1], [0, 15], [63, 54], [56, 1], [43, 4], [9, 2], [61, 32], [8, 17], [15, 16], [0, 57], [0, 8]];
         let mut board = Board::default();
 		let chara = Chara::init(&mut board);
         for case in ar_true.into_iter() {
-            // assert_ne!(board.get_sliding_straight_path(case[0], case[1]), 0);
             assert_ne!(chara.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
         }
-        // for case in ar_false.into_iter() {
-        //     assert_eq!(board.get_sliding_straight_path(case[0], case[1]), 0);
-        // }
 
         let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
-        // let ar_false = [[0, 10], [56, 6], [39, 31], [3, 40], [2, 23], [5, 34], [63, 1], [62, 0], [49, 46], [23, 16], [2, 3], [7, 14], [1, 8]];
         for case in ar_true.into_iter() {
-            // assert_ne!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
             assert_ne!(chara.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
         }
-        // for case in ar_false.into_iter() {
-        //     assert_eq!(board.get_sliding_diagonal_path(case[0], case[1]), 0);
-        // }
 
         let board = Board::default();
         assert_eq!(board.is_in_check(), false);

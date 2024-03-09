@@ -549,16 +549,26 @@ impl Board {
     // ally in this context are pieces of the same colour as attacker
     #[inline]
     pub fn get_sliding_diagonal_attacks(&self, sq: usize, occupancies: u64, ally: u64) -> u64 {
-        let mask = occupancies & self.maps.bbs_bishop[sq];
-        let magic_index = mask.wrapping_mul(self.maps.magics_bishop[sq]) >> (64 - self.maps.magic_bits_bishop[sq]);
-        self.maps.attacks_bishop[magic_index as usize + self.maps.ais_bishop[sq]] & !ally
+        self.get_sliding_diagonal_opportunities(sq, occupancies) & !ally
     }
 
     #[inline]
     pub fn get_sliding_straight_attacks(&self, sq: usize, occupancies: u64, ally: u64) -> u64 {
+        self.get_sliding_straight_opportunities(sq, occupancies) & !ally
+    }
+
+    #[inline]
+    pub fn get_sliding_diagonal_opportunities(&self, sq: usize, occupancies: u64) -> u64 {
+        let mask = occupancies & self.maps.bbs_bishop[sq];
+        let magic_index = mask.wrapping_mul(self.maps.magics_bishop[sq]) >> (64 - self.maps.magic_bits_bishop[sq]);
+        self.maps.attacks_bishop[magic_index as usize + self.maps.ais_bishop[sq]]
+    }
+
+    #[inline]
+    pub fn get_sliding_straight_opportunities(&self, sq: usize, occupancies: u64) -> u64 {
         let mask = occupancies & self.maps.bbs_rook[sq];
         let magic_index = mask.wrapping_mul(self.maps.magics_rook[sq]) >> (64 - self.maps.magic_bits_rook[sq]);
-        self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]] & !ally
+        self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]]
     }
 
     // although it's unused by the board itself
