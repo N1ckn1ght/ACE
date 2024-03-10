@@ -19,8 +19,6 @@ fn main() {
     init_leaping_attacks();
     init_secondary_maps();
 
-    return;
-
     // memtest();
     
     // test boards:
@@ -37,7 +35,7 @@ fn main() {
 
     let mut hmc = 0;
     let scan = [true, false];
-    let ab = [96, 16384];
+    let ab = [300, INF];
     // soft limit lol, may overflow by about 1-50 msc5b
     let time = 2950;
     let dl = 50;

@@ -41,7 +41,10 @@ pub struct Chara<'a> {
 													// quiet moves that cause a beta cutoff
 	pub killer:				[[u32; HALF_DEPTH_LIMIT]; 2],
 	pub tpv_flag:			bool,					// if this is a principle variation (in search)
-	pub mate_flag:			bool					// if mate is present
+	pub mate_flag:			bool,					// if mate is present
+
+	/* Static eval addon */
+	pub castled:			[bool; 2]				// white used castle, black used castle
 }
 
 impl<'a> Chara<'a> {
@@ -71,11 +74,15 @@ impl<'a> Chara<'a> {
 			tpv_len:		[0; HALF_DEPTH_LIMIT],
 			killer:			[[0; HALF_DEPTH_LIMIT]; 2],
 			tpv_flag:		false,
-			mate_flag:		false
+			mate_flag:		false,
+			castled:		[false, false]
 		}
     }
 
 	pub fn make_move(&mut self, mov: u32) {
+		if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
+			self.castled[self.board.turn as usize] = true;
+		}
 		let prev_hash = *self.history_vec.last().unwrap();
 		self.history_set.insert(prev_hash);
 		self.board.make_move(mov);
@@ -84,6 +91,9 @@ impl<'a> Chara<'a> {
 	}
 
 	pub fn revert_move(&mut self) {
+		if self.board.move_history.last().unwrap() & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
+			self.castled[!self.board.turn as usize] = false;
+		}
 		self.board.revert_move();
 		self.history_vec.pop();
 		self.history_set.remove(self.history_vec.last().unwrap());
@@ -139,9 +149,9 @@ impl<'a> Chara<'a> {
 					println!("#DEBUG\tAlpha/beta fail! Using INFINITE values now.");
 					continue;
 				}
-				alpha = alpha + base_aspiration_window * k - base_aspiration_window * (k << 2);
-				beta = beta - base_aspiration_window * k + base_aspiration_window * (k << 2);
-				k <<= 1;
+				k *= 2;
+				alpha = alpha + base_aspiration_window * k - base_aspiration_window * (k * 2);
+				beta = beta - base_aspiration_window * k + base_aspiration_window * (k * 2);
 				println!("#DEBUG\tAlpha/beta fail! Using x{} from base aspiration now.", k);
 				continue;
 			}
@@ -255,7 +265,7 @@ impl<'a> Chara<'a> {
 			self.hmc -= 1;
 
 			if self.abort {
-				return alpha;
+				return 0;
 			}
 			if score >= beta {
 				return beta;
@@ -314,7 +324,7 @@ impl<'a> Chara<'a> {
 			self.hmc -= 1;
 			self.revert_move();
 			if self.abort {
-				return alpha;
+				return 0;
 			}
 			if score > alpha {
 				alpha = score;
@@ -329,14 +339,15 @@ impl<'a> Chara<'a> {
 					next += 1;
 				}
 				self.tpv_len[self.hmc] = self.tpv_len[self.hmc + 1];
-			}
-			if alpha >= beta {
-				self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
-				if *mov < ME_CAPTURE_MIN {
-					self.killer[1][self.hmc] = self.killer[0][self.hmc];
-					self.killer[0][self.hmc] = *mov & MFE_CLEAR;
+			
+				if alpha >= beta {
+					self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
+					if *mov < ME_CAPTURE_MIN {
+						self.killer[1][self.hmc] = self.killer[0][self.hmc];
+						self.killer[0][self.hmc] = *mov & MFE_CLEAR;
+					}
+					return beta; // fail high
 				}
-				return beta; // fail high
 			}
 		}
 
@@ -347,7 +358,6 @@ impl<'a> Chara<'a> {
 			self.cache_branches.get_mut(&hash).unwrap().score += self.hmc as i32;
 		}
 
-		// panic!("test");
 		alpha // fail low
 	}
 
@@ -388,7 +398,7 @@ impl<'a> Chara<'a> {
 			self.hmc -= 1;
 			self.revert_move();
 			if self.abort {
-				return alpha;
+				return 0;
 			}
 			if alpha >= beta {
 				return beta; // fail high
@@ -706,7 +716,7 @@ impl<'a> Chara<'a> {
 				score_pd[0] += self.w.heatmap[0][N | ally][sq];
 				score_pd[1] += self.w.heatmap[0][N | ally][sq];
 
-				let mut opr = mptr.attacks_knight[sq];
+				let opr = mptr.attacks_knight[sq];
 				let atk = opr & !sides[ally];
 				mobility[ally] += atk.count_ones();
 
@@ -797,17 +807,17 @@ impl<'a> Chara<'a> {
 
 		score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
 		score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
-		if mptr.attacks_king[kbits[0]] & pass[0] != 0 {
+		if mptr.attacks_king[kbits[0]] & (pass[0] | pass[1]) != 0 {
 			score_pd[0] += self.w.k_pawn_dist_1[0][0];
 			score_pd[1] += self.w.k_pawn_dist_1[1][0];
-		} else if mptr.rad2[kbits[0]] & pass[0] != 0 {
+		} else if mptr.rad2[kbits[0]] & (pass[0] | pass[1]) != 0 {
 			score_pd[0] += self.w.k_pawn_dist_2[0][0];
 			score_pd[1] += self.w.k_pawn_dist_2[1][0];
 		}
-		if mptr.attacks_king[kbits[1]] & pass[1] != 0 {
+		if mptr.attacks_king[kbits[1]] & (pass[0] | pass[1]) != 0 {
 			score_pd[0] += self.w.k_pawn_dist_1[0][1];
 			score_pd[1] += self.w.k_pawn_dist_1[1][1];
-		} else if mptr.rad2[kbits[1]] & pass[1] != 0 {
+		} else if mptr.rad2[kbits[1]] & (pass[0] | pass[1]) != 0 {
 			score_pd[0] += self.w.k_pawn_dist_2[0][1];
 			score_pd[1] += self.w.k_pawn_dist_2[1][1];
 		}
@@ -828,7 +838,15 @@ impl<'a> Chara<'a> {
 		if (bptr[B2] & bptr[B2] - 1) != 0 {
 			score += self.w.s_bishop_pair[1];
 		}
-		
+		if self.castled[0] {
+			score_pd[0] += self.w.s_castled[0][0];
+			score_pd[1] += self.w.s_castled[1][0];
+		}
+		if self.castled[1] {
+			score_pd[0] += self.w.s_castled[0][1];
+			score_pd[1] += self.w.s_castled[1][1];
+		}
+
 		score += ((score_pd[0] as f32 * phase_diff) + (score_pd[1] as f32 * (1.0 - phase_diff))) as i32;
 		score += self.w.s_mobility * (mobility[0].count_ones() as i32 - mobility[1].count_ones() as i32);
 		if self.board.turn ^ (score > 0) {

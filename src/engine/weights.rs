@@ -41,6 +41,7 @@ pub struct Weights {
 	pub s_mobility:		   i32,					// per every square (for N, B, R, Q)
 	pub s_bishop_pair:	  [i32;  2],			// bishop pair smol bonus
 	pub s_qnight:		  [i32;  2],			// queen & knight smol bonus
+	pub s_castled:		 [[i32;  2];  2],
 	pub s_turn:			  [i32;  2],
 	pub s_turn_div:	       i32,					// score +/-= score / div
 	pub rand:			   i32					// random weight of [-rand, +rand] will be added to an evaluated leaf
@@ -55,26 +56,26 @@ impl Weights {
 			[ 420, 1200, 1400, 2000, 3600, 0 ]
 		];
 
-		let p_isolated_pre = -120;
-		let p_doubled_pre = -120;
+		let p_isolated_pre = -80;
+		let p_doubled_pre = -40;
 		let p_phalanga_pre = 80;
 		let p_atk_center_pre = 40;
-		let p_outpost_pre = 120;
-		let p_outpost_block_pre = 80;	// technically, will be given as passing pawn bonus to enemy team on capture
-		let p_semiblocked_pre = -300;
-		let p_blocked_pre = -300;
-		let p_passing_pre = 40;
-		let nb_outpost_pre = 120;
-		let nb_outpost_reach_pre = 120;
+		let p_outpost_pre = 80;
+		let p_outpost_block_pre = 40;
+		let p_semiblocked_pre = -200;
+		let p_blocked_pre = -200;
+		let p_passing_pre = 80;
+		let nb_outpost_pre = 80;
+		let nb_outpost_reach_pre = 80;
 		let rq_atk_open_pre = 40;
 		let rq_atk_semiopen_pre = 20;
-		let rq_open_pre = 140 - rq_atk_open_pre;
-		let rq_semiopen_pre = 100 - rq_atk_semiopen_pre;
+		let rq_open_pre = 140;
+		let rq_semiopen_pre = 120;
 		let k_opposition_pre = [0, 60];
 		let k_mobility_as_q_pre = [-8, 0];
-		let k_pawn_dist_1_pre = [0, 80];
-		let k_pawn_dist_2_pre = [0, 60];
-		let g_atk_pro_pre = 60;
+		let k_pawn_dist_1_pre = [0, 90];
+		let k_pawn_dist_2_pre = [0, 40];
+		let g_atk_pro_pre = 150;
 		let g_atk_pro_pinned_pre = 800 - g_atk_pro_pre;
 		let g_atk_pro_double_pre = 1200 - g_atk_pro_pre * 2;
 		let g_atk_center_pre = [40, 0];
@@ -82,17 +83,19 @@ impl Weights {
 		let g_atk_ppt_pre = 30;
 		let g_ppawn_block_pre = 40;
 		let g_atk_pro_ppb_pre = 40;
-		let s_mobility = 4;
+		let s_mobility = 5;
 		let s_bishop_pair_pre = 80;
 		let s_qnight_pre = 40;
+		let s_castled_pre = [120, 0];
 		let s_turn_pre = 40;
 		let s_turn_div = 16;
 
-		/* These are PeSTO values + additional Kaissa weights!
-				+20 per pawn in center (d4-e6) in mittelspiel
-				-15 per knights and bishops at initial squares in mittelspiel
-				+20 per knight in center (d4-e6) in mittelspiel
-			They will be used as a sort of tiebreak... */
+		/* These are PeSTO values (used as 1/4 score tiebreakers) + Kaissa weights (x4 of course):
+				+80 per pawn in center (d4-e6) in mittelspiel
+				-30 per knights and bishops at initial queen squares in mittelspiel
+				-60 per knights and bishops at initial king squares in mittelspiel
+				+80 per knight in center (d4-e6) in mittelspiel
+		*/
 
 		let pesto = [
 			// opening or middlegame
@@ -101,10 +104,10 @@ impl Weights {
 				[
 				      0,   0,   0,   0,   0,   0,  0,   0,
  				     98, 134,  61,  95,  68, 126, 34, -11,
-				     -6,   7,  26,  31,  65,  56, 25, -20,
-				    -14,  13,   6,  41,  43,  12, 17, -23,
-				    -27,  -2,  -5,  32,  37,   6, 10, -25,
-				    -26,  -4,  -4,  10,  23,   3, 33, -12,
+				     -6,   7,  26, 111, 145,  56, 25, -20,
+				    -14,  13,   6, 101, 103,  12, 17, -23,
+				    -27,  -2,  -5,  92,  97,   6, 10, -25,
+				    -26,  -4,  -4, -10,   3,   3, 33, -12,
 				    -35,  -1, -20, -23, -15,  24, 38, -22,
 				      0,   0,   0,   0,   0,   0,  0,   0,
 				],
@@ -112,12 +115,12 @@ impl Weights {
 				[
 				    -167, -89, -34, -49,  61, -97, -15, -107,
 				     -73, -41,  72,  36,  23,  62,   7,  -17,
-				     -47,  60,  37,  85, 104, 129,  73,   44,
-				      -9,  17,  19,  73,  57,  69,  18,   22,
-				     -13,   4,  16,  33,  48,  19,  21,   -8,
+				     -47,  60,  37, 145, 164, 129,  73,   44,
+				      -9,  17,  19, 133, 117,  69,  18,   22,
+				     -13,   4,  16,  93, 108,  19,  21,   -8,
 				     -23,  -9,  12,  10,  19,  17,  25,  -16,
 				     -29, -53, -12,  -3,  -1,  18, -14,  -19,
-				    -105, -36, -58, -33, -17, -28, -34,  -23,
+				    -105, -51, -58, -33, -17, -28, -109, -23,
 				],
 				// bishops
 				[
@@ -128,7 +131,7 @@ impl Weights {
 				     -6,  13,  13,  26,  34,  12,  10,   4,
 				      0,  15,  15,  15,  14,  27,  18,  10,
 				      4,  15,  16,   0,   7,  21,  33,   1,
-				    -33,  -3, -29, -21, -13, -27, -39, -21,
+				    -33,  -3, -44, -21, -13, -72, -39, -21,
 				],
 				// rooks
 				[
@@ -235,16 +238,14 @@ impl Weights {
 			]
 		];
 
-		let pesto_mult = 2;	// 4 - default, 2 - half
-
 		/* Transform PW (flip for white, negative for black) and apply coefficients */
 
 		let mut heatmap: [[[i32; 64]; 14]; 2] = [[[0; 64]; 14]; 2];
 		for i in 0..2 {
 			for j in 0..6 {
 				for k in 0..64 {
-					heatmap[i][(j << 1) + 2][k] =  pesto[i][j][flip(k)] * pesto_mult + pieces_weights_const[i][j];
-					heatmap[i][(j << 1) + 3][k] = -pesto[i][j][k      ] * pesto_mult - pieces_weights_const[i][j];
+					heatmap[i][(j << 1) + 2][k] =  pesto[i][j][flip(k)] + pieces_weights_const[i][j];
+					heatmap[i][(j << 1) + 3][k] = -pesto[i][j][k      ] - pieces_weights_const[i][j];
 				}
 			}
 		}
@@ -288,6 +289,7 @@ impl Weights {
 			s_mobility,
 			s_bishop_pair: colour_transform(s_bishop_pair_pre),
 			s_qnight: colour_transform(s_qnight_pre),
+			s_castled: [colour_transform(s_castled_pre[0]), colour_transform(s_castled_pre[1])],
 			s_turn: colour_transform(s_turn_pre),
 			s_turn_div,
 			rand: 0

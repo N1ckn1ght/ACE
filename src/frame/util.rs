@@ -39,8 +39,8 @@ pub const PATH_SMP2: &str = "./res/step_maps_pawn_black";
 pub const PATH_RNK:  &str = "./res/ranks";                  // disincluding current square
 pub const PATH_FLS:  &str = "./res/files";
 pub const PATH_FKS:  &str = "./res/flanks";                 // left and right files (edge has one)
-pub const PATH_FWD:  &str = "./res/forward_field";          // all ranks starting from Rank + 1 (colour-dependent)
-pub const PATH_FWD2: &str = "./res/forward_field";
+pub const PATH_FWD:  &str = "./res/forward_field_white";          // all ranks starting from Rank + 1 (colour-dependent)
+pub const PATH_FWD2: &str = "./res/forward_field_black";
 pub const PATH_RAD2: &str = "./res/attack_maps_radius_2";   // like king map, but radius 2
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
@@ -466,13 +466,13 @@ pub fn score_transform(mut score: i32, turn: bool) -> String {
             let ts = 1 + (LARGE - score) >> 1;
             return "M+".to_string() + &ts.to_string();
         }
-        return "+".to_string() + &score.to_string();
+        return "+".to_string() + &(score / 4).to_string();
     }
     if score < -LARGM {
         let ts = 1 + (LARGE + score) >> 1;
         return "M-".to_string() + &ts.to_string();
     }
-    score.to_string()
+    (score / 4).to_string()
 }
 
 
