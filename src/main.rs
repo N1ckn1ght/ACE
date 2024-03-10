@@ -19,6 +19,8 @@ fn main() {
     init_leaping_attacks();
     init_secondary_maps();
 
+    return;
+
     // memtest();
     
     // test boards:
@@ -29,7 +31,7 @@ fn main() {
     let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
 
-    chara.w.random_fact = 0;
+    // chara.w.random_fact = 0;
 
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 

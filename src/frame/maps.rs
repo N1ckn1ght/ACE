@@ -21,7 +21,8 @@ pub struct Maps {
     pub files:               Vec<u64>,
     pub ranks:               Vec<u64>,
     pub flanks:              Vec<u64>,
-    pub fwd:                [Vec<u64>; 2]
+    pub fwd:                [Vec<u64>; 2],
+    pub rad2:                 Vec<u64>
 }
 
 impl Default for Maps {
@@ -44,6 +45,7 @@ impl Default for Maps {
         let ranks                   = file_to_vector(PATH_RNK);
         let flanks                  = file_to_vector(PATH_FKS);
         let fwd                     = [file_to_vector(PATH_FWD), file_to_vector(PATH_FWD2)];
+        let rad2                    = file_to_vector(PATH_RAD2);
 
         Self {
             attacks_rook: attack_maps_rook,
@@ -63,7 +65,8 @@ impl Default for Maps {
             files,
             ranks,
             flanks,
-            fwd
+            fwd,
+            rad2
         }
     }
 }

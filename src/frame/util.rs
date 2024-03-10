@@ -41,6 +41,7 @@ pub const PATH_FLS:  &str = "./res/files";
 pub const PATH_FKS:  &str = "./res/flanks";                 // left and right files (edge has one)
 pub const PATH_FWD:  &str = "./res/forward_field";          // all ranks starting from Rank + 1 (colour-dependent)
 pub const PATH_FWD2: &str = "./res/forward_field";
+pub const PATH_RAD2: &str = "./res/attack_maps_radius_2";   // like king map, but radius 2
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 
