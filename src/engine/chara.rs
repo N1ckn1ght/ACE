@@ -161,7 +161,7 @@ impl<'a> Chara<'a> {
 			println!("#DEBUG\t--------------------------------");
 			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score_transform(score, self.board.turn), self.nodes);
 
-			print!("#DEBUG\tKiller 0:");
+			print!("#DEBUG\tKillers, best of the 2:");
 			for (i, mov) in self.killer[0].iter().enumerate().take(depth as usize) {
 				if *mov != 0 {
 					print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
@@ -170,7 +170,7 @@ impl<'a> Chara<'a> {
 				}
 			}
 			println!();
-			print!("#DEBUG\tKiller 1:");
+			/* print!("#DEBUG\tKiller 1:");
 			for (i, mov) in self.killer[1].iter().enumerate().take(depth as usize) {
 				if *mov != 0 {
 					print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
@@ -178,7 +178,7 @@ impl<'a> Chara<'a> {
 					print!(" -");
 				}
 			}
-			println!();
+			println!(); */
 
 			print!("#DEBUG\tExpected line:");
 			for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
