@@ -161,24 +161,17 @@ impl<'a> Chara<'a> {
 			println!("#DEBUG\t--------------------------------");
 			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score_transform(score, self.board.turn), self.nodes);
 
-			print!("#DEBUG\tKillers, best of the 2:");
-			for (i, mov) in self.killer[0].iter().enumerate().take(depth as usize) {
-				if *mov != 0 {
-					print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
-				} else {
-					print!(" -");
+			for (j, killer) in self.killer.iter().enumerate() {
+				print!("#DEBUG\tKiller {}:", j);
+				for (i, mov) in killer.iter().enumerate().take(depth as usize) {
+					if *mov != 0 {
+						print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
+					} else {
+						print!(" -");
+					}
 				}
+				println!();
 			}
-			println!();
-			/* print!("#DEBUG\tKiller 1:");
-			for (i, mov) in self.killer[1].iter().enumerate().take(depth as usize) {
-				if *mov != 0 {
-					print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
-				} else {
-					print!(" -");
-				}
-			}
-			println!(); */
 
 			print!("#DEBUG\tExpected line:");
 			for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
@@ -813,8 +806,8 @@ impl<'a> Chara<'a> {
 			}
 		}
 
-		score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
-		score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
+		score_pd[0] += (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
+		score_pd[0] += (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
 		if mptr.attacks_king[kbits[0]] & (pass[0] | pass[1]) != 0 {
 			score_pd[0] += self.w.k_pawn_dist1[0][0];
 			score_pd[1] += self.w.k_pawn_dist1[1][0];

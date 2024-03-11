@@ -55,18 +55,18 @@ impl Weights {
 
 		let pieces_weights_const = [
 			[ 328, 1348, 1460, 1908, 4100, 0 ],
-			[ 376, 1124, 1188, 2048, 3744, 0 ]
+			[ 396, 1124, 1188, 2048, 3744, 0 ]
 		];
 
-		let p_isolated_pre = -45;
-		let p_doubled_pre = -45;
+		let p_isolated_pre = -40;
+		let p_doubled_pre = -40;
 		let p_phalanga_pre = 80;
 		let p_atk_center_pre = 40;
 		let p_outpost_pre = 80;
 		let p_outpost_block_pre = 40;
 		let p_semiblocked_pre = -200;
 		let p_blocked_pre = -200;
-		let p_passing_pre = [0, 40, 120, 200, 300, 400, 600, 0];
+		let p_passing_pre = [0, 40, 110, 180, 270, 360, 550, 0];
 		let nb_outpost_pre = 80;
 		let nb_outpost_reach_pre = 80;
 		let rq_atk_open_pre = 40;
@@ -74,32 +74,37 @@ impl Weights {
 		let rq_open_pre = 100;
 		let rq_semiopen_pre = 80;
 		let k_opposition_pre = [0, 60];
-		let k_mobility_as_q_pre = [-8, 0];
+		let k_mobility_as_q_pre = [-5, 0];	// second is always 0
 		let k_pawn_dist1_pre = [0, 120];
 		let k_pawn_dist2_pre = [0, 40];
 		let k_center_dist1_pre = [-40; 120];
 		let k_center_dist2_pre = [-40; 80];
-		let g_atk_pro_pre = 100;
+		let g_atk_pro_pre = 40;
 		let g_atk_pro_pinned_pre = 752 - g_atk_pro_pre;
 		let g_atk_pro_double_pre = 1124 - g_atk_pro_pre * 2;
 		let g_atk_center_pre = [40, 0];
-		let g_atk_near_king_pre = [ 40, 32, 40, 32, 8 ];
+		let g_atk_near_king_pre = [ 40, 32, 40, 20, 10 ];
 		let g_atk_ppt_pre = 20;
 		let g_ppawn_block_pre = 40;
 		let g_atk_pro_ppb_pre = 40;
-		let s_mobility = 4;
+		let s_mobility = 5;
 		let s_bishop_pair_pre = 80;
 		let s_qnight_pre = 40;
 		let s_castled_pre = [120, 0];
 		let s_turn_pre = 35;
-		let s_turn_div = 16;
+		let s_turn_div = 12;
 
-		/* These are PeSTO values (used as 1/4 score tiebreakers) + Kaissa weights (x4 of course):
-				+80 per pawn in center (d4-e6) in mittelspiel
-				-30 per knights and bishops at initial queen squares in mittelspiel
-				-60 per knights and bishops at initial king squares in mittelspiel
-				+80 per knight in center (d4-e6) in mittelspiel
-				+160 per rook on 7th in mittelspiel
+		/* These are PeSTO values (used as 1/4 score tiebreakers) + Kaissa weights (x4 of course) + my improvisation:
+			+80/0 per pawn in center (d4-e6) in mittelspiel
+			+25/0 per pawn at c4-c6
+			+10/10 per every rank starting from 3rd (e.g. +10/20/30...)
+			+80/40 per knight in center (d4-e6)
+			-20/0 per knight on g3, d2
+			-30/0 per knights and bishops at initial queen squares
+			-60/0 per knights and bishops at initial king squares
+			-30/0 per rook at b1, g1
+			+180/40 per rook on 7th
+			+10/0 per queen at initial
 		*/
 
 		let pesto = [
@@ -108,11 +113,11 @@ impl Weights {
 				// pawns
 				[
 				      0,   0,   0,   0,   0,   0,  0,   0,
- 				     98, 134,  61,  95,  68, 126, 34, -11,
-				     -6,   7,  26, 111, 145,  56, 25, -20,
-				    -14,  13,   6, 101, 103,  12, 17, -23,
-				    -27,  -2,  -5,  92,  97,   6, 10, -25,
-				    -26,  -4,  -4, -10,   3,   3, 33, -12,
+ 				    148, 184, 111, 145, 118, 176, 84,  39,
+				     34,  47,  91, 151, 185,  96, 65,  20,
+				     16,  43,  61, 131, 133,  42, 47,   7,
+				     -7,  18,  40, 112, 117,  26, 30,  -5,
+				    -16,   6,   6,   0,  13,  13, 43,  -2,
 				    -35,  -1, -20, -23, -15,  24, 38, -22,
 				      0,   0,   0,   0,   0,   0,  0,   0,
 				],
@@ -123,8 +128,8 @@ impl Weights {
 				     -47,  60,  37, 145, 164, 129,  73,   44,
 				      -9,  17,  19, 133, 117,  69,  18,   22,
 				     -13,   4,  16,  93, 108,  19,  21,   -8,
-				     -23,  -9,  12,  10,  19,  17,  25,  -16,
-				     -29, -53, -12,  -3,  -1,  18, -14,  -19,
+				     -23,  -9,  12,  10,  19,  17,   5,  -16,
+				     -29, -53, -12, -23,  -1,  18, -14,  -19,
 				    -105, -51, -58, -33, -17, -28, -109, -23,
 				],
 				// bishops
@@ -141,13 +146,13 @@ impl Weights {
 				// rooks
 				[
 				     32,  42,  32,  51,  63,   9,  31,  43,
-				    187, 192, 218, 222, 240, 227, 186, 204,
+				    207, 212, 238, 242, 260, 247, 206, 224,
 				     -5,  19,  26,  36,  17,  45,  61,  16,
 				    -24, -11,   7,  26,  24,  35,  -8, -20,
 				    -36, -26, -12,  -1,   9,  -7,   6, -23,
  				    -45, -25, -16, -17,   3,   0,  -5, -33,
  				    -44, -16, -20,  -9,  -1,  11,  -6, -71,
- 				    -19, -13,   1,  17,  16,   7, -37, -26,
+ 				    -19, -43,   1,  17,  16,   7, -67, -26,
 				],
 				// queens
 				[
@@ -158,7 +163,7 @@ impl Weights {
  				     -9, -26,  -9, -10,  -2,  -4,   3,  -3,
  				    -14,   2, -11,  -2,  -5,   2,  14,   5,
 				    -35,  -8,  11,   2,   8,  15,  -3,   1,
- 				     -1, -18,  -9,  10, -15, -25, -31, -50,
+ 				     -1, -18,  -9,  20, -15, -25, -31, -50,
 				],
 				// king
 				[
@@ -177,11 +182,11 @@ impl Weights {
 				// pawns
 				[
 					  0,   0,   0,   0,   0,   0,   0,   0,
-					178, 173, 158, 134, 147, 132, 165, 187,
-					 94, 100,  85,  67,  56,  53,  82,  84,
-					 32,  24,  13,   5,  -2,   4,  17,  17,
-					 13,   9,  -3,  -7,  -7,  -8,   3,  -1,
-					  4,   7,  -6,   1,   0,  -5,  -1,  -8,
+					228, 223, 208, 184, 197, 182, 215, 237,
+					134, 140, 125, 107,  96,  93, 122, 124,
+					 62,  54,  43,  35,  28,  34,  47,  47,
+					 33,  29,  17,  13,  13,  12,  23,  19,
+					 14,  17,   4,  11,  10,   5,   9,   2,
 					 13,   8,   8,  10,  13,   0,   2,  -7,
 					  0,   0,   0,   0,   0,   0,   0,   0,
 				],
@@ -189,9 +194,9 @@ impl Weights {
 				[
 					-58, -38, -13, -28, -31, -27, -63, -99,
 					-25,  -8, -25,  -2,  -9, -25, -24, -52,
-					-24, -20,  10,   9,  -1,  -9, -19, -41,
-					-17,   3,  22,  22,  22,  11,   8, -18,
-					-18,  -6,  16,  25,  16,  17,   4, -18,
+					-24, -20,  10,  49,  39,  -9, -19, -41,
+					-17,   3,  22,  62,  62,  11,   8, -18,
+					-18,  -6,  16,  65,  56,  17,   4, -18,
 					-23,  -3,  -1,  15,  10,  -3, -20, -22,
 					-42, -20, -10,  -5,  -2, -20, -23, -44,
 					-29, -51, -23, -15, -22, -18, -50, -64,
@@ -210,7 +215,7 @@ impl Weights {
 				// rooks
 				[
 					13, 10, 18, 15, 12,  12,   8,   5,
-					11, 13, 13, 11, -3,   3,   8,   3,
+					51, 53, 53, 51, 37,  43,  48,  43,
 					 7,  7,  7,  5,  4,  -3,  -5,  -3,
 					 4,  3, 13,  1,  2,   1,  -1,   2,
 					 3,  5,  8,  4, -5,  -6,  -8, -11,
