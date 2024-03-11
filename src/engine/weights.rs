@@ -66,7 +66,7 @@ impl Weights {
 		let p_outpost_block_pre = 40;
 		let p_semiblocked_pre = -200;
 		let p_blocked_pre = -200;
-		let p_passing_pre = [0, 40, 110, 180, 270, 360, 550, 0];
+		let p_passing_pre = [0, 40, 110, 180, 240, 320, 400, 0];
 		let nb_outpost_pre = 80;
 		let nb_outpost_reach_pre = 80;
 		let rq_atk_open_pre = 40;
@@ -79,11 +79,11 @@ impl Weights {
 		let k_pawn_dist2_pre = [0, 40];
 		let k_center_dist1_pre = [-40; 120];
 		let k_center_dist2_pre = [-40; 80];
-		let g_atk_pro_pre = 40;
+		let g_atk_pro_pre = 42;
 		let g_atk_pro_pinned_pre = 752 - g_atk_pro_pre;
 		let g_atk_pro_double_pre = 1124 - g_atk_pro_pre * 2;
 		let g_atk_center_pre = [40, 0];
-		let g_atk_near_king_pre = [ 40, 32, 40, 20, 10 ];
+		let g_atk_near_king_pre = [ 40, 32, 40, 24, 16 ];
 		let g_atk_ppt_pre = 20;
 		let g_ppawn_block_pre = 40;
 		let g_atk_pro_ppb_pre = 40;
