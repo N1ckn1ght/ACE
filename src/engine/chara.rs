@@ -9,6 +9,8 @@ use super::{weights::Weights, zobrist::Zobrist};
 /* CONSTANTS FOR STATIC EVALUATION */
 pub const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
 pub const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
+pub const CENTR1: [u64; 2] = [0b0000000000111100001111000011110000111100001111000000000000000000, 0b0000000000000000001111000011110000111100001111000011110000000000];
+pub const CENTR2: [u64; 2] = [0b0111111001111110011111100111111001111110011111100111111000000000, 0b0000000001111110011111100111111001111110011111100111111001111110];
 
 pub struct Chara<'a> {
 	pub board:				&'a mut Board,
@@ -289,20 +291,26 @@ impl<'a> Chara<'a> {
 				if *mov == self.tpv[0][self.hmc] {
 					self.tpv_flag = true;
 					*mov |= MFE_PV1;
-					continue;
-				} 
-				if *mov == self.killer[0][self.hmc] {
-					*mov |= MFE_KILLER1;
-					continue;
+					break;
 				}
-				if *mov == self.killer[1][self.hmc] { 
-					*mov |= MFE_KILLER2;
-					continue;
-				}
+			}
+		}
+		for mov in moves.iter_mut() {
+			//move_quiet_pawn_derank(mov);
+			if *mov == self.killer[0][self.hmc] {
+				*mov |= MFE_KILLER1;
+				continue;
+			}
+			if *mov == self.killer[1][self.hmc] { 
+				*mov |= MFE_KILLER2;
+				continue;
 			}
 		}
 		moves.sort();
 		moves.reverse();
+		// for mov in moves.iter_mut() {
+		// 	move_quiet_pawn_rank_back(mov);
+		// }
 		
 		let mut hf_cur = HF_LOW;
 		depth += in_check as i16;
@@ -310,8 +318,8 @@ impl<'a> Chara<'a> {
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let mut score = if i != 0 && depth > 2 && (*mov > ME_CAPTURE_MIN || *mov & !MFE_CLEAR != 0 || in_check) {
-				-self.search(-beta, -alpha, depth - 2)
+			let mut score = if i != 0 && depth > 3 && (*mov > ME_CAPTURE_MIN || *mov & !MFE_CLEAR != 0 || in_check) {
+				-self.search(-beta, -alpha, depth - 2 - (i > 7 && i + 9 > moves.len()) as i16)
 			} else {
 				alpha + 1
 			};
@@ -437,7 +445,7 @@ impl<'a> Chara<'a> {
 		let mut score: i32 = 0;
 		let mut score_pd: [i32; 2] = [0, 0];
 		// [18 - 56] range
-		let phase_diff = f32::max(0.0, f32::min((counter - 18) as f32 * 0.025, 1.0));
+		let phase_diff = f32::min((max(18, counter) - 18) as f32 * 0.025, 1.0);
 
 		let mut pattacks     = [0; 2];
 		let mut mobility     = [0; 2];
@@ -478,7 +486,7 @@ impl<'a> Chara<'a> {
 				}
 				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
 				if (mptr.files[sq] | mptr.flanks[sq]) & mptr.fwd[ally][sq] & bptr[P | enemy] == 0 {
-					score += self.w.p_passing[ally];
+					score += self.w.p_passing[ally][sq >> 3];
 					pass[ally] |= 1 << sq;
 					ppt[ally] |= mptr.files[sq] & mptr.fwd[ally][sq];
 				}
@@ -808,18 +816,18 @@ impl<'a> Chara<'a> {
 		score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
 		score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
 		if mptr.attacks_king[kbits[0]] & (pass[0] | pass[1]) != 0 {
-			score_pd[0] += self.w.k_pawn_dist_1[0][0];
-			score_pd[1] += self.w.k_pawn_dist_1[1][0];
+			score_pd[0] += self.w.k_pawn_dist1[0][0];
+			score_pd[1] += self.w.k_pawn_dist1[1][0];
 		} else if mptr.rad2[kbits[0]] & (pass[0] | pass[1]) != 0 {
-			score_pd[0] += self.w.k_pawn_dist_2[0][0];
-			score_pd[1] += self.w.k_pawn_dist_2[1][0];
+			score_pd[0] += self.w.k_pawn_dist2[0][0];
+			score_pd[1] += self.w.k_pawn_dist2[1][0];
 		}
 		if mptr.attacks_king[kbits[1]] & (pass[0] | pass[1]) != 0 {
-			score_pd[0] += self.w.k_pawn_dist_1[0][1];
-			score_pd[1] += self.w.k_pawn_dist_1[1][1];
+			score_pd[0] += self.w.k_pawn_dist1[0][1];
+			score_pd[1] += self.w.k_pawn_dist1[1][1];
 		} else if mptr.rad2[kbits[1]] & (pass[0] | pass[1]) != 0 {
-			score_pd[0] += self.w.k_pawn_dist_2[0][1];
-			score_pd[1] += self.w.k_pawn_dist_2[1][1];
+			score_pd[0] += self.w.k_pawn_dist2[0][1];
+			score_pd[1] += self.w.k_pawn_dist2[1][1];
 		}
 		if ((kbits[0] & 7) as i32 - (kbits[1] & 7) as i32).abs() + ((kbits[0] >> 3) as i32  - (kbits[1] >> 3) as i32).abs() == 2 {
 			score_pd[0] += self.w.k_opposition[0][!self.board.turn as usize];
@@ -832,10 +840,10 @@ impl<'a> Chara<'a> {
 		if bptr[K2] != 0 && bptr[Q2] != 0 {
 			score += self.w.s_qnight[1];
 		}
-		if (bptr[B] & bptr[B] - 1) != 0 {
+		if bptr[B] != 0 && (bptr[B] & bptr[B] - 1) != 0 {
 			score += self.w.s_bishop_pair[0];
 		}
-		if (bptr[B2] & bptr[B2] - 1) != 0 {
+		if bptr[B2] != 0 && (bptr[B2] & bptr[B2] - 1) != 0 {
 			score += self.w.s_bishop_pair[1];
 		}
 		if self.castled[0] {
@@ -845,6 +853,20 @@ impl<'a> Chara<'a> {
 		if self.castled[1] {
 			score_pd[0] += self.w.s_castled[0][1];
 			score_pd[1] += self.w.s_castled[1][1];
+		}
+		if bptr[K] & CENTR1[0] != 0 {
+			score_pd[0] += self.w.k_center_dist1[0][0];
+			score_pd[1] += self.w.k_center_dist1[1][0];
+		} else if bptr[K] & CENTR2[0] != 0 {
+			score_pd[0] += self.w.k_center_dist2[0][0];
+			score_pd[1] += self.w.k_center_dist2[1][0];
+		}
+		if bptr[K2] & CENTR1[1] != 0 {
+			score_pd[0] += self.w.k_center_dist1[0][1];
+			score_pd[1] += self.w.k_center_dist1[1][1];
+		} else if bptr[K2] & CENTR2[1] != 0 {
+			score_pd[0] += self.w.k_center_dist2[0][1];
+			score_pd[1] += self.w.k_center_dist2[1][1];
 		}
 
 		score += ((score_pd[0] as f32 * phase_diff) + (score_pd[1] as f32 * (1.0 - phase_diff))) as i32;
@@ -926,13 +948,42 @@ mod tests {
 			"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
 			"rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
 			"rnbqkb1r/pppp1ppp/8/4p2n/4P2N/8/PPPP1PPP/RNBQKB1R w KQkq - 4 4",
-			"r3k2r/pbppnpp1/1p1bn2p/4p1q1/4P1Q1/1P1BN2P/PBPPNPP1/R3K2R w KQkq - 2 11"
+			"r3k2r/pbppnpp1/1p1bn2p/4p1q1/4P1Q1/1P1BN2P/PBPPNPP1/R3K2R w KQkq - 2 11",
+			"4k2r/p4ppp/8/8/8/8/P4PPP/4K2R w Kk - 0 1",
+			// "8/5P2/p3k3/6P1/1p6/3K3P/2p5/8 w - - 0 1" - assymetric because of PeSto
 		];
 		for fen in fens.into_iter() {
 			let mut board = Board::import(fen);
 			let mut chara = Chara::init(&mut board);
 			let eval = chara.eval();
 			assert_eq!(eval, chara.w.s_turn[0]);
+		}
+
+		for fen in fens.into_iter() {
+			let mut board = Board::import(fen);
+			board.turn = !board.turn;
+			let mut chara = Chara::init(&mut board);
+			let eval = chara.eval();
+			assert_eq!(eval, chara.w.s_turn[0]);
+		}
+	}
+
+	#[test]
+	fn test_chara_eval_initial_3() {
+		let wfens = [
+			"4k3/8/1pp5/8/7P/6P1/8/4K3 w - - 0 1",
+			"rnbq1rk1/ppp2ppp/5n2/2bpp3/4P3/2N2N2/PPPPBPPP/R1BQK2R w KQ - 0 1"
+		];
+		let bfens = [
+			"4k3/8/6p1/7p/8/1PP5/8/4K3 b - - 0 1",
+			"r1bqk2r/ppppbppp/2n2n2/4p3/2BPP3/5N2/PPP2PPP/RNBQ1RK1 b kq - 0 1"
+		];
+		for i in 0..wfens.len() {
+			let mut board1 = Board::import(wfens[i]);
+			let mut board2 = Board::import(bfens[i]);
+			let mut chara1 = Chara::init(&mut board1);
+			let mut chara2 = Chara::init(&mut board2);
+			assert_eq!(chara1.eval(), chara2.eval());
 		}
 	}
 

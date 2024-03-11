@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use std::{cmp::min, fs, io::Cursor, path::Path};
+use std::{cmp::{max, min}, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
@@ -210,6 +210,11 @@ pub fn move_get_piece(mov: u32) -> usize {
 }
 
 #[inline]
+pub fn move_get_piece_inverse(mov: u32) -> usize {
+    (mov >> 12 & 0b1111) as usize
+}
+
+#[inline]
 pub fn move_get_promotion(mov: u32) -> usize {
     (mov >> 20 & 0b1111) as usize
 }
@@ -217,6 +222,20 @@ pub fn move_get_promotion(mov: u32) -> usize {
 #[inline]
 pub fn move_get_capture(mov: u32) -> usize {
     (mov >> 27 & 0b1111) as usize
+}
+
+#[inline]
+pub fn move_quiet_pawn_derank(mov: &mut u32) {
+    if move_get_piece(*mov) | 1 == P2 && max(move_get_from(*mov, false), move_get_to(*mov, false)) - min(move_get_from(*mov, false), move_get_to(*mov, false)) == 8 {
+        *mov ^= 0b1111000000000000;
+    }
+}
+
+#[inline]
+pub fn move_quiet_pawn_rank_back(mov: &mut u32) {
+    if move_get_piece_inverse(*mov) | 1 == P2 && max(move_get_from(*mov, false), move_get_to(*mov, false)) - min(move_get_from(*mov, false), move_get_to(*mov, false)) == 8 {
+        *mov ^= 0b1111000000000000;
+    }
 }
 
 /* ADDITIONAL DATA STRUCTURES */

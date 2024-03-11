@@ -19,7 +19,7 @@ pub struct Weights {
 	pub p_outpost_block:  [i32;  2], 			// pawn that blockades a strong square (technically preventing pawn above to advance further)
 	pub p_semiblocked: 	  [i32;  2],			// pawn blocked on starting square by enemy pieces, use for C/F files
 	pub p_blocked:		  [i32;  2],			// pawn blocked on starting square by anything, use for D/E files
-	pub p_passing:		  [i32;  2],			// relatively small additional bonus per passing pawn
+	pub p_passing:		 [[i32;  8];  2],		// small additional bonus per passing pawn
 	pub nb_outpost:		  [i32;  2],			// knight/bishop stays on outpost sq
 	pub nb_outpost_reach: [i32;  2],			// knight/bishop may reach an outpost sq easily
 	pub rq_open:		  [i32;  2],			// rook/queen on open file (will apply with atk_open!)
@@ -28,8 +28,10 @@ pub struct Weights {
 	pub rq_atk_semiopen:  [i32;  2],			// rook/queen attacks any semiopen file
 	pub k_opposition:	 [[i32;  2];  2],		// king has opposition (phased)
 	pub k_mobility_as_q: [[i32;  2];  2],		// king security (phased)
-	pub k_pawn_dist_1:   [[i32;  2];  2],		// bonus if near passing pawn (phased)
-	pub k_pawn_dist_2:   [[i32;  2];  2],		// bonus if near passing pawn (phased)
+	pub k_pawn_dist1:    [[i32;  2];  2],		// bonus if near passing pawn (phased)
+	pub k_pawn_dist2:    [[i32;  2];  2],		// bonus if near passing pawn (phased)
+	pub k_center_dist1:  [[i32;  2];  2],		// if king near center (phased)
+	pub k_center_dist2:  [[i32;  2];  2],		// if king near center (phased)
 	pub g_atk_pro:		  [i32;  2],			// per profitable attack (lazy check for pawns)
 	pub g_atk_pro_pinned: [i32;  2],			// per profitable attack on pinned piece (lazy check for pawns)
 	pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
@@ -52,42 +54,44 @@ impl Weights {
 	pub fn init() -> Self {
 
 		let pieces_weights_const = [
-			[ 380, 1240, 1200, 2000, 4000, 0 ],
-			[ 420, 1200, 1400, 2000, 3600, 0 ]
+			[ 328, 1348, 1460, 1908, 4100, 0 ],
+			[ 376, 1124, 1188, 2048, 3744, 0 ]
 		];
 
-		let p_isolated_pre = -80;
-		let p_doubled_pre = -40;
+		let p_isolated_pre = -45;
+		let p_doubled_pre = -45;
 		let p_phalanga_pre = 80;
 		let p_atk_center_pre = 40;
 		let p_outpost_pre = 80;
 		let p_outpost_block_pre = 40;
 		let p_semiblocked_pre = -200;
 		let p_blocked_pre = -200;
-		let p_passing_pre = 80;
+		let p_passing_pre = [0, 40, 120, 200, 300, 400, 600, 0];
 		let nb_outpost_pre = 80;
 		let nb_outpost_reach_pre = 80;
 		let rq_atk_open_pre = 40;
 		let rq_atk_semiopen_pre = 20;
-		let rq_open_pre = 140;
-		let rq_semiopen_pre = 120;
+		let rq_open_pre = 100;
+		let rq_semiopen_pre = 80;
 		let k_opposition_pre = [0, 60];
 		let k_mobility_as_q_pre = [-8, 0];
-		let k_pawn_dist_1_pre = [0, 90];
-		let k_pawn_dist_2_pre = [0, 40];
-		let g_atk_pro_pre = 150;
-		let g_atk_pro_pinned_pre = 800 - g_atk_pro_pre;
-		let g_atk_pro_double_pre = 1200 - g_atk_pro_pre * 2;
+		let k_pawn_dist1_pre = [0, 120];
+		let k_pawn_dist2_pre = [0, 40];
+		let k_center_dist1_pre = [-40; 120];
+		let k_center_dist2_pre = [-40; 80];
+		let g_atk_pro_pre = 100;
+		let g_atk_pro_pinned_pre = 752 - g_atk_pro_pre;
+		let g_atk_pro_double_pre = 1124 - g_atk_pro_pre * 2;
 		let g_atk_center_pre = [40, 0];
-		let g_atk_near_king_pre = [ 40, 60, 80, 60, 40 ];
-		let g_atk_ppt_pre = 30;
+		let g_atk_near_king_pre = [ 40, 32, 40, 32, 8 ];
+		let g_atk_ppt_pre = 20;
 		let g_ppawn_block_pre = 40;
 		let g_atk_pro_ppb_pre = 40;
-		let s_mobility = 5;
+		let s_mobility = 4;
 		let s_bishop_pair_pre = 80;
 		let s_qnight_pre = 40;
 		let s_castled_pre = [120, 0];
-		let s_turn_pre = 40;
+		let s_turn_pre = 35;
 		let s_turn_div = 16;
 
 		/* These are PeSTO values (used as 1/4 score tiebreakers) + Kaissa weights (x4 of course):
@@ -95,6 +99,7 @@ impl Weights {
 				-30 per knights and bishops at initial queen squares in mittelspiel
 				-60 per knights and bishops at initial king squares in mittelspiel
 				+80 per knight in center (d4-e6) in mittelspiel
+				+160 per rook on 7th in mittelspiel
 		*/
 
 		let pesto = [
@@ -135,14 +140,14 @@ impl Weights {
 				],
 				// rooks
 				[
-				     32,  42,  32,  51, 63,  9,  31,  43,
-				     27,  32,  58,  62, 80, 67,  26,  44,
-				     -5,  19,  26,  36, 17, 45,  61,  16,
-				    -24, -11,   7,  26, 24, 35,  -8, -20,
-				    -36, -26, -12,  -1,  9, -7,   6, -23,
- 				    -45, -25, -16, -17,  3,  0,  -5, -33,
- 				    -44, -16, -20,  -9, -1, 11,  -6, -71,
- 				    -19, -13,   1,  17, 16,  7, -37, -26,
+				     32,  42,  32,  51,  63,   9,  31,  43,
+				    187, 192, 218, 222, 240, 227, 186, 204,
+				     -5,  19,  26,  36,  17,  45,  61,  16,
+				    -24, -11,   7,  26,  24,  35,  -8, -20,
+				    -36, -26, -12,  -1,   9,  -7,   6, -23,
+ 				    -45, -25, -16, -17,   3,   0,  -5, -33,
+ 				    -44, -16, -20,  -9,  -1,  11,  -6, -71,
+ 				    -19, -13,   1,  17,  16,   7, -37, -26,
 				],
 				// queens
 				[
@@ -257,6 +262,14 @@ impl Weights {
 			g_atk_near_king[1][i] = -g_atk_near_king[1][i];
 		}
 
+		let mut p_passing: [[i32; 8]; 2] = [p_passing_pre, p_passing_pre];
+		for i in 0..4 {
+			p_passing[1].swap(i, 7 - i);
+		}
+		for i in 0..8 {
+			p_passing[1][i] = -p_passing[1][i];
+		}
+
 		Self {
 			heatmap,
 			p_isolated: colour_transform(p_isolated_pre),
@@ -267,7 +280,7 @@ impl Weights {
 			p_outpost_block: colour_transform(p_outpost_block_pre),
 			p_semiblocked: colour_transform(p_semiblocked_pre),
 			p_blocked: colour_transform(p_blocked_pre),
-			p_passing: colour_transform(p_passing_pre),
+			p_passing,
 			nb_outpost: colour_transform(nb_outpost_pre),
 			nb_outpost_reach: colour_transform(nb_outpost_reach_pre),
 			rq_open: colour_transform(rq_open_pre),
@@ -276,8 +289,10 @@ impl Weights {
 			rq_atk_semiopen: colour_transform(rq_atk_semiopen_pre),
 			k_opposition: [colour_transform(k_opposition_pre[0]), colour_transform(k_opposition_pre[1])],
 			k_mobility_as_q: [colour_transform(k_mobility_as_q_pre[0]), colour_transform(k_mobility_as_q_pre[1])],
-			k_pawn_dist_1: [colour_transform(k_pawn_dist_1_pre[0]), colour_transform(k_pawn_dist_1_pre[1])],
-			k_pawn_dist_2: [colour_transform(k_pawn_dist_2_pre[0]), colour_transform(k_pawn_dist_2_pre[1])],
+			k_pawn_dist1: [colour_transform(k_pawn_dist1_pre[0]), colour_transform(k_pawn_dist1_pre[1])],
+			k_pawn_dist2: [colour_transform(k_pawn_dist2_pre[0]), colour_transform(k_pawn_dist2_pre[1])],
+			k_center_dist1: [colour_transform(k_center_dist1_pre[0]), colour_transform(k_center_dist1_pre[1])],
+			k_center_dist2: [colour_transform(k_center_dist2_pre[0]), colour_transform(k_center_dist2_pre[1])],
 			g_atk_pro: colour_transform(g_atk_pro_pre),
 			g_atk_pro_pinned: colour_transform(g_atk_pro_pinned_pre),
 			g_atk_pro_double: colour_transform(g_atk_pro_double_pre),
