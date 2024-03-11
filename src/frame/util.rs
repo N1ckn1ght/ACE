@@ -225,15 +225,10 @@ pub fn move_get_capture(mov: u32) -> usize {
 }
 
 #[inline]
-pub fn move_quiet_pawn_derank(mov: &mut u32) {
-    if move_get_piece(*mov) | 1 == P2 && max(move_get_from(*mov, false), move_get_to(*mov, false)) - min(move_get_from(*mov, false), move_get_to(*mov, false)) == 8 {
-        *mov ^= 0b1111000000000000;
-    }
-}
-
-#[inline]
-pub fn move_quiet_pawn_rank_back(mov: &mut u32) {
-    if move_get_piece_inverse(*mov) | 1 == P2 && max(move_get_from(*mov, false), move_get_to(*mov, false)) - min(move_get_from(*mov, false), move_get_to(*mov, false)) == 8 {
+pub fn move_quiet_pawn_derank(mov: &mut u32, bb: u64, turn: bool) {
+    let from = move_get_from(*mov, turn);
+    let to = move_get_to(*mov, turn);
+    if get_bit(bb, from) != 0 && max(from, to) - min(from, to) == 8 {
         *mov ^= 0b1111000000000000;
     }
 }

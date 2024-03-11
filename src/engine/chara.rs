@@ -296,7 +296,7 @@ impl<'a> Chara<'a> {
 			}
 		}
 		for mov in moves.iter_mut() {
-			//move_quiet_pawn_derank(mov);
+			move_quiet_pawn_derank(mov, self.board.bbs[P] | self.board.bbs[P2], self.board.turn);
 			if *mov == self.killer[0][self.hmc] {
 				*mov |= MFE_KILLER1;
 				continue;
@@ -308,9 +308,9 @@ impl<'a> Chara<'a> {
 		}
 		moves.sort();
 		moves.reverse();
-		// for mov in moves.iter_mut() {
-		// 	move_quiet_pawn_rank_back(mov);
-		// }
+		for mov in moves.iter_mut() {
+			move_quiet_pawn_derank(mov, self.board.bbs[P] | self.board.bbs[P2], self.board.turn);
+		}
 		
 		let mut hf_cur = HF_LOW;
 		depth += in_check as i16;
