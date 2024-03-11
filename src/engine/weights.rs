@@ -66,7 +66,7 @@ impl Weights {
 		let p_outpost_block_pre = 40;
 		let p_semiblocked_pre = -200;
 		let p_blocked_pre = -200;
-		let p_passing_pre = [0, 40, 110, 180, 240, 320, 400, 0];
+		let p_passing_pre = [0, 40, 110, 180, 240, 320, 410, 0];
 		let nb_outpost_pre = 80;
 		let nb_outpost_reach_pre = 80;
 		let rq_atk_open_pre = 40;

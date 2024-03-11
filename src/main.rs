@@ -24,7 +24,7 @@ fn main() {
     let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
 
-    chara.w.rand = 0; // 10;
+    chara.w.rand = 10;
 
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
