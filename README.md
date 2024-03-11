@@ -14,8 +14,4 @@ Interface - 10%
 
 ### TODO:
 
-More testing!
-
-Custom opening book
-
 XBoard support
