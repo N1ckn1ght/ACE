@@ -106,10 +106,7 @@ impl<'a> Chara<'a> {
 		self.ts = Instant::now();
 
 		if self.book > 1 {
-
-			println!("#DEBUG\tMove from an opening book.");
-
-			println!("#DEBUG\tRefuting opening book.");
+			println!("#DEBUG\tOpening book is not implemented yet.");
 			self.book = 1;
 		}
 

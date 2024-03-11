@@ -1,3 +1,11 @@
+// --- UNUSED FOR NOW! ---
+
+/* It was more of an idea in order to:
+    - Reduce determinism level
+    - Remove thinking time from 1st and 2nd move in most common positions
+    - More accurate opening play (since it's difficult to find a good move in opening by default)
+*/
+
 use std::collections::HashMap;
 
 use super::zobrist::Zobrist;
@@ -179,7 +187,7 @@ impl Default for Opening {
 impl Opening {
     fn init(&mut self, zob: &Zobrist) {
         for page in self.to_init.iter() {
-            
+            // TODO
         }
     }
     

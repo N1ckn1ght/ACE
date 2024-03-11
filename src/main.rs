@@ -24,12 +24,12 @@ fn main() {
     let mut board = Board::default();
     let mut chara = Chara::init(&mut board);
 
-    chara.w.rand = 10;
+    chara.w.rand = 0;
 
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut hmc = 0;
-    let scan = [false, true];
+    let scan = [true, true];
     let ab = [300, INF];
     // soft limit lol, may overflow by about 1-50 msc5b
     let time = 2950;
