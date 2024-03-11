@@ -16,12 +16,13 @@ pub struct Maps {
     pub attacks_king:        Vec<u64>,
     pub attacks_knight:      Vec<u64>,
     pub attacks_pawns:      [Vec<u64>; 2],  // white / black
+    pub step_pawns:         [Vec<u64>; 2],  // white / black
     
     pub files:               Vec<u64>,
     pub ranks:               Vec<u64>,
-    pub piece_passing:      [Vec<u64>; 2],
-    pub piece_pb:           [Vec<u64>; 2],
-    pub attacks_dn:          Vec<u64>
+    pub flanks:              Vec<u64>,
+    pub fwd:                [Vec<u64>; 2],
+    pub rad2:                 Vec<u64>
 }
 
 impl Default for Maps {
@@ -39,11 +40,12 @@ impl Default for Maps {
         let attack_maps_king        = file_to_vector(PATH_AMK);
         let attack_maps_knight      = file_to_vector(PATH_AMN);
         let attack_maps_pawns       = [file_to_vector(PATH_AMP), file_to_vector(PATH_AMP2)];
+        let step_pawns              = [file_to_vector(PATH_SMP), file_to_vector(PATH_SMP2)];
         let files                   = file_to_vector(PATH_FLS);
         let ranks                   = file_to_vector(PATH_RNK);
-        let piece_passing           = [file_to_vector(PATH_PPM), file_to_vector(PATH_PPM2)];
-        let piece_pb                = [file_to_vector(PATH_PBM), file_to_vector(PATH_PBM2)];
-        let attacks_dn              = file_to_vector(PATH_DAMN);
+        let flanks                  = file_to_vector(PATH_FKS);
+        let fwd                     = [file_to_vector(PATH_FWD), file_to_vector(PATH_FWD2)];
+        let rad2                    = file_to_vector(PATH_RAD2);
 
         Self {
             attacks_rook: attack_maps_rook,
@@ -59,11 +61,12 @@ impl Default for Maps {
             attacks_king: attack_maps_king, 
             attacks_knight: attack_maps_knight,
             attacks_pawns: attack_maps_pawns,
+            step_pawns,
             files,
             ranks,
-            piece_passing,
-            piece_pb,
-            attacks_dn
+            flanks,
+            fwd,
+            rad2
         }
     }
 }

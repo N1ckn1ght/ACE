@@ -8,6 +8,8 @@ pub fn init_leaping_attacks() {
     init64(init_attacks_knight, PATH_AMN);
     init64(init_attacks_pawns_white, PATH_AMP);
     init64(init_attacks_pawns_black, PATH_AMP2);
+    init64(init_step_pawns_white, PATH_SMP);
+    init64(init_step_pawns_black, PATH_SMP2);
 }
 
 fn init_attacks_king(attacks: &mut[u64]) {
@@ -67,6 +69,22 @@ fn init_attacks_pawns_black(black: &mut[u64]) {
     }
 }
 
+fn init_step_pawns_white(white: &mut[u64]) {
+    for (i, step) in white.iter_mut().enumerate() {
+        if i < 56 {
+            set_bit(step, i + 8);
+        }
+    }
+}
+
+fn init_step_pawns_black(black: &mut[u64]) {
+    for (i, step) in black.iter_mut().enumerate() {
+        if i > 7 {
+            set_bit(step, i - 8);
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -110,5 +128,17 @@ mod tests {
         assert_eq!("0000000000000000010000000000000000000000000000000000000000000000", bb_to_str(black[55]));
         assert_eq!("0000000000000000000000000000000000000000000000000000000000000010", bb_to_str(black[ 8]));
         assert_eq!("0000000000000000000000000010100000000000000000000000000000000000", bb_to_str(black[44]));
+    
+        let mut sw = vec![0; 64];
+        let mut sb = vec![0; 64];
+        init_step_pawns_white(&mut sw);
+        init_step_pawns_black(&mut sb);
+
+        assert_eq!("1000000000000000000000000000000000000000000000000000000000000000", bb_to_str(sw[55]));
+        assert_eq!("0000000000000000000000000000000000000000000000000000000100000000", bb_to_str(sw[ 0]));
+        assert_eq!("0000000000000000000000000000000000010000000000000000000000000000", bb_to_str(sw[20]));
+        assert_eq!("0000000000000000000000000000000000000000000000000000000100000000", bb_to_str(sb[16]));
+        assert_eq!("0000000000000000000000000000000000010000000000000000000000000000", bb_to_str(sb[36]));
+        assert_eq!("0000000000000000000000000000000000000000000000000000000010000000", bb_to_str(sb[15]));
     }
 }

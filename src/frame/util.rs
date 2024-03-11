@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use std::{cmp::min, fs, io::Cursor, path::Path};
+use std::{cmp::{max, min}, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
@@ -20,27 +20,28 @@ pub const NODES_BETWEEN_COMMS: u64 = 0b0001111111111111;
 
 /* SPECIFIED PATHES */
 
-// magic maps
+// magic (sliding pieces attack) maps
 pub const PATH_MR:   &str = "./res/magics_rook";
 pub const PATH_BBR:  &str = "./res/blocker_boards_rook";
 pub const PATH_AMR:  &str = "./res/attack_maps_rook";
 pub const PATH_MB:   &str = "./res/magics_bishop";
 pub const PATH_BBB:  &str = "./res/blocker_boards_bishop";
 pub const PATH_AMB:  &str = "./res/attack_maps_bishop";
-// no attack maps for queen, refer to AMB | AMR after magic operations
-// leaping maps
+// no attack maps for queen specifically, refer to AMB | AMR after magic operations
+// leaping pieces attack maps
 pub const PATH_AMK:  &str = "./res/attack_maps_king";
 pub const PATH_AMN:  &str = "./res/attack_maps_knight";
 pub const PATH_AMP:  &str = "./res/attack_maps_pawn_white";
 pub const PATH_AMP2: &str = "./res/attack_maps_pawn_black";
+pub const PATH_SMP:  &str = "./res/step_maps_pawn_white";   // double pawn move (e.g. e2e4) NOT included
+pub const PATH_SMP2: &str = "./res/step_maps_pawn_black";
 // secondary maps
-pub const PATH_RNK:  &str = "./res/ranks";                              // disincluding current square
+pub const PATH_RNK:  &str = "./res/ranks";                  // disincluding current square
 pub const PATH_FLS:  &str = "./res/files";
-pub const PATH_PPM:  &str = "./res/passing_piece_maps_white";           // all three columns
-pub const PATH_PPM2: &str = "./res/passing_piece_maps_black";
-pub const PATH_PBM:  &str = "./res/passing_piece_blocked_maps_white";   // only left and right columns
-pub const PATH_PBM2: &str = "./res/passing_piece_blocked_maps_black";
-pub const PATH_DAMN: &str = "./res/double_attack_maps_knight";          // two move forward for knights (disincluding current square)
+pub const PATH_FKS:  &str = "./res/flanks";                 // left and right files (edge has one)
+pub const PATH_FWD:  &str = "./res/forward_field_white";          // all ranks starting from Rank + 1 (colour-dependent)
+pub const PATH_FWD2: &str = "./res/forward_field_black";
+pub const PATH_RAD2: &str = "./res/attack_maps_radius_2";   // like king map, but radius 2
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 
@@ -82,19 +83,19 @@ pub const CLMASK: u64 = 0x000000000000000E;
 
 /* Move `special` encoding (change only with corresponding functions below) */
 
-pub const MSE_NOTHING:                 u32 = 0b0000;
-pub const MSE_EN_PASSANT:              u32 = 0b1000;
-pub const MSE_CASTLE_SHORT:            u32 = 0b0100;
-pub const MSE_CASTLE_LONG:             u32 = 0b0010;
-pub const MSE_DOUBLE_PAWN:             u32 = 0b0001;
+pub const MSE_NOTHING:                 u32 = 0b0000 << 16;
+pub const MSE_EN_PASSANT:              u32 = 0b1000 << 16;
+pub const MSE_CASTLE_SHORT:            u32 = 0b0100 << 16;
+pub const MSE_CASTLE_LONG:             u32 = 0b0010 << 16;
+pub const MSE_DOUBLE_PAWN:             u32 = 0b0001 << 16;
 // Note: there's no MSE_PROMOTION, it's encoded by piece, same as CAPTURE and PIECE
 
-pub const ME_CAPTURE_MIN: u32 = (P as u32) << 26;
-pub const ME_PV1: u32 = 1 << 31;
-pub const ME_PV2: u32 = 1 << 30;
-pub const ME_KILLER1: u32 = 1 << 25;
-pub const ME_KILLER2: u32 = 1 << 24;
-pub const ME_CLEAR: u32 = 0b00111100111111111111111111111111;
+pub const ME_CAPTURE_MIN: u32 = (P as u32) << 27;
+pub const MFE_PV1: u32 = 1 << 31;
+pub const MFE_KILLER1: u32 = 1 << 26;
+pub const MFE_KILLER2: u32 = 1 << 25;
+pub const MFE_KILLER3: u32 = 1 << 24;
+pub const MFE_CLEAR: u32 = 0b01111000111111111111111111111111;
 
 /* board.castlings bits
     - it won't correlate with MSE because of the color bits anyway */
@@ -104,8 +105,8 @@ pub const CSB: u8 = 0b0010; // castle short black
 pub const CLW: u8 = 0b0100; // castle long white
 pub const CLB: u8 = 0b1000; // castle long black
 
-pub const LARGE: i32 = 0x00100000; // 0x7FFF recommended, any higher is safer though
-pub const INF:   i32 = 0x01000000; // same applies here, if LARGE ix 0x7FFF, use 0xFFFF
+pub const LARGE: i32 = 0x00100000;
+pub const INF:   i32 = 0x01000000;
 pub const LARGM: i32 = LARGE - (HALF_DEPTH_LIMIT << 1) as i32;
 
 /* Branch cache search flags */
@@ -173,39 +174,44 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
 
 // since it's not a struct, let's use more inline fuctions
 // let's keep it in Most Valuable Victim - Least Valuable Attacker way
-// [2 - PV bits][4 - captured piece][2 - killer bits][4 - promotion][[4 - moving piece][6 - square to][6 - square from][4 - SPECIAL]
+// [1 - PV signature][4 - captured piece][2 - killer signature][4 - promotion][4 - SPECIAL][4 - !moving piece][6 - square to][6 - square from]
 // from-to squares are reversed for black pieces
 // note: this is the bottleneck.
 #[inline]
 pub fn move_encode(from: usize, to: usize, piece: usize, capture: usize, promotion: usize, special: u32, turn: bool) -> u32 {
     if turn {
-        special | ((!from & 0b111111) << 4 | (!to & 0b111111) << 10 | (!piece & 0b1111) << 16 | promotion << 20 | capture << 26) as u32
+        special | ((!from & 0b111111) | (!to & 0b111111) << 6 | (!piece & 0b1111) << 12 | promotion << 20 | capture << 27) as u32
     } else {
-        special | (  from             << 4 |   to             << 10 | (!piece & 0b1111) << 16 | promotion << 20 | capture << 26) as u32
+        special | (  from             |   to             << 6 | (!piece & 0b1111) << 12 | promotion << 20 | capture << 27) as u32
     }
 }
 
 #[inline]
 pub fn move_get_from(mov: u32, turn: bool) -> usize {
     if turn {
-        (!mov >> 4 & 0b111111) as usize   
+        (!mov & 0b111111) as usize   
     } else {
-        ( mov >> 4 & 0b111111) as usize
+        ( mov & 0b111111) as usize
     }
 }
 
 #[inline]
 pub fn move_get_to(mov: u32, turn: bool) -> usize {
     if turn {
-        (!mov >> 10 & 0b111111) as usize
+        (!mov >> 6 & 0b111111) as usize
     } else {
-        ( mov >> 10 & 0b111111) as usize
+        ( mov >> 6 & 0b111111) as usize
     }
 }
 
 #[inline]
 pub fn move_get_piece(mov: u32) -> usize {
-    (!mov >> 16 & 0b1111) as usize
+    (!mov >> 12 & 0b1111) as usize
+}
+
+#[inline]
+pub fn move_get_piece_inverse(mov: u32) -> usize {
+    (mov >> 12 & 0b1111) as usize
 }
 
 #[inline]
@@ -215,7 +221,16 @@ pub fn move_get_promotion(mov: u32) -> usize {
 
 #[inline]
 pub fn move_get_capture(mov: u32) -> usize {
-    (mov >> 26 & 0b1111) as usize
+    (mov >> 27 & 0b1111) as usize
+}
+
+#[inline]
+pub fn move_quiet_pawn_derank(mov: &mut u32, bb: u64, turn: bool) {
+    let from = move_get_from(*mov, turn);
+    let to = move_get_to(*mov, turn);
+    if get_bit(bb, from) != 0 && max(from, to) - min(from, to) == 8 {
+        *mov ^= 0b1111000000000000;
+    }
 }
 
 /* ADDITIONAL DATA STRUCTURES */
@@ -465,13 +480,13 @@ pub fn score_transform(mut score: i32, turn: bool) -> String {
             let ts = 1 + (LARGE - score) >> 1;
             return "M+".to_string() + &ts.to_string();
         }
-        return "+".to_string() + &score.to_string();
+        return "+".to_string() + &(score / 4).to_string();
     }
     if score < -LARGM {
         let ts = 1 + (LARGE + score) >> 1;
         return "M-".to_string() + &ts.to_string();
     }
-    score.to_string()
+    (score / 4).to_string()
 }
 
 
