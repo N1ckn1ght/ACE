@@ -131,8 +131,9 @@ impl<'a> Chara<'a> {
 				println!("#DEBUG\tAbort signal reached!");
 				break;
 			}
-			if score > LARGM {
+			if score > LARGM || score < -LARGM {
 				if self.mate_flag {
+					// TODO: if lose - resign straightaway maybe?
 					break;
 				}
 				println!("#DEBUG\tMate detected.");

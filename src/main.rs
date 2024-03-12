@@ -31,7 +31,7 @@ fn main() {
     let mut hmc = 0;
     let scan = [true, true];
     let ab = [300, INF];
-    // soft limit lol, may overflow by about 1-50 msc5b
+    // soft limit lol, may overflow by about ~50ms?
     let time = 2950;
     let dl = 50;
     let mut abi = 0;
