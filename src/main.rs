@@ -26,65 +26,7 @@ fn main() {
 
     chara.w.rand = 0;
 
-    println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
-
-    let mut hmc = 0;
-    let scan = [true, true];
-    let ab = [300, INF];
-    // soft limit lol, may overflow by about ~50ms?
-    let time = 2950;
-    let dl = 50;
-    let mut abi = 0;
-
-    loop {
-        let legals = chara.board.get_legal_moves();
-        if legals.is_empty() {
-            break;
-        }
-
-        if scan[hmc & 1] {
-            println!("Processing...\n");
-            let best_move = chara.think(ab[abi], time, dl);
-            abi = 0;
-            println!();
-            println!("Best move: {} ({})", move_transform(best_move.mov, chara.board.turn), score_transform(best_move.score, chara.board.turn));
-            println!();
-        }
-
-        let mut mov;
-        loop {
-            println!();
-            let str = input();
-
-            if str == "b" {
-                chara.revert_move();
-                hmc -= 2;
-                break;
-            } 
-            if str == "r" {
-                hmc -= 1;
-                break;
-            } 
-            if str == "hr" {
-                hmc -= 1;
-                abi = 1;
-                break;
-            } 
-            if str == "ex" {
-                println!("{}", chara.board.export());
-                continue;
-            }
-
-            mov = move_transform_back(&str.to_owned(), &legals, chara.board.turn);
-            if let Some(i) = mov {
-                chara.make_move(i);
-                break;
-            }
-            println!("Move not found?");
-        }
-
-        hmc += 1;
-    }
+    // comms!
 }
 
 fn input() -> String {
