@@ -7,13 +7,16 @@ use crate::frame::{util::*, board::Board};
 use super::{weights::Weights, zobrist::Zobrist};
 
 /* CONSTANTS FOR STATIC EVALUATION */
+
 pub const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
 pub const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
 pub const CENTR1: [u64; 2] = [0b0000000000111100001111000011110000111100001111000000000000000000, 0b0000000000000000001111000011110000111100001111000011110000000000];
 pub const CENTR2: [u64; 2] = [0b0111111001111110011111100111111001111110011111100111111000000000, 0b0000000001111110011111100111111001111110011111100111111001111110];
 
-pub struct Chara<'a> {
-	pub board:				&'a mut Board,
+pub const DEFAULT_VEC_CAPACITY: usize = 300;
+
+pub struct Chara {
+	pub board:				Board,
 	pub w:					Weights,
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
@@ -49,13 +52,18 @@ pub struct Chara<'a> {
 	pub castled:			[bool; 2]				// white used castle, black used castle
 }
 
-impl<'a> Chara<'a> {
-	// It's a little messy, but any evals are easily modifiable.
-	// No need in modifying something twice to be applied for the different coloir, neither there's a need to write something twice in eval()
-    pub fn init(board: &'a mut Board) -> Chara<'a> {
+impl Default for Chara {
+	fn default() -> Chara {
+		Chara::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+	}
+}
+
+impl Chara {
+    pub fn init(fen: &str) -> Self {
+		let board = Board::import(fen);
 		let zobrist = Zobrist::default();
-		let mut cache_perm_vec = Vec::with_capacity(300);
-		cache_perm_vec.push(zobrist.cache_new(board));
+		let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
+		cache_perm_vec.push(zobrist.cache_new(&board));
 
 		Self {
 			board,
@@ -81,6 +89,24 @@ impl<'a> Chara<'a> {
 		}
     }
 
+	pub fn clear(&mut self) {
+		self.book = 2;
+		self.board = Board::default();
+		self.history_set.clear();
+		self.history_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
+		self.history_vec.push(self.zobrist.cache_new(&self.board));
+		self.castled = [false, false];
+		self.cache_leaves.clear();
+		self.cache_branches.clear();
+	}
+
+	pub fn set_pos(&mut self, fen: &str) {
+		self.clear();
+		self.board = Board::import(fen);
+		self.history_vec.pop();
+		self.history_vec.push(self.zobrist.cache_new(&self.board));
+	}
+
 	pub fn make_move(&mut self, mov: u32) {
 		if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
 			self.castled[self.board.turn as usize] = true;
@@ -88,7 +114,7 @@ impl<'a> Chara<'a> {
 		let prev_hash = *self.history_vec.last().unwrap();
 		self.history_set.insert(prev_hash);
 		self.board.make_move(mov);
-		let hash = self.zobrist.cache_iter(self.board, mov, prev_hash);
+		let hash = self.zobrist.cache_iter(&self.board, mov, prev_hash);
 		self.history_vec.push(hash);
 	}
 
@@ -107,7 +133,7 @@ impl<'a> Chara<'a> {
 
 		if self.book > 1 {
 			println!("#DEBUG\tOpening book is not implemented yet.");
-			self.book = 1;
+			self.book = 0;
 		}
 
 		self.tl = time_limit_ms;
