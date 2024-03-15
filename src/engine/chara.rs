@@ -948,8 +948,7 @@ mod tests {
 
 	#[test]
 	fn test_chara_eval_initial() {
-		let mut board = Board::default();
-		let mut chara = Chara::init(&mut board);
+		let mut chara = Chara::default();
 		let moves = chara.board.get_legal_moves();
 		chara.make_move(move_transform_back("e2e4", &moves, chara.board.turn).unwrap());
 		let moves = chara.board.get_legal_moves();
@@ -971,7 +970,7 @@ mod tests {
 		];
 		for fen in fens.into_iter() {
 			let mut board = Board::import(fen);
-			let mut chara = Chara::init(&mut board);
+			let mut chara = Chara::init(fen);
 			let eval = chara.eval();
 			assert_eq!(eval, chara.w.s_turn[0]);
 		}
@@ -979,7 +978,7 @@ mod tests {
 		for fen in fens.into_iter() {
 			let mut board = Board::import(fen);
 			board.turn = !board.turn;
-			let mut chara = Chara::init(&mut board);
+			let mut chara = Chara::init(&board.export());
 			let eval = chara.eval();
 			assert_eq!(eval, chara.w.s_turn[0]);
 		}
@@ -996,10 +995,8 @@ mod tests {
 			"r1bqk2r/ppppbppp/2n2n2/4p3/2BPP3/5N2/PPP2PPP/RNBQ1RK1 b kq - 0 1"
 		];
 		for i in 0..wfens.len() {
-			let mut board1 = Board::import(wfens[i]);
-			let mut board2 = Board::import(bfens[i]);
-			let mut chara1 = Chara::init(&mut board1);
-			let mut chara2 = Chara::init(&mut board2);
+			let mut chara1 = Chara::init(wfens[i]);
+			let mut chara2 = Chara::init(bfens[i]);
 			assert_eq!(chara1.eval(), chara2.eval());
 		}
 	}
@@ -1007,8 +1004,7 @@ mod tests {
 	#[test]
     fn test_board_aux() {
         let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
-        let mut board = Board::default();
-		let chara = Chara::init(&mut board);
+		let chara = Chara::default();
         for case in ar_true.into_iter() {
             assert_ne!(chara.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
         }
