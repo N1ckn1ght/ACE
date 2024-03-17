@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::max, collections::{HashMap, HashSet}, time::Instant};
+use std::{cmp::{max, min}, collections::{HashMap, HashSet}, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{weights::Weights, zobrist::Zobrist};
@@ -312,8 +312,25 @@ impl Chara {
 				}
 			}
 		}
+
 		for mov in moves.iter_mut() {
-			move_quiet_pawn_derank(mov, self.board.bbs[P] | self.board.bbs[P2], self.board.turn);
+			// additional pre sort flag that could be removed later
+			*mov |= MFE_HEURISTIC;
+			
+			if move_get_piece(*mov) | 1 != P2 {
+				// if not a pawn goes into attacked by enemy pawn square, it's probably a poor move (expect it's killer)
+				if self.board.maps.attacks_pawns[self.board.turn as usize][move_get_to(*mov, self.board.turn)] & self.board.bbs[P | !self.board.turn as usize] != 0 {
+					*mov &= !MFE_HEURISTIC;
+				}
+			} else {
+				// derank quiet pawn moves as well (1 square forward)
+				let from = move_get_from(*mov, self.board.turn);
+				let to = move_get_to(*mov, self.board.turn);
+				if max(from, to) - min(from, to) == 8 {
+					*mov &= !MFE_HEURISTIC;
+				}
+			}
+
 			if *mov == self.killer[0][self.hmc] {
 				*mov |= MFE_KILLER1;
 				continue;
@@ -325,9 +342,6 @@ impl Chara {
 		}
 		moves.sort();
 		moves.reverse();
-		for mov in moves.iter_mut() {
-			move_quiet_pawn_derank(mov, self.board.bbs[P] | self.board.bbs[P2], self.board.turn);
-		}
 		
 		let mut hf_cur = HF_LOW;
 		depth += in_check as i16;
@@ -335,7 +349,7 @@ impl Chara {
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let mut score = if i != 0 && depth > 3 && (*mov > ME_CAPTURE_MIN || *mov & !MFE_CLEAR != 0 || in_check) {
+			let mut score = if i != 0 && depth > 3 && !(*mov > ME_PROMISING_MIN || in_check) {
 				-self.search(-beta, -alpha, depth - 2 - (i > 7 && i + 9 > moves.len()) as i16)
 			} else {
 				alpha + 1
@@ -496,11 +510,21 @@ impl Chara {
 				if bb & mptr.files[sq] != 0 {
 					score += self.w.p_doubled[ally];
 				}
-				if bptr[P | ally] & mptr.flanks[sq] == 0 {
-					score += self.w.p_isolated[ally];
-				} else if bptr[P | ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
+				if bptr[P | ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
 					score += self.w.p_phalanga[ally];
+				} else {
+					let mut flanks = 0;
+					if sq & 7 != 0 {
+						flanks += self.board.get_sliding_straight_opportunities(sq - 1, bptr[P] | bptr[P2]);
+					}
+					if sq & 7 != 7 {
+						flanks += self.board.get_sliding_straight_opportunities(sq + 1, bptr[P] | bptr[P2]);
+					}
+					if flanks & mptr.flanks[sq] & bptr[P | ally] == 0 {
+						score += self.w.p_isolated[ally];
+					}
 				}
+
 				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
 				if (mptr.files[sq] | mptr.flanks[sq]) & mptr.fwd[ally][sq] & bptr[P | enemy] == 0 {
 					score += self.w.p_passing[ally][sq >> 3];
