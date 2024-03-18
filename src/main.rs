@@ -5,7 +5,6 @@ extern crate test;
 mod gen;
 mod frame;
 mod engine;
-mod comms;
 
 use std::io;
 use crate::frame::util::*;

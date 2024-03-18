@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::{max, min}, collections::{HashMap, HashSet}, time::Instant};
+use std::{cmp::{max, min}, collections::{HashMap, HashSet}, io, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{weights::Weights, zobrist::Zobrist};
@@ -64,6 +64,8 @@ impl Chara {
 		let zobrist = Zobrist::default();
 		let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
 		cache_perm_vec.push(zobrist.cache_new(&board));
+
+		println!("feature ping=1 setboard=1 debug=1 usermove=1 myname={}, pause=1, nps=1", MYNAME);
 
 		Self {
 			board,
@@ -932,14 +934,11 @@ impl Chara {
 		score
 	}
 
-	fn listen(&mut self) {
+	// Chess Engine Communication Protocol (XBoard)
+	pub fn listen(&mut self) {
 		if self.ts.elapsed().as_millis() > self.tl {
 			self.abort = true;
 		}
-
-		// delet this
-		// println!("\n#DEBUG\tcache of leaves ({} entries ).", self.cache_leaves.len());
-		// println!("#DEBUG\tcache of branches ({} entries ).\n", self.cache_branches.len());
 
 		if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
 			println!("#DEBUG\tClearing cache of leaves ({} entries dropped).", self.cache_leaves.len());
@@ -947,9 +946,37 @@ impl Chara {
 		} else if self.cache_branches.len() > CACHED_BRANCHES_LIMIT {
 			println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
 			self.cache_branches.clear();
-				}
+		}
 
-		// TODO
+		// comms
+		let mut input = String::new();
+		match io::stdin().read_line(&mut input) {
+			Ok(_goes_into_input_above) => {
+				let line = input.trim().split(" ").collect::<Vec<&str>>();
+				match line[0] {
+					"xboard" => {
+						
+					},
+					"new" => {
+						self.w.rand = 0;
+					},
+					"quit" => {
+						self.abort = true;
+					},
+					"random" => {
+						if self.w.rand != 0 {
+							println!("#DEBUG\tRandom is disabled");
+							self.w.rand = 0;
+						} else {
+							println!("#DEBUG\tRandom is set to +-10 centipawns");
+							self.w.rand = 20;
+						}
+					}
+					_ => {}
+				}
+			},
+			Err(_no_updates_is_fine) => {},
+		}
 	}
 
 	/* Auxiliary (used by eval() mostly) */
