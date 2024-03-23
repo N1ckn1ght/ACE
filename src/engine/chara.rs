@@ -1,19 +1,22 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::max, collections::{HashMap, HashSet}, time::Instant};
+use std::{cmp::{max, min}, collections::{HashMap, HashSet}, io, time::Instant};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{weights::Weights, zobrist::Zobrist};
 
 /* CONSTANTS FOR STATIC EVALUATION */
+
 pub const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
 pub const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
 pub const CENTR1: [u64; 2] = [0b0000000000111100001111000011110000111100001111000000000000000000, 0b0000000000000000001111000011110000111100001111000011110000000000];
 pub const CENTR2: [u64; 2] = [0b0111111001111110011111100111111001111110011111100111111000000000, 0b0000000001111110011111100111111001111110011111100111111001111110];
 
-pub struct Chara<'a> {
-	pub board:				&'a mut Board,
+pub const DEFAULT_VEC_CAPACITY: usize = 300;
+
+pub struct Chara {
+	pub board:				Board,
 	pub w:					Weights,
 	
 	/* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
@@ -49,13 +52,20 @@ pub struct Chara<'a> {
 	pub castled:			[bool; 2]				// white used castle, black used castle
 }
 
-impl<'a> Chara<'a> {
-	// It's a little messy, but any evals are easily modifiable.
-	// No need in modifying something twice to be applied for the different coloir, neither there's a need to write something twice in eval()
-    pub fn init(board: &'a mut Board) -> Chara<'a> {
+impl Default for Chara {
+	fn default() -> Chara {
+		Chara::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+	}
+}
+
+impl Chara {
+    pub fn init(fen: &str) -> Self {
+		let board = Board::import(fen);
 		let zobrist = Zobrist::default();
-		let mut cache_perm_vec = Vec::with_capacity(300);
-		cache_perm_vec.push(zobrist.cache_new(board));
+		let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
+		cache_perm_vec.push(zobrist.cache_new(&board));
+
+		println!("feature ping=1 setboard=1 debug=1 usermove=1 myname={}, pause=1, nps=1", MYNAME);
 
 		Self {
 			board,
@@ -81,6 +91,24 @@ impl<'a> Chara<'a> {
 		}
     }
 
+	pub fn clear(&mut self) {
+		self.book = 2;
+		self.board = Board::default();
+		self.history_set.clear();
+		self.history_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
+		self.history_vec.push(self.zobrist.cache_new(&self.board));
+		self.castled = [false, false];
+		self.cache_leaves.clear();
+		self.cache_branches.clear();
+	}
+
+	pub fn set_pos(&mut self, fen: &str) {
+		self.clear();
+		self.board = Board::import(fen);
+		self.history_vec.pop();
+		self.history_vec.push(self.zobrist.cache_new(&self.board));
+	}
+
 	pub fn make_move(&mut self, mov: u32) {
 		if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
 			self.castled[self.board.turn as usize] = true;
@@ -88,7 +116,7 @@ impl<'a> Chara<'a> {
 		let prev_hash = *self.history_vec.last().unwrap();
 		self.history_set.insert(prev_hash);
 		self.board.make_move(mov);
-		let hash = self.zobrist.cache_iter(self.board, mov, prev_hash);
+		let hash = self.zobrist.cache_iter(&self.board, mov, prev_hash);
 		self.history_vec.push(hash);
 	}
 
@@ -107,7 +135,7 @@ impl<'a> Chara<'a> {
 
 		if self.book > 1 {
 			println!("#DEBUG\tOpening book is not implemented yet.");
-			self.book = 1;
+			self.book = 0;
 		}
 
 		self.tl = time_limit_ms;
@@ -157,7 +185,7 @@ impl<'a> Chara<'a> {
 			}
 
 			println!("#DEBUG\t--------------------------------");
-			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score_transform(score, self.board.turn), self.nodes);
+			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}, time: {} ms", depth, score_transform(score, self.board.turn), self.nodes, self.ts.elapsed().as_millis());
 
 			for (j, killer) in self.killer.iter().enumerate() {
 				print!("#DEBUG\tKiller {}:", j);
@@ -286,8 +314,23 @@ impl<'a> Chara<'a> {
 				}
 			}
 		}
+
 		for mov in moves.iter_mut() {
-			move_quiet_pawn_derank(mov, self.board.bbs[P] | self.board.bbs[P2], self.board.turn);
+			// additional pre sort flag that could be removed later
+			*mov |= MFE_HEURISTIC;
+			
+			// if not a pawn goes into attacked by enemy pawn square, it's probably a poor move (expect it's killer)
+			if self.board.maps.attacks_pawns[self.board.turn as usize][move_get_to(*mov, self.board.turn)] & self.board.bbs[P | !self.board.turn as usize] != 0 {
+				*mov &= !MFE_HEURISTIC;
+			} else if move_get_piece(*mov) | 1 == P2 {
+				// derank quiet pawn moves as well (1 square forward)
+				let from = move_get_from(*mov, self.board.turn);
+				let to = move_get_to(*mov, self.board.turn);
+				if max(from, to) - min(from, to) == 8 {
+					*mov &= !MFE_HEURISTIC;
+				}
+			}
+
 			if *mov == self.killer[0][self.hmc] {
 				*mov |= MFE_KILLER1;
 				continue;
@@ -299,9 +342,6 @@ impl<'a> Chara<'a> {
 		}
 		moves.sort();
 		moves.reverse();
-		for mov in moves.iter_mut() {
-			move_quiet_pawn_derank(mov, self.board.bbs[P] | self.board.bbs[P2], self.board.turn);
-		}
 		
 		let mut hf_cur = HF_LOW;
 		depth += in_check as i16;
@@ -309,7 +349,7 @@ impl<'a> Chara<'a> {
 		for (i, mov) in moves.iter().enumerate() {
 			self.make_move(*mov);
 			self.hmc += 1;
-			let mut score = if i != 0 && depth > 3 && (*mov > ME_CAPTURE_MIN || *mov & !MFE_CLEAR != 0 || in_check) {
+			let mut score = if i != 0 && depth > 3 && !(*mov > ME_PROMISING_MIN || in_check) {
 				-self.search(-beta, -alpha, depth - 2 - (i > 7 && i + 9 > moves.len()) as i16)
 			} else {
 				alpha + 1
@@ -470,11 +510,21 @@ impl<'a> Chara<'a> {
 				if bb & mptr.files[sq] != 0 {
 					score += self.w.p_doubled[ally];
 				}
-				if bptr[P | ally] & mptr.flanks[sq] == 0 {
-					score += self.w.p_isolated[ally];
-				} else if bptr[P | ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
+				if bptr[P | ally] & mptr.flanks[sq] & mptr.ranks[sq] != 0 {
 					score += self.w.p_phalanga[ally];
+				} else {
+					let mut flanks = 0;
+					if sq & 7 != 0 {
+						flanks += self.board.get_sliding_straight_opportunities(sq - 1, bptr[P] | bptr[P2]);
+					}
+					if sq & 7 != 7 {
+						flanks += self.board.get_sliding_straight_opportunities(sq + 1, bptr[P] | bptr[P2]);
+					}
+					if flanks & mptr.flanks[sq] & bptr[P | ally] == 0 {
+						score += self.w.p_isolated[ally];
+					}
 				}
+
 				pattacks[ally] |= mptr.attacks_pawns[ally][sq];
 				if (mptr.files[sq] | mptr.flanks[sq]) & mptr.fwd[ally][sq] & bptr[P | enemy] == 0 {
 					score += self.w.p_passing[ally][sq >> 3];
@@ -882,14 +932,11 @@ impl<'a> Chara<'a> {
 		score
 	}
 
-	fn listen(&mut self) {
+	// Chess Engine Communication Protocol (XBoard)
+	pub fn listen(&mut self) {
 		if self.ts.elapsed().as_millis() > self.tl {
 			self.abort = true;
 		}
-
-		// delet this
-		// println!("\n#DEBUG\tcache of leaves ({} entries ).", self.cache_leaves.len());
-		// println!("#DEBUG\tcache of branches ({} entries ).\n", self.cache_branches.len());
 
 		if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
 			println!("#DEBUG\tClearing cache of leaves ({} entries dropped).", self.cache_leaves.len());
@@ -897,9 +944,7 @@ impl<'a> Chara<'a> {
 		} else if self.cache_branches.len() > CACHED_BRANCHES_LIMIT {
 			println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
 			self.cache_branches.clear();
-				}
-
-		// TODO
+		}
 	}
 
 	/* Auxiliary (used by eval() mostly) */
@@ -922,8 +967,7 @@ mod tests {
 
 	#[test]
 	fn test_chara_eval_initial() {
-		let mut board = Board::default();
-		let mut chara = Chara::init(&mut board);
+		let mut chara = Chara::default();
 		let moves = chara.board.get_legal_moves();
 		chara.make_move(move_transform_back("e2e4", &moves, chara.board.turn).unwrap());
 		let moves = chara.board.get_legal_moves();
@@ -945,7 +989,7 @@ mod tests {
 		];
 		for fen in fens.into_iter() {
 			let mut board = Board::import(fen);
-			let mut chara = Chara::init(&mut board);
+			let mut chara = Chara::init(fen);
 			let eval = chara.eval();
 			assert_eq!(eval, chara.w.s_turn[0]);
 		}
@@ -953,7 +997,7 @@ mod tests {
 		for fen in fens.into_iter() {
 			let mut board = Board::import(fen);
 			board.turn = !board.turn;
-			let mut chara = Chara::init(&mut board);
+			let mut chara = Chara::init(&board.export());
 			let eval = chara.eval();
 			assert_eq!(eval, chara.w.s_turn[0]);
 		}
@@ -970,10 +1014,8 @@ mod tests {
 			"r1bqk2r/ppppbppp/2n2n2/4p3/2BPP3/5N2/PPP2PPP/RNBQ1RK1 b kq - 0 1"
 		];
 		for i in 0..wfens.len() {
-			let mut board1 = Board::import(wfens[i]);
-			let mut board2 = Board::import(bfens[i]);
-			let mut chara1 = Chara::init(&mut board1);
-			let mut chara2 = Chara::init(&mut board2);
+			let mut chara1 = Chara::init(wfens[i]);
+			let mut chara2 = Chara::init(bfens[i]);
 			assert_eq!(chara1.eval(), chara2.eval());
 		}
 	}
@@ -981,8 +1023,7 @@ mod tests {
 	#[test]
     fn test_board_aux() {
         let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
-        let mut board = Board::default();
-		let chara = Chara::init(&mut board);
+		let chara = Chara::default();
         for case in ar_true.into_iter() {
             assert_ne!(chara.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
         }

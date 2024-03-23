@@ -3,9 +3,11 @@
 
 #![allow(dead_code)]
 
-use std::{cmp::{max, min}, fs, io::Cursor, path::Path};
+use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
+
+pub const MYNAME: &str = "Akira CB v1.0.0";
 
 /* LIMITATIONS */
 
@@ -91,10 +93,11 @@ pub const MSE_DOUBLE_PAWN:             u32 = 0b0001 << 16;
 // Note: there's no MSE_PROMOTION, it's encoded by piece, same as CAPTURE and PIECE
 
 pub const ME_CAPTURE_MIN: u32 = (P as u32) << 27;
-pub const MFE_PV1: u32 = 1 << 31;
+pub const ME_PROMISING_MIN: u32 = (P as u32) << 25;
+pub const MFE_PV1: u32 = 1 << 31; // this will pass IF > ME_CAPTURE_MIN check btw
 pub const MFE_KILLER1: u32 = 1 << 26;
 pub const MFE_KILLER2: u32 = 1 << 25;
-pub const MFE_KILLER3: u32 = 1 << 24;
+pub const MFE_HEURISTIC: u32 = 1 << 24; // this should be left as 1 for not most likely bad moves (it's a reverse bit of some sort)
 pub const MFE_CLEAR: u32 = 0b01111000111111111111111111111111;
 
 /* board.castlings bits
@@ -222,15 +225,6 @@ pub fn move_get_promotion(mov: u32) -> usize {
 #[inline]
 pub fn move_get_capture(mov: u32) -> usize {
     (mov >> 27 & 0b1111) as usize
-}
-
-#[inline]
-pub fn move_quiet_pawn_derank(mov: &mut u32, bb: u64, turn: bool) {
-    let from = move_get_from(*mov, turn);
-    let to = move_get_to(*mov, turn);
-    if get_bit(bb, from) != 0 && max(from, to) - min(from, to) == 8 {
-        *mov ^= 0b1111000000000000;
-    }
 }
 
 /* ADDITIONAL DATA STRUCTURES */
