@@ -185,7 +185,7 @@ impl Chara {
 			}
 
 			println!("#DEBUG\t--------------------------------");
-			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}", depth, score_transform(score, self.board.turn), self.nodes);
+			println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}, time: {} ms", depth, score_transform(score, self.board.turn), self.nodes, self.ts.elapsed().as_millis());
 
 			for (j, killer) in self.killer.iter().enumerate() {
 				print!("#DEBUG\tKiller {}:", j);
@@ -319,12 +319,10 @@ impl Chara {
 			// additional pre sort flag that could be removed later
 			*mov |= MFE_HEURISTIC;
 			
-			if move_get_piece(*mov) | 1 != P2 {
-				// if not a pawn goes into attacked by enemy pawn square, it's probably a poor move (expect it's killer)
-				if self.board.maps.attacks_pawns[self.board.turn as usize][move_get_to(*mov, self.board.turn)] & self.board.bbs[P | !self.board.turn as usize] != 0 {
-					*mov &= !MFE_HEURISTIC;
-				}
-			} else {
+			// if not a pawn goes into attacked by enemy pawn square, it's probably a poor move (expect it's killer)
+			if self.board.maps.attacks_pawns[self.board.turn as usize][move_get_to(*mov, self.board.turn)] & self.board.bbs[P | !self.board.turn as usize] != 0 {
+				*mov &= !MFE_HEURISTIC;
+			} else if move_get_piece(*mov) | 1 == P2 {
 				// derank quiet pawn moves as well (1 square forward)
 				let from = move_get_from(*mov, self.board.turn);
 				let to = move_get_to(*mov, self.board.turn);
