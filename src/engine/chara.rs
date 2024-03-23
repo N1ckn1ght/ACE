@@ -947,36 +947,6 @@ impl Chara {
 			println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
 			self.cache_branches.clear();
 		}
-
-		// comms
-		let mut input = String::new();
-		match io::stdin().read_line(&mut input) {
-			Ok(_goes_into_input_above) => {
-				let line = input.trim().split(" ").collect::<Vec<&str>>();
-				match line[0] {
-					"xboard" => {
-						
-					},
-					"new" => {
-						self.w.rand = 0;
-					},
-					"quit" => {
-						self.abort = true;
-					},
-					"random" => {
-						if self.w.rand != 0 {
-							println!("#DEBUG\tRandom is disabled");
-							self.w.rand = 0;
-						} else {
-							println!("#DEBUG\tRandom is set to +-10 centipawns");
-							self.w.rand = 20;
-						}
-					}
-					_ => {}
-				}
-			},
-			Err(_no_updates_is_fine) => {},
-		}
 	}
 
 	/* Auxiliary (used by eval() mostly) */
