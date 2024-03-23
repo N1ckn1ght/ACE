@@ -231,7 +231,7 @@ impl Chara {
 
 		let hash = *self.history_vec.last().unwrap();
 		if self.hmc != 0 && (self.board.hmc == 50 || self.history_set.contains(&hash)) {
-			return self.w.rand;
+			return self.w.rand + 1;
 		}
 		
 		// if not a "prove"-search
@@ -319,16 +319,18 @@ impl Chara {
 			// additional pre sort flag that could be removed later
 			*mov |= MFE_HEURISTIC;
 			
-			// if not a pawn goes into attacked by enemy pawn square, it's probably a poor move (expect it's killer)
-			if self.board.maps.attacks_pawns[self.board.turn as usize][move_get_to(*mov, self.board.turn)] & self.board.bbs[P | !self.board.turn as usize] != 0 {
-				*mov &= !MFE_HEURISTIC;
-			} else if move_get_piece(*mov) | 1 == P2 {
-				// derank quiet pawn moves as well (1 square forward)
-				let from = move_get_from(*mov, self.board.turn);
-				let to = move_get_to(*mov, self.board.turn);
-				if max(from, to) - min(from, to) == 8 {
+			if move_get_piece(*mov) | 1 != P2 {
+				// if not a pawn goes into attacked by enemy pawn square, it's probably a poor move (expect it's killer)
+				if self.board.maps.attacks_pawns[self.board.turn as usize][move_get_to(*mov, self.board.turn)] & self.board.bbs[P | !self.board.turn as usize] != 0 {
 					*mov &= !MFE_HEURISTIC;
 				}
+			} else if (
+				 self.board.turn && get_bit(RANK_7, move_get_from(*mov, true )) != 0 && get_bit(RANK_6, move_get_to(*mov, true )) != 0
+			) || (
+				!self.board.turn && get_bit(RANK_2, move_get_from(*mov, false)) != 0 && get_bit(RANK_3, move_get_to(*mov, false)) != 0
+			) {
+				// derank quiet pawn moves as well (1 square forward from start position)
+				*mov &= !MFE_HEURISTIC;
 			}
 
 			if *mov == self.killer[0][self.hmc] {

@@ -93,7 +93,7 @@ pub const MSE_DOUBLE_PAWN:             u32 = 0b0001 << 16;
 // Note: there's no MSE_PROMOTION, it's encoded by piece, same as CAPTURE and PIECE
 
 pub const ME_CAPTURE_MIN: u32 = (P as u32) << 27;
-pub const ME_PROMISING_MIN: u32 = (P as u32) << 25;
+pub const ME_PROMISING_MIN: u32 = 1 << 25;
 pub const MFE_PV1: u32 = 1 << 31; // this will pass IF > ME_CAPTURE_MIN check btw
 pub const MFE_KILLER1: u32 = 1 << 26;
 pub const MFE_KILLER2: u32 = 1 << 25;
