@@ -23,7 +23,7 @@ fn main() {
     println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
 
     let mut hmc = 0;
-    let scan = [false, true];
+    let scan = [true, true];
     let ab = [300, INF];
     // soft limit, possible overflow, it's best to have about 50 ms to spare
     let time = 2950;

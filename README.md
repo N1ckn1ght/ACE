@@ -1,4 +1,4 @@
-Version: 0.6.2
+Version: 0.6.4
 
 ### Progress status:
 
