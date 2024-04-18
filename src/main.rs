@@ -6,8 +6,9 @@ mod gen;
 mod frame;
 mod engine;
 
-use std::io;
-use crate::frame::util::*;
+use std::time::Duration;
+use std::{io, thread};
+use std::sync::mpsc::channel;
 use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::init_secondary_maps};
 use crate::engine::chara::Chara;
 
@@ -16,76 +17,34 @@ fn main() {
     init_leaping_attacks();
     init_secondary_maps();
     
-    let mut chara = Chara::default();
+    let (tx, rx) = channel();
+    let mut chara = Chara::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
 
-    chara.w.rand = 0;
-
-    println!("\n--- AKIRA HAS BEEN FULLY LOADED INTO MACHINE MEMORY ---\n");
-
-    let mut hmc = 0;
-    let scan = [true, true];
-    let ab = [300, INF];
-    // soft limit, possible overflow, it's best to have about 50 ms to spare
-    let time = 2950;
-    let dl = 50;
-    let mut abi = 0;
-
-    loop {
-        let legals = chara.board.get_legal_moves();
-        if legals.is_empty() {
-            break;
-        }
-
-        if scan[hmc & 1] {
-            println!("Processing...\n");
-            let best_move = chara.think(ab[abi], time, dl);
-            abi = 0;
-            println!();
-            println!("Best move: {} ({})", move_transform(best_move.mov, chara.board.turn), score_transform(best_move.score, chara.board.turn));
-            println!();
-        }
-
-        let mut mov;
+    let handle = thread::spawn(move || {
         loop {
-            println!();
-            let str = input();
-
-            if str == "b" {
-                chara.revert_move();
-                hmc -= 2;
-                break;
-            } 
-            if str == "r" {
-                hmc -= 1;
-                break;
-            } 
-            if str == "hr" {
-                hmc -= 1;
-                abi = 1;
-                break;
-            } 
-            if str == "ex" {
-                println!("{}", chara.board.export());
-                continue;
+            let mut input = String::new();
+            let mut quit = false;
+            match io::stdin().read_line(&mut input) {
+                Ok(_goes_into_input_above) => {
+                    if input.trim() == "quit" {
+                        quit = true;
+                    }
+                    let _ = tx.send(input);
+                }
+                Err(_no_updates_is_fine) => {
+    
+                }
             }
-
-            mov = move_transform_back(&str.to_owned(), &legals, chara.board.turn);
-            if let Some(i) = mov {
-                chara.make_move(i);
+            if quit {
                 break;
             }
-            println!("Move not found?");
+            thread::sleep(Duration::from_millis(1));
         }
+    });
 
-        hmc += 1;
-    }
-}
+    println!("#DEBUG\tAkira is online.\n");
+    chara.listen();
 
-fn input() -> String {
-    let mut input = String::new();
-    match io::stdin().read_line(&mut input) {
-        Ok(_goes_into_input_above) => {},
-        Err(_no_updates_is_fine) => {},
-    }
-    input.trim().to_string()
+    println!("#DEBUG\tShutting down!\n");
+    let _ = handle.join();
 }

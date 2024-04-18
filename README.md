@@ -1,17 +1,21 @@
-Version: 0.6.4
+Version: 1.0.0
 
 ### Progress status:
 
-Pre-calculations - 100%
+Pre-calculations - Complete!
 
-Board - 100% (~24m nps)
+Board - Complete! (~24m nps)
 
-Engine - 100% (~550k nps; Inspired by: BBC engine)
+Engine - Complete! (~550k nps; Inspired by: BBC engine)
 
-Eval - 100% (Inspired by: Kaissa engine, PeSTO eval)
+Eval - Complete! (Inspired by: Kaissa engine, PeSTO eval)
 
-Interface - 10%
+Interface - Partially complete (xboard comms work, but there are only some crucial features)
 
 ### TODO:
 
-XBoard support
+Complete xboard support
+
+Resolve issues
+
+Host as a lichess bot
