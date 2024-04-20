@@ -19,3 +19,5 @@ Complete xboard support
 Resolve issues
 
 Host as a lichess bot
+
+Opening book support (or custom opening book)

@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::max, collections::{HashMap, HashSet}, sync::mpsc::Receiver, time::Instant};
+use std::{cmp::{max, min}, collections::{HashMap, HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{weights::Weights, zobrist::Zobrist};
@@ -16,43 +16,54 @@ pub const CENTR2: [u64; 2] = [0b011111100111111001111110011111100111111001111110
 pub const DEFAULT_VEC_CAPACITY: usize = 300;
 
 pub struct Chara {
-    pub board:				Board,
-    pub w:					Weights,
+    board:				Board,
+    w:					Weights,
+    baw:                i32,                    // aspiration window base
     
     /* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
-    pub cache_leaves:		HashMap<u64, i32>,
-    pub cache_branches:		HashMap<u64, EvalBr>,
+    cache_leaves:		HashMap<u64, i32>,
+    cache_branches:		HashMap<u64, EvalBr>,
     
     /* Cache for already made in board moves to track drawish positions */
-    pub history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
-    pub history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
-                                                    // note: it's always 1 hash behind
+    history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
+    history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
+                                                // note: it's always 1 hash behind
     
     /* Accessible constants */
-    pub zobrist:			Zobrist,
-    pub rng:				ThreadRng,
+    zobrist:			Zobrist,
+    rng:				ThreadRng,
 
     /* Search trackers */
-    pub book:				i16,					// opening book: 0 - forbidden, 1 - unusable in this game, 2 - will be used
-    pub ts:					Instant,				// timer start
-    pub tl:					u128,					// time limit in ms
-    pub abort:				bool,					// stop search signal
-    pub nodes:				u64,					// nodes searched
-    pub hmc:				usize,					// current distance to root of the search
+    book:				i16,					// opening book: 0 - forbidden, 1 - unusable in this game, 2 - will be used
+    ts:					Instant,				// timer start
+    tl:					u128,					// time limit in ms
+    abort:				bool,					// stop search signal
+    nodes:				u64,					// nodes searched
+    hmc:				usize,					// current distance to root of the search
                                                     // expected lines of moves
-    pub tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
+    tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
                                                     // expected lines of moves length
-    pub tpv_len:			[usize; HALF_DEPTH_LIMIT],
+    tpv_len:			[usize; HALF_DEPTH_LIMIT],
                                                     // quiet moves that cause a beta cutoff
-    pub killer:				[[u32; HALF_DEPTH_LIMIT]; 2],
-    pub tpv_flag:			bool,					// if this is a principle variation (in search)
-    pub mate_flag:			bool,					// if mate is present
+    killer:				[[u32; HALF_DEPTH_LIMIT]; 2],
+    tpv_flag:			bool,					// if this is a principle variation (in search)
+    mate_flag:			bool,					// if mate is present
 
     /* Static eval addon */
-    pub castled:			[bool; 2],				// white used castle, black used castle
+    castled:			[bool; 2],				// white used castle, black used castle
 
     /* Comms */
-    pub rx:					Receiver<String>
+    rx:		            Receiver<String>,
+    last_score:         i32,
+    play_as_black:      bool,                   // for offerings of draw and stuff
+    draw_offered:       bool,                   // by Akira, it does that only once!
+    resign_offered:     bool,                   // same, due to some GUI limitations
+    do_quit:            bool,
+    do_move:            bool,
+    do_ping:            bool,                   // received in update(), but must be done when listen()
+    enqueued_move:      u32,                    // received in update(), but must be done in listen()
+    time:               u128,                   // Running Out Of Time
+    otim:               u128                    // time of the opponent
 }
 
 impl Chara {
@@ -62,11 +73,10 @@ impl Chara {
         let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         cache_perm_vec.push(zobrist.cache_new(&board));
 
-        println!("feature ping=1 setboard=1 debug=1 usermove=1 myname={}, pause=1, nps=1", MYNAME);
-
         Self {
             board,
             w:				Weights::init(),
+            baw:            300, // pretty much default value, divide by 400 to get centipawns
             cache_leaves:	HashMap::default(),
             cache_branches:	HashMap::default(),
             history_vec:	cache_perm_vec,
@@ -85,7 +95,16 @@ impl Chara {
             tpv_flag:		false,
             mate_flag:		false,
             castled:		[false, false],
-            rx
+            rx,
+            last_score:     0,
+            play_as_black:  false,
+            draw_offered:   false,
+            do_quit:        false,
+            do_move:        false,
+            do_ping:        false,
+            enqueued_move:  0,
+            time:           60000,
+            otim:           60000
         }
     }
 
@@ -98,12 +117,185 @@ impl Chara {
             if last.is_err() {
                 continue;
             }
-
             
+            let line = last.unwrap();
+            let cmd = line.trim().split(" ").collect::<Vec<&str>>();
+            match cmd[0] {
+                "?" => {
+                    // DO NOTHING, it doesn't think
+                },
+                "draw" => {
+                    if self.considerate_draw(0) {
+                        println!("offer draw");
+                    }
+                },
+                "force" => {
+                    // DO NOTHING, it's already in force mode
+                },
+                "go" => {
+                    self.play_as_black = self.board.turn;
+                    self.do_move = true;
+                    let divider = 50 - min(self.board.no, 8) * 3;
+                    let em = self.think(self.baw, min(self.time / divider as u128, HARD_TIME_LIMIT), HALF_DEPTH_LIMIT_SAFE);
+                    if self.do_move {
+                        self.make_move(em.mov);
+                        println!("move {}", em.mov);
+                    }
+                },
+                "new" => {
+                    self.clear();
+                    self.w.rand = 0;
+                },
+                "otim" => {
+                    self.otim = cmd[1].parse::<u128>().unwrap() * 10;
+                },
+                "ping" => {
+                    println!("pong {}", cmd[1]);
+                },
+                "playother" => {
+                    self.play_as_black = !self.board.turn;
+                    self.do_move = false;
+                    let em = self.think(self.baw, PONDER_TIME, HALF_DEPTH_LIMIT_SAFE);
+                },
+                "protover" => {
+                    if cmd[1] == "2" {
+                        println!("feature ping=1 setboard=1 debug=1 usermove=1 myname={} pause=1 nps=1 analyze=0 done=1", MYNAME);
+                    } else {
+                        // insert crashcode LOL
+                    }
+                },
+                "quit" => {
+                    return;
+                },
+                "random" => {
+                    if self.w.rand == 0 {
+                        self.w.rand = 20;
+                    } else {
+                        self.w.rand = 0;
+                    }
+                },
+                "remove" => {
+                    // undo 2 half moves
+                },
+                "setboard" => {
+                    let fen = &cmd[1..].join(" ");
+                    self.set_pos(fen);
+                },
+                "time" => {
+                    self.time = cmd[1].parse::<u128>().unwrap() * 10;
+                },
+                "undo" => {
+                    // undo 1 half move
+                },
+                "usermove" => {
+                    // accept the move and start thinking
+                },
+                _ => {
+                    println!("Error (unknown command): {}", cmd[0]);
+                }
+            }
+
+            if !self.draw_offered && self.hmc > 59 && self.considerate_draw(0) {
+                self.draw_offered = true;
+                println!("offer draw");
+            }
         }
     }
 
-    pub fn clear(&mut self) {
+    // Chess Engine Communication Protocol (XBoard), but every NODES_BETWEEN_COMMS
+    fn update(&mut self) {
+        if self.ts.elapsed().as_millis() > self.tl {
+            self.abort = true;
+        }
+
+        let last = self.rx.try_recv();
+        if last.is_ok() {
+            let line = last.unwrap();
+            let cmd = line.trim().split(" ").collect::<Vec<&str>>();
+            match cmd[0] {
+                "?" => {
+                    self.abort = true;
+                    self.do_move = true;
+                },
+                "draw" => {
+                    let eval = self.last_score;
+                    if self.considerate_draw(0) {
+                        println!("offer draw");
+                    }
+                },
+                "force" => {
+                    self.abort = true;
+                    self.do_move = false;
+                },
+                "go" => {
+
+                },
+                "new" => {
+
+                },
+                "otim" => {
+
+                },
+                "ping" => {
+                    self.do_ping = true;
+                },
+                "playother" => {
+
+                },
+                "protover" => {
+
+                },
+                "quit" => {
+                    self.abort = true;
+                    self.do_quit = true;
+                    self.do_move = false;
+                },
+                "random" => {
+                    if self.w.rand == 0 {
+                        self.w.rand = 20;
+                    } else {
+                        self.w.rand = 0;
+                    }
+                },
+                "remove" => {
+
+                },
+                "setboard" => {
+                    
+                },
+                "time" => {
+
+                },
+                "undo" => {
+
+                },
+                "usermove" => {
+                    match move_transform_back(cmd[1], &self.board.get_legal_moves(), self.board.turn) {
+                        Some(mov) => {
+                            self.enqueued_move = mov;
+                            self.abort = true;
+                        },
+                        None => {
+                            println!("Illegal move: {}", cmd[1])
+                        }
+                    }
+                },
+                _ => {
+                    println!("Error (unknown command): {}", cmd[0]);
+                }
+            }
+        }
+
+        if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
+            println!("#DEBUG\tClearing cache of leaves ({} entries dropped).", self.cache_leaves.len());
+            self.cache_leaves.clear();
+        } else if self.cache_branches.len() > CACHED_BRANCHES_LIMIT {
+            println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
+            self.cache_branches.clear();
+        }
+    }
+
+    fn clear(&mut self) {
         self.book = 2;
         self.board = Board::default();
         self.history_set.clear();
@@ -112,16 +304,18 @@ impl Chara {
         self.castled = [false, false];
         self.cache_leaves.clear();
         self.cache_branches.clear();
+        self.draw_offered = false;
+        self.last_score = 0;
     }
 
-    pub fn set_pos(&mut self, fen: &str) {
+    fn set_pos(&mut self, fen: &str) {
         self.clear();
         self.board = Board::import(fen);
         self.history_vec.pop();
         self.history_vec.push(self.zobrist.cache_new(&self.board));
     }
 
-    pub fn make_move(&mut self, mov: u32) {
+    fn make_move(&mut self, mov: u32) {
         if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
             self.castled[self.board.turn as usize] = true;
         }
@@ -132,7 +326,7 @@ impl Chara {
         self.history_vec.push(hash);
     }
 
-    pub fn revert_move(&mut self) {
+    fn revert_move(&mut self) {
         if self.board.move_history.last().unwrap() & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
             self.castled[!self.board.turn as usize] = false;
         }
@@ -142,7 +336,7 @@ impl Chara {
     }
 
     // get the best move
-    pub fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
+    fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
         self.ts = Instant::now();
 
         if self.book > 1 {
@@ -173,7 +367,6 @@ impl Chara {
             }
             if score > LARGM || score < -LARGM {
                 if self.mate_flag {
-                    // TODO: if lose - resign straightaway maybe?
                     break;
                 }
                 println!("#DEBUG\tMate detected.");
@@ -197,7 +390,7 @@ impl Chara {
             }
 
             println!("#DEBUG\t--------------------------------");
-            println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}, time: {} ms", depth, score_transform(score, self.board.turn), self.nodes, self.ts.elapsed().as_millis());
+            println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}, time: {} ms", depth, score_to_string(score, self.board.turn), self.nodes, self.ts.elapsed().as_millis());
 
             for (j, killer) in self.killer.iter().enumerate() {
                 print!("#DEBUG\tKiller {}:", j);
@@ -217,6 +410,7 @@ impl Chara {
             }
             println!();
 
+            self.last_score = score_to_gui(score, self.board.turn);
             alpha = score - base_aspiration_window;
             beta = score + base_aspiration_window;
             k = 1;
@@ -228,7 +422,7 @@ impl Chara {
         println!("#DEBUG\t--------------------------------");
         println!("#DEBUG\tCache limits (in thousands), leaves: {}/{}, branches: {}/{}", self.cache_leaves.len() / 1000, CACHED_LEAVES_LIMIT / 1000, self.cache_branches.len() / 1000, CACHED_BRANCHES_LIMIT / 1000);
         println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
-        println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score_transform(score, self.board.turn), self.nodes);
+        println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score_to_string(score, self.board.turn), self.nodes);
         print!("#DEBUG\tExpected line:");
         for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
             print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
@@ -946,33 +1140,44 @@ impl Chara {
         score
     }
 
-    // Chess Engine Communication Protocol (XBoard), but every NODES_BETWEEN_COMMS
-    pub fn update(&mut self) {
-        if self.ts.elapsed().as_millis() > self.tl {
-            self.abort = true;
-        }
-
-        // insert comms
-
-        if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
-            println!("#DEBUG\tClearing cache of leaves ({} entries dropped).", self.cache_leaves.len());
-            self.cache_leaves.clear();
-        } else if self.cache_branches.len() > CACHED_BRANCHES_LIMIT {
-            println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
-            self.cache_branches.clear();
-        }
-    }
-
     /* Auxiliary (used by eval()) */
 
     #[inline]
-    pub fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+    fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
         self.board.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_straight_attacks(sq2, 1 << sq1, 0)
     }
 
     #[inline]
-    pub fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+    fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
         self.board.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
+    }
+
+    fn considerate_draw(&self, wadd: i32) -> bool {
+        let mut weight_for_draw = self.last_score;
+        let pieces_left = (self.board.get_occupancies(false) | self.board.get_occupancies(true)).count_ones();
+        if self.play_as_black {
+            weight_for_draw = -weight_for_draw;
+        }
+        if pieces_left < 5 && weight_for_draw < 300 {
+            return true;
+        }
+        if pieces_left > 24 {
+            weight_for_draw -= 600;
+        }
+        else if pieces_left > 16 {
+            weight_for_draw -= 400;
+        } else if pieces_left > 8 {
+            weight_for_draw -= 200;
+        }
+        if self.time < 60000 || self.otim < 60000 {
+            weight_for_draw += max(min(i32::try_from((self.otim - self.time) / 100).unwrap_or(-400), 400), -400);
+        } else {
+            weight_for_draw -= 400;
+        }
+        weight_for_draw -= self.w.rand - 1;
+        weight_for_draw += wadd;
+        println!("#DEBUG\tCalculated draw offer: {}", weight_for_draw);
+        weight_for_draw > 0
     }
 }
 

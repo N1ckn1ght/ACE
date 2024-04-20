@@ -13,7 +13,7 @@ use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::i
 use crate::engine::chara::Chara;
 
 fn main() {
-    init_magics(&mut 1773);
+    init_magics(&mut 1773); // good random number!
     init_leaping_attacks();
     init_secondary_maps();
     
@@ -42,9 +42,9 @@ fn main() {
         }
     });
 
-    println!("#DEBUG\tAkira is online.\n");
+    // println!("#DEBUG\tAce online.\n");
     chara.listen();
 
-    println!("#DEBUG\tShutting down!\n");
+    // println!("#DEBUG\tShutting down!\n");
     let _ = handle.join();
 }
