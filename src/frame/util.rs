@@ -24,6 +24,9 @@ pub const MIN_TIME_LIMIT: u128 = 50;
 
 /* SPECIFIED PATHES */
 
+// dir
+pub const PATH_RES:  &str = "./res";
+
 // magic (sliding pieces attack) maps
 pub const PATH_MR:   &str = "./res/magics_rook";
 pub const PATH_BBR:  &str = "./res/blocker_boards_rook";

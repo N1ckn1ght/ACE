@@ -66,7 +66,6 @@ pub struct Chara {
     hard:               bool,                   // always pondering
     loop_force:         bool,                   // ignore command input in listen() for a current cycle
     playother:          bool,                   // send score for other side
-    started_black:      bool,                   // fix for unusual move transformation
     draw_offered:       bool,                   // UNUSED in v1.0.0
     resign_offered:     bool,                   // UNUSED in v1.0.0
     quit:               bool,                   // received in update()
@@ -74,7 +73,12 @@ pub struct Chara {
     ping:               i32,                    // received in update(), but must be done when listen()
     enqueued_move:      u32,                    // received in update(), but must be done in listen()
     time:               u128,                   // Running Out Of Time
-    otim:               u128                    // time of the opponent
+    otim:               u128,                   // time of the opponent
+
+    /* Comms addon */
+
+    started_black:      bool,                   // fix for unusual move transformation
+    legals:             Vec<u32>
 }
 
 impl Chara {
@@ -112,7 +116,6 @@ impl Chara {
             hard:           true,
             loop_force:     false,
             playother:      false,
-            started_black:  false,
             draw_offered:   false,
             resign_offered: false,
             quit:           false,
@@ -120,12 +123,16 @@ impl Chara {
             ping:           i32::MIN,
             enqueued_move:  0,
             time:           60000,
-            otim:           60000
+            otim:           60000,
+            started_black:  false,
+            legals:         Vec::default()
         }
     }
 
     // Chess Engine Communication Protocol (XBoard)
     pub fn listen(&mut self) {
+        println!("tellics say {}", MYNAME);
+
         loop {
             thread::sleep(Duration::from_millis(1));
             
@@ -189,7 +196,9 @@ impl Chara {
                     },
                     "protover" => {
                         if cmd[1] == "2" {
-                            println!("feature done=0 myname={} analyze=0 debug=1 ping=1 setboard=1 usermove=1", MYNAME);
+                            println!("feature done=0");
+                            println!("feature myname=\"{}\"", MYNAME);
+                            println!("feature analyze=0 debug=1 ping=1 setboard=1 usermove=1");
                             println!("feature done=1");
                         } else {
                             // insert crashcode LOL
@@ -349,7 +358,7 @@ impl Chara {
                     self.time = cmd[1].parse::<u128>().unwrap() * 10;
                 },
                 "usermove" => {
-                    match move_transform_back(cmd[1], &self.board.get_legal_moves(), self.started_black) {
+                    match move_transform_back(cmd[1], &self.legals, self.started_black) {
                         Some(mov) => {
                             self.enqueued_move = mov;
                             self.abort = true;
@@ -371,7 +380,7 @@ impl Chara {
         if self.post && self.tpv_len[0] != 0 {
             print!("{} {} {} {}", self.cur_depth, self.last_score, self.ts.elapsed().as_millis() / 10, self.nodes);
             for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
-                print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0) ^ self.started_black));
+                print!(" {}", move_transform(*mov, (i & 1 != 0) ^ self.started_black));
             }
             println!();
         }
@@ -447,6 +456,7 @@ impl Chara {
         let mut k = 1;
         let mut score = 0;
         self.started_black = self.board.turn;
+        self.legals = self.board.get_legal_moves();
         loop {
             self.tpv_flag = true;
             let temp = self.search(alpha, beta, self.cur_depth);

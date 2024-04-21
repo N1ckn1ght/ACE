@@ -8,10 +8,12 @@
 // The algorithm of feeding in randoms provided by Tord Romstad
 // www.talkchess.com/forum3/viewtopic.php?topic_view=threads&p=175834
 
-use std::path::Path;
+use std::{fs, path::Path};
 use crate::frame::util::*;
 
 pub fn init_magics(seed: &mut u64) {
+    let _ = fs::create_dir_all(PATH_RES);
+
     let mut blocker_boards_rook  : Vec<u64>;
     let mut blocker_boards_bishop: Vec<u64>;
 

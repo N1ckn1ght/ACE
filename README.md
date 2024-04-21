@@ -1,5 +1,7 @@
 Version: 1.0.0
 
+It works, but... there's still a long road ahead!
+
 ### Progress status:
 
 Pre-calculations - Complete!
@@ -14,10 +16,22 @@ Interface - Partially complete (xboard comms work, but there are only some cruci
 
 ### TODO:
 
-Full xboard support
+Full xboard (CECP) support
 
-Resolve issues (including enhancement ones)
+Resolve issues (including enhancement ones (THERE ARE A LOT))
+
+Resolve incompatibilities
+
+Upgrade evaluation
 
 Host as a lichess bot
 
 Opening book support (or custom opening book)
+
+### Game example:
+
+// todo
+
+### "I want to play against it!"
+
+// todo
