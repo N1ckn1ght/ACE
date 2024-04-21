@@ -19,7 +19,8 @@ pub const HALF_DEPTH_LIMIT: usize = 64;
 pub const HALF_DEPTH_LIMIT_SAFE: i16 = 50;                                      // for chara.think()
 pub const NODES_BETWEEN_COMMS: u64 = 0b0001111111111111;
 pub const PONDER_TIME: u128 = 1 << 63;                                          // no limit
-pub const HARD_TIME_LIMIT: u128 = 3000000;                                      // 5 minutes
+pub const MAX_TIME_LIMIT: u128 = 3000000;                                       // 5 minutes
+pub const MIN_TIME_LIMIT: u128 = 50;
 
 /* SPECIFIED PATHES */
 
@@ -275,9 +276,9 @@ pub fn xor64(mut num: u64) -> u64 {
 
 pub fn init64(f: fn(&mut[u64]), path: &str) {
     if Path::new(path).exists() {
-        println!("Found file: {}", path);
+        //println!("#DEBUG\tFound file: {}", path);
     } else {
-        println!("Creating file: {}", path);
+        //println!("#DEBUG\tCreating file: {}", path);
         let mut vec = vec![0; 64];
         f(&mut vec);
         vector_to_file(&vec, path);
@@ -432,6 +433,7 @@ pub static PIECES_REV: phf::Map<u32, char> = phf_map! {
 
 /* INTERFACE */
 
+// engine -> gui
 pub fn move_transform(mov: u32, turn: bool) -> String {
     let from = move_get_from(mov, turn);
     let to = move_get_to(mov, turn);
@@ -447,6 +449,7 @@ pub fn move_transform(mov: u32, turn: bool) -> String {
     str
 }
 
+// gui -> Option<engine>, if null - it's illegal
 pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Option<u32> {
     let command     = input.as_bytes();
     let from        = command[0] as usize - 'a' as usize + (command[1] as usize - '0' as usize) * 8 - 8;
@@ -466,19 +469,19 @@ pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Opti
     None
 }
 
-pub fn score_to_gui(mut score: i32, turn: bool) -> i32 {
-    if turn {
+pub fn score_to_gui(mut score: i32, playother: bool) -> i32 {
+    if playother { 
         score = -score;
     }
-    if score >= 0 {
-        if score > LARGM {
-            return 10001 + (LARGE - score) / 2;
+    if score < 0 {
+        if score < -LARGM {
+            return -(10001 + (LARGE + score) / 2);
         }
         return score / 4;
     }
-    // else if score < 0
-    if score < -LARGM {
-        return -(10001 + (LARGE + score) / 2);
+    // else if score >= 0
+    if score > LARGM {
+        return 10001 + (LARGE - score) / 2;
     }
     score / 4
 }

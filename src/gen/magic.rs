@@ -18,10 +18,10 @@ pub fn init_magics(seed: &mut u64) {
     // init blocker boards for rook if not present
 
     if Path::new(PATH_BBR).exists() {
-        println!("Found rook blocker boards.");
+        // println!("#DEBUG\tFound rook blocker boards.");
         blocker_boards_rook = file_to_vector(PATH_BBR);
     } else {
-        println!("No rook blocker boards found! Creating file at: {}", PATH_BBR);
+        // println!("#DEBUG\tNo rook blocker boards found! Creating file at: {}", PATH_BBR);
         blocker_boards_rook = vec![0; 64];
         init_blocker_boards(true, &mut blocker_boards_rook);
         vector_to_file(&blocker_boards_rook, PATH_BBR);
@@ -30,9 +30,9 @@ pub fn init_magics(seed: &mut u64) {
     // search for magic & generate attack maps if not present
 
     if Path::new(PATH_AMR).exists() {
-        println!("Rook attack maps are present.");
+        //println!("#DEBUG\tRook attack maps are present.");
     } else {
-        println!("No rook attack maps found! Initiating search for magic...");
+        //println!("#DEBUG\tNo rook attack maps found! Initiating search for magic...");
         let mut magics_rook          : Vec<u64>;
         let comb_bits_rook           : Vec<usize> = Vec::from([
             12, 11, 11, 11, 11, 11, 11, 12,
@@ -51,10 +51,10 @@ pub fn init_magics(seed: &mut u64) {
         // search for magic
 
         if Path::new(PATH_MR).exists() {
-            println!("Found rook magics.");
+            //println!("#DEBUG\tFound rook magics.");
             magics_rook = file_to_vector(PATH_MR);
         } else {
-            println!("No rook magics found! Creating file at: {}", PATH_MR);
+            //println!("#DEBUG\tNo rook magics found! Creating file at: {}", PATH_MR);
             magics_rook = vec![0; 64];
             let mut magic = *seed;
             for i in 0..64 {
@@ -87,10 +87,10 @@ pub fn init_magics(seed: &mut u64) {
     // init blocker boards for bishop if not present
     
     if Path::new(PATH_BBB).exists() {
-        println!("Found bishop blocker boards.");
+        //println!("#DEBUG\tFound bishop blocker boards.");
         blocker_boards_bishop = file_to_vector(PATH_BBB);
     } else {
-        println!("No bishop blocker boards found! Creating file at: {}", PATH_BBR);
+        //println!("#DEBUG\tNo bishop blocker boards found! Creating file at: {}", PATH_BBR);
         blocker_boards_bishop = vec![0; 64];
         init_blocker_boards(false, &mut blocker_boards_bishop);
         vector_to_file(&blocker_boards_bishop, PATH_BBB);
@@ -99,9 +99,9 @@ pub fn init_magics(seed: &mut u64) {
     // search for magic & generate attack maps if not present
 
     if Path::new(PATH_AMB).exists() {
-        println!("Bishop attack maps are present.");
+        //println!("#DEBUG\tBishop attack maps are present.");
     } else {
-        println!("No bishop attack maps found! Initiating search for magic...");
+        //println!("#DEBUG\tNo bishop attack maps found! Initiating search for magic...");
 
         let mut magics_bishop        : Vec<u64>;
         let comb_bits_bishop         : Vec<usize> = Vec::from([
@@ -119,10 +119,10 @@ pub fn init_magics(seed: &mut u64) {
         // search for magic
 
         if Path::new(PATH_MB).exists() {
-            println!("Found bishop magics.");
+            //println!("#DEBUG\tFound bishop magics.");
             magics_bishop = file_to_vector(PATH_MB);
         } else {
-            println!("No bishop magics found! Creating file at: {}", PATH_MB);
+            //println!("#DEBUG\tNo bishop magics found! Creating file at: {}", PATH_MB);
             magics_bishop = vec![0; 64];
             let mut magic = *seed;
             for i in 0..64 {
@@ -203,7 +203,7 @@ fn search_for_magic(sq: usize, is_rook: bool, bits: usize, target: usize, bb: u6
     if fail {
         panic!("Failed to generate a magic!\n{} {}, {} bits, tries = {}", text, sq, target, limit);
     } else {
-        println!("{} {}, {} bits, new magic = {}", text, sq, target, magic);
+        //println!("#DEBUG\t{} {}, {} bits, new magic = {}", text, sq, target, magic);
     }
     *magic
 }

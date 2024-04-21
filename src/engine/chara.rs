@@ -15,6 +15,13 @@ pub const CENTR2: [u64; 2] = [0b011111100111111001111110011111100111111001111110
 
 pub const DEFAULT_VEC_CAPACITY: usize = 300;
 
+enum GameResult {
+    InProgress,
+    WhiteWon,
+    Draw,
+    BlackWon
+}
+
 pub struct Chara {
     board:				Board,
     w:					Weights,
@@ -34,33 +41,37 @@ pub struct Chara {
     rng:				ThreadRng,
 
     /* Search trackers */
-    book:				i16,					// opening book: 0 - forbidden, 1 - unusable in this game, 2 - will be used
     ts:					Instant,				// timer start
     tl:					u128,					// time limit in ms
     abort:				bool,					// stop search signal
     nodes:				u64,					// nodes searched
     hmc:				usize,					// current distance to root of the search
-                                                    // expected lines of moves
+                                                // expected lines of moves
     tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
-                                                    // expected lines of moves length
+                                                // expected lines of moves length
     tpv_len:			[usize; HALF_DEPTH_LIMIT],
-                                                    // quiet moves that cause a beta cutoff
+                                                // quiet moves that cause a beta cutoff
     killer:				[[u32; HALF_DEPTH_LIMIT]; 2],
     tpv_flag:			bool,					// if this is a principle variation (in search)
     mate_flag:			bool,					// if mate is present
+    cur_depth:          i16,                    // current depth of the iterative dfs (comm-related)
 
     /* Static eval addon */
     castled:			[bool; 2],				// white used castle, black used castle
 
     /* Comms */
     rx:		            Receiver<String>,
-    last_score:         i32,
-    play_as_black:      bool,                   // for offerings of draw and stuff
-    draw_offered:       bool,                   // by Akira, it does that only once!
-    resign_offered:     bool,                   // same, due to some GUI limitations
-    do_quit:            bool,
-    do_move:            bool,
-    do_ping:            bool,                   // received in update(), but must be done when listen()
+    last_score:         i32,                    // last score for the current thinking side (?)
+    force:              bool,                   // do not start thinking or pondering
+    hard:               bool,                   // always pondering
+    loop_force:         bool,                   // ignore command input in listen() for a current cycle
+    playother:          bool,                   // send score for other side
+    started_black:      bool,                   // fix for unusual move transformation
+    draw_offered:       bool,                   // UNUSED in v1.0.0
+    resign_offered:     bool,                   // UNUSED in v1.0.0
+    quit:               bool,                   // received in update()
+    post:               bool,                   // 
+    ping:               i32,                    // received in update(), but must be done when listen()
     enqueued_move:      u32,                    // received in update(), but must be done in listen()
     time:               u128,                   // Running Out Of Time
     otim:               u128                    // time of the opponent
@@ -83,7 +94,6 @@ impl Chara {
             history_set:	HashSet::default(),
             zobrist,
             rng:			rand::thread_rng(),
-            book:			2,
             ts:				Instant::now(),
             tl:				0,
             abort:			false,
@@ -94,14 +104,20 @@ impl Chara {
             killer:			[[0; HALF_DEPTH_LIMIT]; 2],
             tpv_flag:		false,
             mate_flag:		false,
+            cur_depth:      0,
             castled:		[false, false],
             rx,
             last_score:     0,
-            play_as_black:  false,
+            force:          true,
+            hard:           true,
+            loop_force:     false,
+            playother:      false,
+            started_black:  false,
             draw_offered:   false,
-            do_quit:        false,
-            do_move:        false,
-            do_ping:        false,
+            resign_offered: false,
+            quit:           false,
+            post:           false,
+            ping:           i32::MIN,
             enqueued_move:  0,
             time:           60000,
             otim:           60000
@@ -112,92 +128,172 @@ impl Chara {
     pub fn listen(&mut self) {
         loop {
             thread::sleep(Duration::from_millis(1));
-
-            let last = self.rx.try_recv();
-            if last.is_err() {
-                continue;
-            }
             
-            let line = last.unwrap();
-            let cmd = line.trim().split(" ").collect::<Vec<&str>>();
-            match cmd[0] {
-                "?" => {
-                    // DO NOTHING, it doesn't think
-                },
-                "draw" => {
-                    if self.considerate_draw(0) {
-                        println!("offer draw");
-                    }
-                },
-                "force" => {
-                    // DO NOTHING, it's already in force mode
-                },
-                "go" => {
-                    self.play_as_black = self.board.turn;
-                    self.do_move = true;
-                    let divider = 50 - min(self.board.no, 8) * 3;
-                    let em = self.think(self.baw, min(self.time / divider as u128, HARD_TIME_LIMIT), HALF_DEPTH_LIMIT_SAFE);
-                    if self.do_move {
-                        self.make_move(em.mov);
-                        println!("move {}", em.mov);
-                    }
-                },
-                "new" => {
-                    self.clear();
-                    self.w.rand = 0;
-                },
-                "otim" => {
-                    self.otim = cmd[1].parse::<u128>().unwrap() * 10;
-                },
-                "ping" => {
-                    println!("pong {}", cmd[1]);
-                },
-                "playother" => {
-                    self.play_as_black = !self.board.turn;
-                    self.do_move = false;
-                    let em = self.think(self.baw, PONDER_TIME, HALF_DEPTH_LIMIT_SAFE);
-                },
-                "protover" => {
-                    if cmd[1] == "2" {
-                        println!("feature ping=1 setboard=1 debug=1 usermove=1 myname={} pause=1 nps=1 analyze=0 done=1", MYNAME);
-                    } else {
-                        // insert crashcode LOL
-                    }
-                },
-                "quit" => {
-                    return;
-                },
-                "random" => {
-                    if self.w.rand == 0 {
-                        self.w.rand = 20;
-                    } else {
+            if !self.loop_force {
+                let last = self.rx.try_recv();
+                if last.is_err() {
+                    continue;
+                }
+                
+                let line = last.unwrap();
+                let cmd = line.trim().split(' ').collect::<Vec<&str>>();
+                match cmd[0] {
+                    "accepted" => {
+                        // who cares
+                    },
+                    "easy" => {
+                        self.hard = false;
+                    },
+                    "draw" => {
+                        if self.considerate_draw(0) {
+                            println!("offer draw");
+                        }
+                    },
+                    "force" | "result" => {
+                        self.force = true;
+                    },
+                    "go" => {
+                        self.playother = false;
+                        self.force = false;
+                        let ctime = self.time_alloc();
+                        println!("#DEBUG\tTime limit: {} ms", ctime);
+                        self.time -= ctime; // TODO: this is bad practice, should make it precise
+                        let em = self.think(self.baw, ctime, HALF_DEPTH_LIMIT_SAFE);
+                        if !self.force {
+                            self.enqueued_move = em.mov;
+                        }
+                    },
+                    "hard" => {
+                        self.hard = true;
+                    },
+                    "new" => {
+                        self.clear();
                         self.w.rand = 0;
+                    },
+                    "nopost" => {
+                        self.post = false;
+                    },
+                    "otim" => {
+                        self.otim = cmd[1].parse::<u128>().unwrap() * 10;
+                    },
+                    "ping" => {
+                        self.ping = cmd[1].parse::<i32>().unwrap_or(i32::MIN);
+                    },
+                    "playother" => {
+                        self.playother = true;
+                        self.force = false;
+                        let _ = self.think(self.baw, PONDER_TIME, HALF_DEPTH_LIMIT_SAFE);
+                    },
+                    "post" => {
+                        self.post = true;
+                    },
+                    "protover" => {
+                        if cmd[1] == "2" {
+                            println!("feature done=0 myname={} analyze=0 debug=1 ping=1 setboard=1 usermove=1", MYNAME);
+                            println!("feature done=1");
+                        } else {
+                            // insert crashcode LOL
+                        }
+                    },
+                    "quit" => {
+                        self.quit = true;
+                    },
+                    "random" => {
+                        if self.w.rand == 0 {
+                            self.w.rand = 20;
+                        } else {
+                            self.w.rand = 0;
+                        }
+                    },
+                    "rejected" => {
+                        // who cares
                     }
-                },
-                "remove" => {
-                    // undo 2 half moves
-                },
-                "setboard" => {
-                    let fen = &cmd[1..].join(" ");
-                    self.set_pos(fen);
-                },
-                "time" => {
-                    self.time = cmd[1].parse::<u128>().unwrap() * 10;
-                },
-                "undo" => {
-                    // undo 1 half move
-                },
-                "usermove" => {
-                    // accept the move and start thinking
-                },
-                _ => {
-                    println!("Error (unknown command): {}", cmd[0]);
+                    "remove" => {
+                        self.revert_move();
+                        self.revert_move();
+                    },
+                    "setboard" => {
+                        let fen = &cmd[1..].join(" ");
+                        self.set_pos(fen);
+                    },
+                    "time" => {
+                        self.time = cmd[1].parse::<u128>().unwrap() * 10;
+                    },
+                    "undo" => {
+                        self.revert_move();
+                        self.playother = !self.playother;
+                    },
+                    "usermove" => {
+                        match move_transform_back(cmd[1], &self.board.get_legal_moves(), self.board.turn) {
+                            Some(mov) => {
+                                self.enqueued_move = mov;
+                            },
+                            None => {
+                                println!("Illegal move: {}", cmd[1])
+                            }
+                        }
+                    },
+                    "xboard" => {
+                        
+                    },
+                    "?" => {
+                        println!("Error (command not legal now): {}", cmd[0]);
+                    },
+                    _ => {
+                        println!("Error (unknown command): {}", cmd[0]);
+                    }
                 }
             }
 
-            if !self.draw_offered && self.hmc > 59 && self.considerate_draw(0) {
-                self.draw_offered = true;
-                println!("offer draw");
+            if self.quit {
+                return;
+            }
+            
+            self.loop_force = false;
+            if self.enqueued_move != 0 {
+                self.make_move(self.enqueued_move);
+                if !(self.force || self.playother) {
+                    println!("move {}", move_transform(self.enqueued_move, !self.board.turn));
+                }
+                self.enqueued_move = 0;
+                if !self.force {
+                    let mut ctime = PONDER_TIME;
+                    self.playother = !self.playother;
+                    if !self.playother {
+                        ctime = self.time_alloc();
+                        println!("#DEBUG\tTime limit: {} ms", ctime);
+                        self.time -= ctime; // TODO: this is bad practice, should make it precise
+                    }
+                    match self.get_result() {
+                        GameResult::InProgress => {
+                            if !self.hard && self.playother {
+                                continue;
+                            }
+                            
+                            let em = self.think(self.baw, ctime, HALF_DEPTH_LIMIT_SAFE);
+                            if !self.playother {
+                                self.enqueued_move = em.mov;
+                            }
+                            /* Ignoring listen() input thread completely, ping as well! */
+                            self.loop_force = true;
+                            continue;
+                        },
+                        GameResult::WhiteWon => {
+                            println!("result 1-0 checkmate");
+                        },
+                        GameResult::Draw => {
+                            println!("result 1/2-1/2");
+                        },
+                        GameResult::BlackWon => {
+                            println!("result 0-1 checkmate");
+                        },
+                    }
+                }
+            }
+            
+            if self.ping != i32::MIN {
+                println!("pong {}", self.ping);
+                self.ping = i32::MIN;
             }
         }
     }
@@ -211,44 +307,36 @@ impl Chara {
         let last = self.rx.try_recv();
         if last.is_ok() {
             let line = last.unwrap();
-            let cmd = line.trim().split(" ").collect::<Vec<&str>>();
+            let cmd = line.trim().split(' ').collect::<Vec<&str>>();
             match cmd[0] {
                 "?" => {
                     self.abort = true;
-                    self.do_move = true;
                 },
                 "draw" => {
-                    let eval = self.last_score;
                     if self.considerate_draw(0) {
                         println!("offer draw");
                     }
                 },
-                "force" => {
+                "force" | "result" => {
                     self.abort = true;
-                    self.do_move = false;
+                    self.force = true;
                 },
-                "go" => {
-
-                },
-                "new" => {
-
+                "nopost" => {
+                    self.post = false;
                 },
                 "otim" => {
-
+                    self.otim = cmd[1].parse::<u128>().unwrap() * 10;
                 },
                 "ping" => {
-                    self.do_ping = true;
+                    self.ping = cmd[1].parse::<i32>().unwrap_or(i32::MIN);
                 },
-                "playother" => {
-
-                },
-                "protover" => {
-
+                "post" => {
+                    self.post = true;
                 },
                 "quit" => {
                     self.abort = true;
-                    self.do_quit = true;
-                    self.do_move = false;
+                    self.force = true;
+                    self.quit = true;
                 },
                 "random" => {
                     if self.w.rand == 0 {
@@ -257,20 +345,11 @@ impl Chara {
                         self.w.rand = 0;
                     }
                 },
-                "remove" => {
-
-                },
-                "setboard" => {
-                    
-                },
                 "time" => {
-
-                },
-                "undo" => {
-
+                    self.time = cmd[1].parse::<u128>().unwrap() * 10;
                 },
                 "usermove" => {
-                    match move_transform_back(cmd[1], &self.board.get_legal_moves(), self.board.turn) {
+                    match move_transform_back(cmd[1], &self.board.get_legal_moves(), self.started_black) {
                         Some(mov) => {
                             self.enqueued_move = mov;
                             self.abort = true;
@@ -280,10 +359,21 @@ impl Chara {
                         }
                     }
                 },
+                "accepted" | "easy" | "go" | "hard" | "new" | "playother" | "protover" | "rejected" | "remove" | "setboard" | "undo" | "xboard" => {
+                    println!("Error (command not legal now): {}", cmd[0]);
+                },
                 _ => {
                     println!("Error (unknown command): {}", cmd[0]);
                 }
             }
+        }
+        
+        if self.post && self.tpv_len[0] != 0 {
+            print!("{} {} {} {}", self.cur_depth, self.last_score, self.ts.elapsed().as_millis() / 10, self.nodes);
+            for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
+                print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0) ^ self.started_black));
+            }
+            println!();
         }
 
         if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
@@ -296,7 +386,6 @@ impl Chara {
     }
 
     fn clear(&mut self) {
-        self.book = 2;
         self.board = Board::default();
         self.history_set.clear();
         self.history_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
@@ -304,8 +393,16 @@ impl Chara {
         self.castled = [false, false];
         self.cache_leaves.clear();
         self.cache_branches.clear();
+        self.cur_depth = 0;
         self.draw_offered = false;
+        self.resign_offered = false;
+        self.playother = false;
+        self.force = true;
+        self.nodes = 0;
+        self.enqueued_move = 0;
         self.last_score = 0;
+        self.time = 60000;
+        self.otim = 60000;
     }
 
     fn set_pos(&mut self, fen: &str) {
@@ -335,15 +432,8 @@ impl Chara {
         self.history_set.remove(self.history_vec.last().unwrap());
     }
 
-    // get the best move
     fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
         self.ts = Instant::now();
-
-        if self.book > 1 {
-            println!("#DEBUG\tOpening book is not implemented yet.");
-            self.book = 0;
-        }
-
         self.tl = time_limit_ms;
         self.abort = false;
         self.mate_flag = false;
@@ -353,19 +443,20 @@ impl Chara {
         for num in self.killer.iter_mut() { for mov in num.iter_mut() { *mov = 0 } };
         let mut alpha = -INF;
         let mut beta  =  INF;
-        let mut depth = 1;
+        self.cur_depth = 1;
         let mut k = 1;
         let mut score = 0;
+        self.started_black = self.board.turn;
         loop {
             self.tpv_flag = true;
-            let temp = self.search(alpha, beta, depth);
+            let temp = self.search(alpha, beta, self.cur_depth);
             if !self.abort {
                 score = temp;	
             } else {
                 println!("#DEBUG\tAbort signal reached!");
                 break;
             }
-            if score > LARGM || score < -LARGM {
+            if !(-LARGM..=LARGM).contains(&score) {
                 if self.mate_flag {
                     break;
                 }
@@ -389,46 +480,16 @@ impl Chara {
                 continue;
             }
 
-            println!("#DEBUG\t--------------------------------");
-            println!("#DEBUG\tSearched half-depth: -{}-, score: {}, nodes: {}, time: {} ms", depth, score_to_string(score, self.board.turn), self.nodes, self.ts.elapsed().as_millis());
-
-            for (j, killer) in self.killer.iter().enumerate() {
-                print!("#DEBUG\tKiller {}:", j);
-                for (i, mov) in killer.iter().enumerate().take(depth as usize) {
-                    if *mov != 0 {
-                        print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
-                    } else {
-                        print!(" -");
-                    }
-                }
-                println!();
-            }
-
-            print!("#DEBUG\tExpected line:");
-            for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
-                print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
-            }
-            println!();
-
-            self.last_score = score_to_gui(score, self.board.turn);
+            self.last_score = score_to_gui(score, false);
             alpha = score - base_aspiration_window;
             beta = score + base_aspiration_window;
             k = 1;
-            depth += 1;
-            if depth > depth_limit {
+            self.cur_depth += 1;
+            if self.cur_depth > depth_limit {
                 break;
             }
         }
-        println!("#DEBUG\t--------------------------------");
-        println!("#DEBUG\tCache limits (in thousands), leaves: {}/{}, branches: {}/{}", self.cache_leaves.len() / 1000, CACHED_LEAVES_LIMIT / 1000, self.cache_branches.len() / 1000, CACHED_BRANCHES_LIMIT / 1000);
-        println!("#DEBUG\tReal time spent: {} ms", self.ts.elapsed().as_millis());
-        println!("#DEBUG\tReal half-depth: {} to {}, score: {}, nodes: {}", max(self.tpv_len[0], 1), depth - 1, score_to_string(score, self.board.turn), self.nodes);
-        print!("#DEBUG\tExpected line:");
-        for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
-            print!(" {}", move_transform(*mov, self.board.turn ^ (i & 1 != 0)));
-        }
-        println!();
-        println!("#DEBUG\t--------------------------------");
+
         EvalMove::new(self.tpv[0][0], score)
     }
 
@@ -1089,10 +1150,10 @@ impl Chara {
         if bptr[K2] != 0 && bptr[Q2] != 0 {
             score += self.w.s_qnight[1];
         }
-        if bptr[B] != 0 && (bptr[B] & bptr[B] - 1) != 0 {
+        if bptr[B] != 0 && (bptr[B] & (bptr[B] - 1)) != 0 {
             score += self.w.s_bishop_pair[0];
         }
-        if bptr[B2] != 0 && (bptr[B2] & bptr[B2] - 1) != 0 {
+        if bptr[B2] != 0 && (bptr[B2] & (bptr[B2] - 1)) != 0 {
             score += self.w.s_bishop_pair[1];
         }
         if self.castled[0] {
@@ -1152,12 +1213,11 @@ impl Chara {
         self.board.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
     }
 
+    /* Play functions */
+
     fn considerate_draw(&self, wadd: i32) -> bool {
         let mut weight_for_draw = self.last_score;
         let pieces_left = (self.board.get_occupancies(false) | self.board.get_occupancies(true)).count_ones();
-        if self.play_as_black {
-            weight_for_draw = -weight_for_draw;
-        }
         if pieces_left < 5 && weight_for_draw < 300 {
             return true;
         }
@@ -1178,6 +1238,30 @@ impl Chara {
         weight_for_draw += wadd;
         println!("#DEBUG\tCalculated draw offer: {}", weight_for_draw);
         weight_for_draw > 0
+    }
+
+    fn get_result(&mut self) -> GameResult {
+        let moves = self.board.get_legal_moves();
+        if moves.is_empty() {
+            if self.board.is_in_check() {
+                if self.board.turn {
+                    return GameResult::WhiteWon;
+                }
+                return GameResult::BlackWon;
+            }
+            return GameResult::Draw;
+        }
+        if self.board.hmc > 99 {
+            return GameResult::Draw;
+        }
+        // TODO: autodraw on move repetition
+        GameResult::InProgress
+    }
+
+    #[inline]
+    fn time_alloc(&self) -> u128 {
+        let divider = 100 - min(self.board.no, 10) * 2 - min(self.board.no, 20);
+        max(min(self.time / divider as u128, MAX_TIME_LIMIT), MIN_TIME_LIMIT)
     }
 }
 

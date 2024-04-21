@@ -14,9 +14,9 @@ Interface - Partially complete (xboard comms work, but there are only some cruci
 
 ### TODO:
 
-Complete xboard support
+Full xboard support
 
-Resolve issues
+Resolve issues (including enhancement ones)
 
 Host as a lichess bot
 
