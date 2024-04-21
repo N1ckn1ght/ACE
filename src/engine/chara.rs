@@ -428,6 +428,7 @@ impl Chara {
         self.draw_offered = false;
         self.resign_offered = false;
         self.playother = false;
+        self.force = false;
         self.nodes = 0;
         self.enqueued_move = 0;
         self.last_score = 0;
