@@ -7,7 +7,7 @@ use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
-pub const MYNAME: &str = "Akira CE v1.0.0";
+pub const MYNAME: &str = "Akira CE v1.0.1";
 
 /* LIMITATIONS */
 
@@ -455,6 +455,21 @@ pub fn move_transform(mov: u32, turn: bool) -> String {
 // gui -> Option<engine>, if null - it's illegal
 pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Option<u32> {
     let command     = input.as_bytes();
+    if command.len() < 4 {
+        return None;
+    }
+    if command[0] < b'a' || command[0] > b'h' {
+        return None;
+    }
+    if command[1] < b'1' || command[1] > b'8' {
+        return None;
+    }
+    if command[2] < b'a' || command[2] > b'h' {
+        return None;
+    }
+    if command[3] < b'1' || command[3] > b'8' {
+        return None;
+    }
     let from        = command[0] as usize - 'a' as usize + (command[1] as usize - '0' as usize) * 8 - 8;
     let to          = command[2] as usize - 'a' as usize + (command[3] as usize - '0' as usize) * 8 - 8;
     let mut promo   = E;

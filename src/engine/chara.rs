@@ -112,7 +112,7 @@ impl Chara {
             castled:		[false, false],
             rx,
             last_score:     0,
-            force:          true,
+            force:          false,
             hard:           true,
             loop_force:     false,
             playother:      false,
@@ -122,8 +122,8 @@ impl Chara {
             post:           false,
             ping:           i32::MIN,
             enqueued_move:  0,
-            time:           60000,
-            otim:           60000,
+            time:           120000,
+            otim:           120000,
             started_black:  false,
             legals:         Vec::default()
         }
@@ -147,6 +147,10 @@ impl Chara {
                 match cmd[0] {
                     "accepted" => {
                         // who cares
+                    },
+                    "black" => {
+                        self.playother = self.board.turn;
+                        self.force = false;
                     },
                     "easy" => {
                         self.hard = false;
@@ -236,11 +240,18 @@ impl Chara {
                         match move_transform_back(cmd[1], &self.board.get_legal_moves(), self.board.turn) {
                             Some(mov) => {
                                 self.enqueued_move = mov;
+                                if !self.force {
+                                    self.playother = true;
+                                }
                             },
                             None => {
                                 println!("Illegal move: {}", cmd[1])
                             }
                         }
+                    },
+                    "white" => {
+                        self.playother = !self.board.turn;
+                        self.force = false;
                     },
                     "xboard" => {
                         
@@ -249,7 +260,14 @@ impl Chara {
                         println!("Error (command not legal now): {}", cmd[0]);
                     },
                     _ => {
-                        println!("Error (unknown command): {}", cmd[0]);
+                        if let Some(mov) = move_transform_back(cmd[0], &self.board.get_legal_moves(), self.board.turn) {
+                            self.enqueued_move = mov;
+                            if !self.force {
+                                self.playother = true;
+                            }
+                        } else {
+                            println!("Error (unknown command): {}", cmd[0]);
+                        }
                     }
                 }
             }
@@ -368,11 +386,15 @@ impl Chara {
                         }
                     }
                 },
-                "accepted" | "easy" | "go" | "hard" | "new" | "playother" | "protover" | "rejected" | "remove" | "setboard" | "undo" | "xboard" => {
+                "accepted" | "black" | "easy" | "go" | "hard" | "new" | "playother" | "protover" | "rejected" | "remove" | "setboard" | "undo" | "xboard" | "white" => {
                     println!("Error (command not legal now): {}", cmd[0]);
                 },
                 _ => {
-                    println!("Error (unknown command): {}", cmd[0]);
+                    if let Some(mov) = move_transform_back(cmd[0], &self.board.get_legal_moves(), self.board.turn) {
+                        self.enqueued_move = mov;
+                    } else {
+                        println!("Error (unknown command): {}", cmd[0]);
+                    }
                 }
             }
         }
@@ -406,12 +428,11 @@ impl Chara {
         self.draw_offered = false;
         self.resign_offered = false;
         self.playother = false;
-        self.force = true;
         self.nodes = 0;
         self.enqueued_move = 0;
         self.last_score = 0;
-        self.time = 60000;
-        self.otim = 60000;
+        self.time = 120000;
+        self.otim = 120000;
     }
 
     fn set_pos(&mut self, fen: &str) {
