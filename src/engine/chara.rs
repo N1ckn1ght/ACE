@@ -400,7 +400,12 @@ impl Chara {
         }
         
         if self.post && self.tpv_len[0] != 0 {
-            print!("{} {} {} {}", self.cur_depth, self.last_score, self.ts.elapsed().as_millis() / 10, self.nodes);
+            let scu = if self.playother {
+                -self.last_score
+            } else {
+                self.last_score
+            };
+            print!("{} {} {} {}", self.cur_depth, scu, self.ts.elapsed().as_millis() / 10, self.nodes);
             for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
                 print!(" {}", move_transform(*mov, (i & 1 != 0) ^ self.started_black));
             }
