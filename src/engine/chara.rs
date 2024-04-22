@@ -1297,7 +1297,7 @@ impl Chara {
 
     #[inline]
     fn time_alloc(&self) -> u128 {
-        let divider = 100 - min(self.board.no, 10) * 2 - min(self.board.no, 20);
+        let divider = 90 - min(self.board.no, 10) * 2 - min(self.board.no, 20);
         max(min(self.time / divider as u128, MAX_TIME_LIMIT), MIN_TIME_LIMIT)
     }
 }
