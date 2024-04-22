@@ -7,7 +7,7 @@ use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
-pub const MYNAME: &str = "Akira CE v1.0.2";
+pub const MYNAME: &str = "Akira CE v1.0.3";
 
 /* LIMITATIONS */
 
@@ -474,7 +474,11 @@ pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Opti
     let to          = command[2] as usize - 'a' as usize + (command[3] as usize - '0' as usize) * 8 - 8;
     let mut promo   = E;
     if command.len() > 4 {
-        promo = PIECES[&(command[4] as char)] & !1;
+        if command[4] == b'b' || command[4] == b'n' || command[4] == b'r' || command[4] == b'q' {
+            promo = PIECES[&(command[4] as char)] & !1;
+        } else {
+            return None;
+        }
     }
     for legal in legal_moves.iter() {
         let mfrom  = move_get_from(*legal, turn);

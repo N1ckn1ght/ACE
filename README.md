@@ -1,4 +1,4 @@
-Version: 1.0.2
+Version: 1.0.3
 
 It works, but... there's still a long road ahead!
 

@@ -72,6 +72,7 @@ pub struct Chara {
     post:               bool,                   // 
     ping:               i32,                    // received in update(), but must be done when listen()
     enqueued_move:      u32,                    // received in update(), but must be done in listen()
+    enqueued_reverts:   u32,                    // take back how many moves (comm got from update())
     time:               u128,                   // Running Out Of Time
     otim:               u128,                   // time of the opponent
 
@@ -90,42 +91,43 @@ impl Chara {
 
         Self {
             board,
-            w:				Weights::init(),
-            baw:            300, // pretty much default value, divide by 400 to get centipawns
-            cache_leaves:	HashMap::default(),
-            cache_branches:	HashMap::default(),
-            history_vec:	cache_perm_vec,
-            history_set:	HashSet::default(),
+            w:				    Weights::init(),
+            baw:                300, // pretty much default value, divide by 400 to get centipawns
+            cache_leaves:	    HashMap::default(),
+            cache_branches:	    HashMap::default(),
+            history_vec:	    cache_perm_vec,
+            history_set:	    HashSet::default(),
             zobrist,
-            rng:			rand::thread_rng(),
-            ts:				Instant::now(),
-            tl:				0,
-            abort:			false,
-            nodes:			0,
-            hmc:			0,
-            tpv:			[[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
-            tpv_len:		[0; HALF_DEPTH_LIMIT],
-            killer:			[[0; HALF_DEPTH_LIMIT]; 2],
-            tpv_flag:		false,
-            mate_flag:		false,
-            cur_depth:      0,
-            castled:		[false, false],
+            rng:			    rand::thread_rng(),
+            ts:				    Instant::now(),
+            tl:				    0,
+            abort:			    false,
+            nodes:			    0,
+            hmc:			    0,
+            tpv:			    [[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
+            tpv_len:		    [0; HALF_DEPTH_LIMIT],
+            killer:			    [[0; HALF_DEPTH_LIMIT]; 2],
+            tpv_flag:		    false,
+            mate_flag:		    false,
+            cur_depth:          0,
+            castled:		    [false, false],
             rx,
-            last_score:     0,
-            force:          false,
-            hard:           true,
-            loop_force:     false,
-            playother:      false,
-            draw_offered:   false,
-            resign_offered: false,
-            quit:           false,
-            post:           false,
-            ping:           i32::MIN,
-            enqueued_move:  0,
-            time:           120000,
-            otim:           120000,
-            started_black:  false,
-            legals:         Vec::default()
+            last_score:         0,
+            force:              false,
+            hard:               true,
+            loop_force:         false,
+            playother:          false,
+            draw_offered:       false,
+            resign_offered:     false,
+            quit:               false,
+            post:               false,
+            ping:               i32::MIN,
+            enqueued_move:      0,
+            enqueued_reverts:   0,
+            time:               120000,
+            otim:               120000,
+            started_black:      false,
+            legals:             Vec::default()
         }
     }
 
@@ -277,10 +279,23 @@ impl Chara {
             }
             
             self.loop_force = false;
+            if self.enqueued_reverts != 0 {
+                self.enqueued_move = 1; // sorry for this code (whoever gonna read this)
+                self.playother = !self.playother;
+                while self.enqueued_reverts != 0 {
+                    self.revert_move();
+                    self.enqueued_reverts -= 1;
+                    self.playother = !self.playother;
+                    println!("#DEBUG\tDeleted 1 move.");
+                }
+            }
             if self.enqueued_move != 0 {
-                self.make_move(self.enqueued_move);
-                if !(self.force || self.playother) {
-                    println!("move {}", move_transform(self.enqueued_move, !self.board.turn));
+                if self.enqueued_move != 1 {
+                    println!("#Degug\tMaking move {}...", self.enqueued_move);
+                    self.make_move(self.enqueued_move);
+                    if !(self.force || self.playother) {
+                        println!("move {}", move_transform(self.enqueued_move, !self.board.turn));
+                    }
                 }
                 self.enqueued_move = 0;
                 if !self.force {
@@ -372,8 +387,16 @@ impl Chara {
                         self.w.rand = 0;
                     }
                 },
+                "remove" => {
+                    self.enqueued_reverts = 2;
+                    self.abort = true;
+                },
                 "time" => {
                     self.time = cmd[1].parse::<u128>().unwrap() * 10;
+                },
+                "undo" => {
+                    self.enqueued_reverts = 1;
+                    self.abort = true;
                 },
                 "usermove" => {
                     match move_transform_back(cmd[1], &self.legals, self.started_black) {
@@ -386,14 +409,18 @@ impl Chara {
                         }
                     }
                 },
-                "accepted" | "black" | "easy" | "go" | "hard" | "new" | "playother" | "protover" | "rejected" | "remove" | "setboard" | "undo" | "xboard" | "white" => {
+                "accepted" | "black" | "easy" | "go" | "hard" | "new" | "playother" | "protover" | "rejected" | "setboard" | "xboard" | "white" => {
                     println!("Error (command not legal now): {}", cmd[0]);
                 },
                 _ => {
-                    if let Some(mov) = move_transform_back(cmd[0], &self.board.get_legal_moves(), self.board.turn) {
-                        self.enqueued_move = mov;
-                    } else {
-                        println!("Error (unknown command): {}", cmd[0]);
+                    match move_transform_back(cmd[0], &self.legals, self.started_black) {
+                        Some(mov) => {
+                            self.enqueued_move = mov;
+                            self.abort = true;
+                        },
+                        None => {
+                            println!("Error (unknown command): {}", cmd[0]);
+                        }
                     }
                 }
             }
@@ -436,6 +463,7 @@ impl Chara {
         self.force = false;
         self.nodes = 0;
         self.enqueued_move = 0;
+        self.enqueued_reverts = 0;
         self.last_score = 0;
         self.time = 120000;
         self.otim = 120000;
