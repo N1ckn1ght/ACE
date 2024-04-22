@@ -6,9 +6,9 @@ It works, but... there's still a long road ahead!
 
 Pre-calculations - Complete!
 
-Board - Complete! (~24m nps)
+Board - Complete! (~24m nps on perft)
 
-Engine - Complete! (~550k nps; Inspired by: BBC engine)
+Engine - Complete! (~300k nps; Inspired by: BBC engine)
 
 Eval - Complete! (Inspired by: Kaissa engine, PeSTO eval)
 
