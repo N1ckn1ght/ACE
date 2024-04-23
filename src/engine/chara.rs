@@ -75,6 +75,8 @@ pub struct Chara {
     enqueued_reverts:   u32,                    // take back how many moves (comm got from update())
     time:               u128,                   // Running Out Of Time
     otim:               u128,                   // time of the opponent
+    st:                 bool,                   // fixed time per move? (level is currently done through this as well)
+    inc:                u128,                   // fixed time per move / increment
 
     /* Comms addon */
 
@@ -126,6 +128,8 @@ impl Chara {
             enqueued_reverts:   0,
             time:               120000,
             otim:               120000,
+            st:                 false,
+            inc:                0,
             started_black:      false,
             legals:             Vec::default()
         }
@@ -158,7 +162,7 @@ impl Chara {
                         self.hard = false;
                     },
                     "draw" => {
-                        if self.considerate_draw(0) {
+                        if self.considerate_draw(200) {
                             println!("offer draw");
                         }
                     },
@@ -178,6 +182,30 @@ impl Chara {
                     },
                     "hard" => {
                         self.hard = true;
+                    },
+                    "level" => {
+                        if cmd.len() > 4 {
+                            println!("Error (too many parameters): {}", line.trim());
+                        } else if cmd.len() < 4 {
+                            println!("Error (too few parameters): {}", line.trim());
+                        } else {
+                            let mps = cmd[1].parse::<u128>().unwrap();
+                            let btr = cmd[2].split(":").collect::<Vec<&str>>();
+                            let mut bt = btr[0].parse::<u128>().unwrap() * 60; 
+                            if btr.len() > 1 {
+                                bt += btr[1].parse::<u128>().unwrap();
+                            }
+                            self.inc = cmd[3].parse::<u128>().unwrap() * 1000;
+                            if mps != 0 {
+                                self.st = true;
+                                self.inc += bt * 1000 / mps;
+                            } else {
+                                self.st = false;
+                            }
+                            self.time = bt * 1000;
+                            self.otim = bt * 1000;
+                            println!("#DEBUG\tTime set! St = {}, Inc = {}", self.st, self.inc);
+                        }
                     },
                     "new" => {
                         self.clear();
@@ -209,6 +237,10 @@ impl Chara {
                         } else {
                             // insert crashcode LOL
                         }
+                    },
+                    "st" => {
+                        self.st = true;
+                        self.inc = cmd[1].parse::<u128>().unwrap() * 1000;
                     },
                     "quit" => {
                         self.quit = true;
@@ -355,7 +387,7 @@ impl Chara {
                     self.abort = true;
                 },
                 "draw" => {
-                    if self.considerate_draw(0) {
+                    if self.considerate_draw(200) {
                         println!("offer draw");
                     }
                 },
@@ -409,7 +441,7 @@ impl Chara {
                         }
                     }
                 },
-                "accepted" | "black" | "easy" | "go" | "hard" | "new" | "playother" | "protover" | "rejected" | "setboard" | "xboard" | "white" => {
+                "accepted" | "black" | "easy" | "go" | "hard" | "level" | "new" | "playother" | "protover" | "rejected" | "setboard" | "st" | "xboard" | "white" => {
                     println!("Error (command not legal now): {}", cmd[0]);
                 },
                 _ => {
@@ -426,17 +458,8 @@ impl Chara {
             }
         }
         
-        if self.post && self.tpv_len[0] != 0 {
-            let scu = if self.playother {
-                -self.last_score
-            } else {
-                self.last_score
-            };
-            print!("{} {} {} {}", self.cur_depth, scu, self.ts.elapsed().as_millis() / 10, self.nodes);
-            for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
-                print!(" {}", move_transform(*mov, (i & 1 != 0) ^ self.started_black));
-            }
-            println!();
+        if self.post && (self.nodes & NODES_BETWEEN_POSTS == 0) && self.tpv_len[0] != 0 {
+            self.post();
         }
 
         if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
@@ -446,54 +469,6 @@ impl Chara {
             println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
             self.cache_branches.clear();
         }
-    }
-
-    fn clear(&mut self) {
-        self.board = Board::default();
-        self.history_set.clear();
-        self.history_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
-        self.history_vec.push(self.zobrist.cache_new(&self.board));
-        self.castled = [false, false];
-        self.cache_leaves.clear();
-        self.cache_branches.clear();
-        self.cur_depth = 0;
-        self.draw_offered = false;
-        self.resign_offered = false;
-        self.playother = false;
-        self.force = false;
-        self.nodes = 0;
-        self.enqueued_move = 0;
-        self.enqueued_reverts = 0;
-        self.last_score = 0;
-        self.time = 120000;
-        self.otim = 120000;
-    }
-
-    fn set_pos(&mut self, fen: &str) {
-        self.clear();
-        self.board = Board::import(fen);
-        self.history_vec.pop();
-        self.history_vec.push(self.zobrist.cache_new(&self.board));
-    }
-
-    fn make_move(&mut self, mov: u32) {
-        if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
-            self.castled[self.board.turn as usize] = true;
-        }
-        let prev_hash = *self.history_vec.last().unwrap();
-        self.history_set.insert(prev_hash);
-        self.board.make_move(mov);
-        let hash = self.zobrist.cache_iter(&self.board, mov, prev_hash);
-        self.history_vec.push(hash);
-    }
-
-    fn revert_move(&mut self) {
-        if self.board.move_history.last().unwrap() & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
-            self.castled[!self.board.turn as usize] = false;
-        }
-        self.board.revert_move();
-        self.history_vec.pop();
-        self.history_set.remove(self.history_vec.last().unwrap());
     }
 
     fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
@@ -553,16 +528,68 @@ impl Chara {
             if self.cur_depth > depth_limit {
                 break;
             }
+
+            if self.post && self.tpv_len[0] != 0 {
+                self.post();
+            }
         }
 
         EvalMove::new(self.tpv[0][0], score)
+    }
+
+    fn clear(&mut self) {
+        self.board = Board::default();
+        self.history_set.clear();
+        self.history_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
+        self.history_vec.push(self.zobrist.cache_new(&self.board));
+        self.castled = [false, false];
+        self.cache_leaves.clear();
+        self.cache_branches.clear();
+        self.cur_depth = 0;
+        self.draw_offered = false;
+        self.resign_offered = false;
+        self.playother = false;
+        self.force = false;
+        self.nodes = 0;
+        self.enqueued_move = 0;
+        self.enqueued_reverts = 0;
+        self.last_score = 0;
+        self.time = 120000;
+        self.otim = 120000;
+    }
+
+    fn set_pos(&mut self, fen: &str) {
+        self.clear();
+        self.board = Board::import(fen);
+        self.history_vec.pop();
+        self.history_vec.push(self.zobrist.cache_new(&self.board));
+    }
+
+    fn make_move(&mut self, mov: u32) {
+        if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
+            self.castled[self.board.turn as usize] = true;
+        }
+        let prev_hash = *self.history_vec.last().unwrap();
+        self.history_set.insert(prev_hash);
+        self.board.make_move(mov);
+        let hash = self.zobrist.cache_iter(&self.board, mov, prev_hash);
+        self.history_vec.push(hash);
+    }
+
+    fn revert_move(&mut self) {
+        if self.board.move_history.last().unwrap() & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
+            self.castled[!self.board.turn as usize] = false;
+        }
+        self.board.revert_move();
+        self.history_vec.pop();
+        self.history_set.remove(self.history_vec.last().unwrap());
     }
 
     fn search(&mut self, mut alpha: i32, beta: i32, mut depth: i16) -> i32 {
         self.tpv_len[self.hmc] = self.hmc;
 
         let hash = *self.history_vec.last().unwrap();
-        if self.hmc != 0 && (self.board.hmc == 50 || self.history_set.contains(&hash)) {
+        if self.hmc != 0 && (self.board.hmc > 99 || self.history_set.contains(&hash)) {
             return self.w.rand + 1;
         }
         
@@ -1281,7 +1308,12 @@ impl Chara {
     /* Play functions */
 
     fn considerate_draw(&self, wadd: i32) -> bool {
-        let mut weight_for_draw = self.last_score;
+        let pl = if self.playother {
+            -1
+        } else {
+            1
+        };
+        let mut weight_for_draw = self.last_score * pl;
         let pieces_left = (self.board.get_occupancies(false) | self.board.get_occupancies(true)).count_ones();
         if pieces_left < 5 && weight_for_draw < 300 {
             return true;
@@ -1295,11 +1327,20 @@ impl Chara {
             weight_for_draw -= 200;
         }
         if self.time < 60000 || self.otim < 60000 {
-            weight_for_draw += max(min(i32::try_from((self.otim - self.time) / 100).unwrap_or(-400), 400), -400);
+            weight_for_draw += max(min((i32::try_from(self.otim).unwrap_or(120000) - i32::try_from(self.time).unwrap_or(120000)) / 100, 400), -400);
         } else {
-            weight_for_draw -= 400;
+            weight_for_draw -= 200;
         }
-        weight_for_draw -= self.w.rand - 1;
+        if self.hmc > 20 {
+            weight_for_draw += 200;
+            if self.hmc > 40 {
+                weight_for_draw += 300;
+                if self.hmc > 60 {
+                    weight_for_draw += 400;
+                }
+            }
+        }
+        weight_for_draw -= (self.w.rand - 2) * pl;
         weight_for_draw += wadd;
         println!("#DEBUG\tCalculated draw offer: {}", weight_for_draw);
         weight_for_draw > 0
@@ -1323,8 +1364,24 @@ impl Chara {
         GameResult::InProgress
     }
 
+    fn post(&self) {
+        let scu = if self.playother {
+            -self.last_score
+        } else {
+            self.last_score
+        };
+        print!("{} {} {} {}", self.cur_depth, scu, self.ts.elapsed().as_millis() / 10, self.nodes);
+        for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
+            print!(" {}", move_transform(*mov, (i & 1 != 0) ^ self.started_black));
+        }
+        println!();
+    }
+
     #[inline]
     fn time_alloc(&self) -> u128 {
+        if self.st && self.inc > 499 {
+            return max(self.inc - min(self.inc * 8 / 100, 50), MIN_TIME_LIMIT);   
+        }
         let divider = 80 - min(self.board.no, 10) * 2 - min(self.board.no, 20);
         max(min(self.time / divider as u128, MAX_TIME_LIMIT), MIN_TIME_LIMIT)
     }
