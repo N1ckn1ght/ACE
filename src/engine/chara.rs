@@ -1305,11 +1305,11 @@ impl Chara {
             weight_for_draw -= 200;
         }
         // weight_for_draw += self.clock.is_it_time_for_draw() * pl;
-        if self.hmc > 20 {
+        if self.board.hmc > 20 {
             weight_for_draw += 200;
-            if self.hmc > 40 {
+            if self.board.hmc > 40 {
                 weight_for_draw += 300;
-                if self.hmc > 60 {
+                if self.board.hmc > 60 {
                     weight_for_draw += 400;
                 }
             }
