@@ -156,9 +156,13 @@ impl Chara {
                         self.hard = false;
                     },
                     "draw" => {
+                        // todo
+                        self.playother = !self.playother;
                         if self.considerate_draw(100) {
+                            self.post();
                             println!("offer draw");
                         }
+                        self.playother = !self.playother;
                     },
                     "force" | "result" => {
                         self.force = true;
@@ -300,13 +304,14 @@ impl Chara {
             }
             if self.enqueued_move != 0 {
                 if self.enqueued_move != 1 {
-                    println!("#Degug\tMaking move {}...", self.enqueued_move);
                     if self.draw_got_offer {
                         self.draw_got_offer = false;
                         if self.considerate_draw(100) {
+                            self.post();
                             println!("offer draw");
                         }
                     }
+                    println!("#Degug\tMaking move {}...", self.enqueued_move);
                     self.make_move(self.enqueued_move);
                     if !(self.force || self.playother) {
                         println!("move {}", move_transform(self.enqueued_move, !self.board.turn));
@@ -442,7 +447,7 @@ impl Chara {
             }
         }
         
-        if self.post && (self.nodes & NODES_BETWEEN_POSTS == 0) && self.tpv_len[0] != 0 {
+        if (self.nodes & NODES_BETWEEN_POSTS == 0) && self.tpv_len[0] != 0 {
             self.post();
         }
 
@@ -481,7 +486,7 @@ impl Chara {
                 break;
             }
             self.last_score = score_to_gui(score, false);
-            if self.post && self.tpv_len[0] != 0 {
+            if self.tpv_len[0] != 0 {
                 self.post();
             }
             if !(-LARGM..=LARGM).contains(&score) {
@@ -1346,6 +1351,9 @@ impl Chara {
     }
 
     fn post(&self) {
+        if !self.post {
+            return;
+        }
         let scu = if self.playother {
             -self.last_score
         } else {
