@@ -1,4 +1,4 @@
-Version: 1.0.4
+Version: 1.0.5
 
 It works, but... there's still a long road ahead!
 
@@ -12,11 +12,13 @@ Engine - Complete! (~300k nps; Inspired by: BBC engine)
 
 Eval - Complete! (Inspired by: Kaissa engine, PeSTO eval)
 
-Interface - Partially complete (xboard comms work, but there are only some crucial features)
+Interface - Partially complete (Musthave features work)
 
 ### TODO:
 
-Full xboard (CECP) support
+Full xboard (CECP v2) support
+
+UCI support
 
 Resolve issues (including enhancement ones (THERE ARE A LOT))
 
@@ -27,6 +29,8 @@ Upgrade evaluation
 Host as a lichess bot
 
 Opening book support (or custom opening book)
+
+Endgame tables support
 
 ### Game example:
 

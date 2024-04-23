@@ -1,19 +1,19 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::{max, min}, collections::{HashMap, HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
+use std::{cmp::max, collections::{HashMap, HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
-use super::{weights::Weights, zobrist::Zobrist};
+use super::{clock::Clock, weights::Weights, zobrist::Zobrist};
 
 /* CONSTANTS FOR STATIC EVALUATION */
 
-pub const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
-pub const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
-pub const CENTR1: [u64; 2] = [0b0000000000111100001111000011110000111100001111000000000000000000, 0b0000000000000000001111000011110000111100001111000011110000000000];
-pub const CENTR2: [u64; 2] = [0b0111111001111110011111100111111001111110011111100111111000000000, 0b0000000001111110011111100111111001111110011111100111111001111110];
+const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
+const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
+const CENTR1: [u64; 2] = [0b0000000000111100001111000011110000111100001111000000000000000000, 0b0000000000000000001111000011110000111100001111000011110000000000];
+const CENTR2: [u64; 2] = [0b0111111001111110011111100111111001111110011111100111111000000000, 0b0000000001111110011111100111111001111110011111100111111001111110];
 
-pub const DEFAULT_VEC_CAPACITY: usize = 300;
+const DEFAULT_VEC_CAPACITY: usize = 300;
 
 enum GameResult {
     InProgress,
@@ -66,22 +66,17 @@ pub struct Chara {
     hard:               bool,                   // always pondering
     loop_force:         bool,                   // ignore command input in listen() for a current cycle
     playother:          bool,                   // send score for other side
-    draw_offered:       bool,                   // UNUSED in v1.0.0
-    resign_offered:     bool,                   // UNUSED in v1.0.0
+    draw_offered:       bool,                   // UNUSED by now
+    resign_offered:     bool,                   // UNUSED by now
     quit:               bool,                   // received in update()
-    post:               bool,                   // 
+    post:               bool,                   // post non-debug calculations info or not
     ping:               i32,                    // received in update(), but must be done when listen()
+    // depth_limit:        i32,
     enqueued_move:      u32,                    // received in update(), but must be done in listen()
     enqueued_reverts:   u32,                    // take back how many moves (comm got from update())
-    time:               u128,                   // Running Out Of Time
-    otim:               u128,                   // time of the opponent
-    st:                 bool,                   // fixed time per move? (level is currently done through this as well)
-    inc:                u128,                   // fixed time per move / increment
-
-    /* Comms addon */
-
-    started_black:      bool,                   // fix for unusual move transformation
-    legals:             Vec<u32>
+    clock:              Clock,
+    started_black:      bool,                   // hotfix for unusual move transformation (playother for think())
+    legals:             Vec<u32>                // hotfix for a bug preventing usermove while pondering
 }
 
 impl Chara {
@@ -126,10 +121,7 @@ impl Chara {
             ping:               i32::MIN,
             enqueued_move:      0,
             enqueued_reverts:   0,
-            time:               120000,
-            otim:               120000,
-            st:                 false,
-            inc:                0,
+            clock:              Clock::default(),
             started_black:      false,
             legals:             Vec::default()
         }
@@ -162,7 +154,7 @@ impl Chara {
                         self.hard = false;
                     },
                     "draw" => {
-                        if self.considerate_draw(200) {
+                        if self.considerate_draw(100) {
                             println!("offer draw");
                         }
                     },
@@ -174,7 +166,6 @@ impl Chara {
                         self.force = false;
                         let ctime = self.time_alloc();
                         println!("#DEBUG\tTime limit: {} ms", ctime);
-                        self.time -= ctime; // TODO: this is bad practice, should make it precise
                         let em = self.think(self.baw, ctime, HALF_DEPTH_LIMIT_SAFE);
                         if !self.force {
                             self.enqueued_move = em.mov;
@@ -189,22 +180,7 @@ impl Chara {
                         } else if cmd.len() < 4 {
                             println!("Error (too few parameters): {}", line.trim());
                         } else {
-                            let mps = cmd[1].parse::<u128>().unwrap();
-                            let btr = cmd[2].split(":").collect::<Vec<&str>>();
-                            let mut bt = btr[0].parse::<u128>().unwrap() * 60; 
-                            if btr.len() > 1 {
-                                bt += btr[1].parse::<u128>().unwrap();
-                            }
-                            self.inc = cmd[3].parse::<u128>().unwrap() * 1000;
-                            if mps != 0 {
-                                self.st = true;
-                                self.inc += bt * 1000 / mps;
-                            } else {
-                                self.st = false;
-                            }
-                            self.time = bt * 1000;
-                            self.otim = bt * 1000;
-                            println!("#DEBUG\tTime set! St = {}, Inc = {}", self.st, self.inc);
+                            self.clock.level(cmd[1], cmd[2], cmd[3]);
                         }
                     },
                     "new" => {
@@ -215,7 +191,7 @@ impl Chara {
                         self.post = false;
                     },
                     "otim" => {
-                        self.otim = cmd[1].parse::<u128>().unwrap() * 10;
+                        self.clock.otim(cmd[1]);
                     },
                     "ping" => {
                         self.ping = cmd[1].parse::<i32>().unwrap_or(i32::MIN);
@@ -239,8 +215,7 @@ impl Chara {
                         }
                     },
                     "st" => {
-                        self.st = true;
-                        self.inc = cmd[1].parse::<u128>().unwrap() * 1000;
+                        self.clock.st(cmd[1]);
                     },
                     "quit" => {
                         self.quit = true;
@@ -264,7 +239,7 @@ impl Chara {
                         self.set_pos(fen);
                     },
                     "time" => {
-                        self.time = cmd[1].parse::<u128>().unwrap() * 10;
+                        self.clock.time(cmd[1]);
                     },
                     "undo" => {
                         self.revert_move();
@@ -327,6 +302,10 @@ impl Chara {
                     self.make_move(self.enqueued_move);
                     if !(self.force || self.playother) {
                         println!("move {}", move_transform(self.enqueued_move, !self.board.turn));
+                        if !self.draw_offered && self.considerate_draw(0) {
+                            println!("offer draw");
+                            self.draw_offered = true;
+                        }
                     }
                 }
                 self.enqueued_move = 0;
@@ -336,7 +315,6 @@ impl Chara {
                     if !self.playother {
                         ctime = self.time_alloc();
                         println!("#DEBUG\tTime limit: {} ms", ctime);
-                        self.time -= ctime; // TODO: this is bad practice, should make it precise
                     }
                     match self.get_result() {
                         GameResult::InProgress => {
@@ -387,7 +365,7 @@ impl Chara {
                     self.abort = true;
                 },
                 "draw" => {
-                    if self.considerate_draw(200) {
+                    if self.considerate_draw(100) {
                         println!("offer draw");
                     }
                 },
@@ -399,7 +377,7 @@ impl Chara {
                     self.post = false;
                 },
                 "otim" => {
-                    self.otim = cmd[1].parse::<u128>().unwrap() * 10;
+                    self.clock.otim(cmd[1]);
                 },
                 "ping" => {
                     self.ping = cmd[1].parse::<i32>().unwrap_or(i32::MIN);
@@ -424,7 +402,7 @@ impl Chara {
                     self.abort = true;
                 },
                 "time" => {
-                    self.time = cmd[1].parse::<u128>().unwrap() * 10;
+                    self.clock.time(cmd[1]);
                 },
                 "undo" => {
                     self.enqueued_reverts = 1;
@@ -496,6 +474,10 @@ impl Chara {
                 println!("#DEBUG\tAbort signal reached!");
                 break;
             }
+            self.last_score = score_to_gui(score, false);
+            if self.post && self.tpv_len[0] != 0 {
+                self.post();
+            }
             if !(-LARGM..=LARGM).contains(&score) {
                 if self.mate_flag {
                     break;
@@ -528,12 +510,9 @@ impl Chara {
             if self.cur_depth > depth_limit {
                 break;
             }
-
-            if self.post && self.tpv_len[0] != 0 {
-                self.post();
-            }
         }
 
+        println!("DEBUG\tApproximate time spent: {} ms", self.ts.elapsed().as_millis());
         EvalMove::new(self.tpv[0][0], score)
     }
 
@@ -554,8 +533,7 @@ impl Chara {
         self.enqueued_move = 0;
         self.enqueued_reverts = 0;
         self.last_score = 0;
-        self.time = 120000;
-        self.otim = 120000;
+        self.clock = Clock::default();
     }
 
     fn set_pos(&mut self, fen: &str) {
@@ -1313,9 +1291,9 @@ impl Chara {
         } else {
             1
         };
-        let mut weight_for_draw = self.last_score * pl;
+        let mut weight_for_draw = -self.last_score * pl;
         let pieces_left = (self.board.get_occupancies(false) | self.board.get_occupancies(true)).count_ones();
-        if pieces_left < 5 && weight_for_draw < 300 {
+        if pieces_left < 5 && weight_for_draw > -300 {
             return true;
         }
         if pieces_left > 24 {
@@ -1326,11 +1304,7 @@ impl Chara {
         } else if pieces_left > 8 {
             weight_for_draw -= 200;
         }
-        if self.time < 60000 || self.otim < 60000 {
-            weight_for_draw += max(min((i32::try_from(self.otim).unwrap_or(120000) - i32::try_from(self.time).unwrap_or(120000)) / 100, 400), -400);
-        } else {
-            weight_for_draw -= 200;
-        }
+        // weight_for_draw += self.clock.is_it_time_for_draw() * pl;
         if self.hmc > 20 {
             weight_for_draw += 200;
             if self.hmc > 40 {
@@ -1378,12 +1352,8 @@ impl Chara {
     }
 
     #[inline]
-    fn time_alloc(&self) -> u128 {
-        if self.st && self.inc > 499 {
-            return max(self.inc - min(self.inc * 8 / 100, 50), MIN_TIME_LIMIT);   
-        }
-        let divider = 80 - min(self.board.no, 10) * 2 - min(self.board.no, 20);
-        max(min(self.time / divider as u128, MAX_TIME_LIMIT), MIN_TIME_LIMIT)
+    fn time_alloc(&mut self) -> u128 {
+        self.clock.time_alloc(self.board.no, self.hard)
     }
 }
 

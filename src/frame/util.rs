@@ -7,7 +7,7 @@ use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
-pub const MYNAME: &str = "Akira CE v1.0.4";
+pub const MYNAME: &str = "Akira CE v1.0.5";
 
 /* LIMITATIONS */
 
@@ -20,8 +20,6 @@ pub const HALF_DEPTH_LIMIT_SAFE: i16 = 50;                                      
 pub const NODES_BETWEEN_COMMS: u64 = 0b0000111111111111;
 pub const NODES_BETWEEN_POSTS: u64 = 0b0111111111111111;
 pub const PONDER_TIME: u128 = 1 << 63;                                          // no limit
-pub const MAX_TIME_LIMIT: u128 = 3000000;                                       // 5 minutes
-pub const MIN_TIME_LIMIT: u128 = 50;
 
 /* SPECIFIED PATHES */
 
@@ -498,13 +496,13 @@ pub fn score_to_gui(mut score: i32, playother: bool) -> i32 {
     }
     if score < 0 {
         if score < -LARGM {
-            return -(10001 + (LARGE + score) / 2);
+            return -(100001 + (LARGE + score) / 2);
         }
         return score / 4;
     }
     // else if score >= 0
     if score > LARGM {
-        return 10001 + (LARGE - score) / 2;
+        return 100001 + (LARGE - score) / 2;
     }
     score / 4
 }
