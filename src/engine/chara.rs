@@ -66,7 +66,8 @@ pub struct Chara {
     hard:               bool,                   // always pondering
     loop_force:         bool,                   // ignore command input in listen() for a current cycle
     playother:          bool,                   // send score for other side
-    draw_offered:       bool,                   // UNUSED by now
+    draw_offered:       bool,                   // by engine itself
+    draw_got_offer:     bool,                   // from opfor
     resign_offered:     bool,                   // UNUSED by now
     quit:               bool,                   // received in update()
     post:               bool,                   // post non-debug calculations info or not
@@ -115,6 +116,7 @@ impl Chara {
             loop_force:         false,
             playother:          false,
             draw_offered:       false,
+            draw_got_offer:     false,
             resign_offered:     false,
             quit:               false,
             post:               false,
@@ -299,6 +301,12 @@ impl Chara {
             if self.enqueued_move != 0 {
                 if self.enqueued_move != 1 {
                     println!("#Degug\tMaking move {}...", self.enqueued_move);
+                    if self.draw_got_offer {
+                        self.draw_got_offer = false;
+                        if self.considerate_draw(100) {
+                            println!("offer draw");
+                        }
+                    }
                     self.make_move(self.enqueued_move);
                     if !(self.force || self.playother) {
                         println!("move {}", move_transform(self.enqueued_move, !self.board.turn));
@@ -365,9 +373,7 @@ impl Chara {
                     self.abort = true;
                 },
                 "draw" => {
-                    if self.considerate_draw(100) {
-                        println!("offer draw");
-                    }
+                    self.draw_got_offer = true;
                 },
                 "force" | "result" => {
                     self.abort = true;
@@ -526,6 +532,7 @@ impl Chara {
         self.cache_branches.clear();
         self.cur_depth = 0;
         self.draw_offered = false;
+        self.draw_got_offer = false;
         self.resign_offered = false;
         self.playother = false;
         self.force = false;
