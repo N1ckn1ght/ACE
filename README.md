@@ -18,21 +18,11 @@ Comms - Partially complete (Musthave features work, xboard protocol only)
 
 ### TODO:
 
-Full xboard (CECP v2) support
+Full xboard (CECP v2) and/or UCI support
 
-UCI support
+Resolve issues (incompatibilities, enhancements, there are a lot)
 
-Resolve issues (including enhancement ones (THERE ARE A LOT))
-
-Resolve incompatibilities
-
-Upgrade evaluation
-
-Host as a lichess bot
-
-Opening book support (or custom opening book)
-
-Endgame tables support
+Opening books, endgame tables support
 
 ### Game samples:
 
@@ -64,9 +54,9 @@ Ravile
 
 paradoxine
 
-...and to All The other Fellas
+##### ...and to All The other Fellas
 
-##### Is it really 'First' edition?
+### Is it really 'First' edition though?
 
 Nope. https://github.com/N1ckn1ght/CCE
 
