@@ -32,22 +32,23 @@ impl Clock {
     // in fact, board.no is required
     pub fn time_alloc(&mut self, halfmove_counter: i16, is_ponder_on: bool) -> u128 {
         let fullmove_counter = halfmove_counter / 2;
-        
+        let ka = if is_ponder_on {
+            6
+        } else {
+            12
+        };
+        let kb = if is_ponder_on {
+            140
+        } else {
+            50
+        };
+
         match self.time_control {
             TimeControl::Conventional => {
-                let ka = if is_ponder_on {
-                    8
-                } else {
-                    12
-                };
-                let kb = if is_ponder_on {
-                    90
-                } else {
-                    50
-                };
                 let fraction = self.mps - fullmove_counter % self.mps;
                 let mut alloc = self.time / fraction as u128;
-                alloc -= min(alloc / ka, kb + alloc / 100);
+                let fs = min(alloc / ka, kb + alloc / 100);
+                alloc -= fs;
                 self.time -= alloc;
                 return alloc + self.inc;
             },
@@ -65,16 +66,6 @@ impl Clock {
                 return nalloc;
             },
             TimeControl::Deadline => {
-                let ka = if is_ponder_on {
-                    6
-                } else {
-                    12
-                };
-                let kb = if is_ponder_on {
-                    140
-                } else {
-                    50
-                };
                 return self.inc - min(self.inc / ka, kb + self.inc / 100);
             }
         }

@@ -156,13 +156,17 @@ impl Chara {
                         self.hard = false;
                     },
                     "draw" => {
-                        // todo
-                        self.playother = !self.playother;
-                        if self.considerate_draw(100) {
+                        let temp = self.playother;
+                        if self.hard {
+                            self.playother = true;
+                        } else {
+                            self.playother = false;
+                        }
+                        if self.considerate_draw(0) {
                             self.post();
                             println!("offer draw");
                         }
-                        self.playother = !self.playother;
+                        self.playother = temp;
                     },
                     "force" | "result" => {
                         self.force = true;
@@ -306,7 +310,7 @@ impl Chara {
                 if self.enqueued_move != 1 {
                     if self.draw_got_offer {
                         self.draw_got_offer = false;
-                        if self.considerate_draw(100) {
+                        if self.considerate_draw(0) {
                             self.post();
                             println!("offer draw");
                         }
