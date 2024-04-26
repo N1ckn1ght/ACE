@@ -1209,8 +1209,8 @@ impl Chara {
             }
         }
 
-        score_pd[0] += (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
-        score_pd[0] += (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
+        score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
+        score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
         if mptr.attacks_king[kbits[0]] & (pass[0] | pass[1]) != 0 {
             score_pd[0] += self.w.k_pawn_dist1[0][0];
             score_pd[1] += self.w.k_pawn_dist1[1][0];
@@ -1229,7 +1229,6 @@ impl Chara {
             score_pd[0] += self.w.k_opposition[0][!self.board.turn as usize];
             score_pd[1] += self.w.k_opposition[1][!self.board.turn as usize];
         }
-
         if bptr[K] != 0 && bptr[Q] != 0 {
             score += self.w.s_qnight[0];
         }
@@ -1267,6 +1266,9 @@ impl Chara {
 
         score += ((score_pd[0] as f32 * phase_diff) + (score_pd[1] as f32 * (1.0 - phase_diff))) as i32;
         score += self.w.s_mobility * (mobility[0].count_ones() as i32 - mobility[1].count_ones() as i32);
+
+        println!("DEBUG\tRaw score = {}", score);
+
         if self.board.turn ^ (score > 0) {
             score += score / self.w.s_turn_div;
         } else {
@@ -1392,7 +1394,8 @@ mod tests {
         let mov = move_transform_back("e7e5", &moves, chara.board.turn).unwrap();
         chara.make_move(mov);
         let eval = chara.eval();
-        assert_eq!(eval, chara.w.s_turn[0]);
+        let cur = chara.w.s_turn[chara.board.turn as usize];
+        assert_eq!(eval, cur);
     }
 
     #[test]
@@ -1409,7 +1412,8 @@ mod tests {
             let (tx, rx) = channel();
             let mut chara = Chara::init(fen, rx);
             let eval = chara.eval();
-            assert_eq!(eval, chara.w.s_turn[0]);
+            let cur = chara.w.s_turn[0];
+            assert_eq!(eval, cur);
         }
 
         for fen in fens.into_iter() {
@@ -1418,7 +1422,8 @@ mod tests {
             board.turn = !board.turn;
             let mut chara = Chara::init(&board.export(), rx);
             let eval = chara.eval();
-            assert_eq!(eval, chara.w.s_turn[0]);
+            let cur = chara.w.s_turn[0];
+            assert_eq!(eval, cur);
         }
     }
 

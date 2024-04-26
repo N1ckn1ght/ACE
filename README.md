@@ -56,7 +56,7 @@ paradoxine
 
 ##### ...and to All The other Fellas
 
-### Is it really 'First' edition though?
+### "Is it really 'First' edition though?"
 
 Nope. https://github.com/N1ckn1ght/CCE
 
