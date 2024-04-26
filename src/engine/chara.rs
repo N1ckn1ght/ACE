@@ -703,8 +703,8 @@ impl Chara {
         for (i, mov) in moves.iter().enumerate() {
             self.make_move(*mov);
             self.hmc += 1;
-            let mut score = if i != 0 && depth > 3 && !(*mov > ME_PROMISING_MIN || in_check) {
-                -self.search(-beta, -alpha, depth - 2 - (i > 7 && i + 9 > moves.len()) as i16)
+            let mut score = if i != 0 && depth > 2 && !(*mov > ME_PROMISING_MIN || in_check) {
+                -self.search(-beta, -alpha, depth - 2 - (depth > 3 && i > 7 && i + 9 > moves.len()) as i16)
             } else {
                 alpha + 1
             };
@@ -1208,6 +1208,8 @@ impl Chara {
             }
         }
 
+        score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
+        score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
         if mptr.attacks_king[kbits[0]] & (pass[0] | pass[1]) != 0 {
             score_pd[0] += self.w.k_pawn_dist1[0][0];
             score_pd[1] += self.w.k_pawn_dist1[1][0];
@@ -1238,7 +1240,7 @@ impl Chara {
         if bptr[B2] != 0 && (bptr[B2] & (bptr[B2] - 1)) != 0 {
             score += self.w.s_bishop_pair[1];
         }
-
+        
         for (ally, bb) in [bptr[K], bptr[K2]].into_iter().enumerate() {
             let mut cpd = [0, 0];
             for ring in ROUNDS.iter() {

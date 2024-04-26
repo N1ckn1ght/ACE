@@ -27,7 +27,7 @@ pub struct Weights {
     pub rq_atk_open:	  [i32;  2],			// rook/queen attacks any open file
     pub rq_atk_semiopen:  [i32;  2],			// rook/queen attacks any semiopen file
     pub k_opposition:	 [[i32;  2];  2],		// king has opposition (phased)
-    // pub k_mobility_as_q: [[i32;  2];  2],	// king security (phased)
+    pub k_mobility_as_q: [[i32;  2];  2],	    // king security (phased)
     pub k_pawn_dist1:    [[i32;  2];  2],		// bonus if near passing pawn (phased)
     pub k_pawn_dist2:    [[i32;  2];  2],		// bonus if near passing pawn (phased)
     pub k_center_dist:   [[i32;  2];  2],	    // if king in/near center (phased, per outer ring)
@@ -56,15 +56,15 @@ impl Weights {
             [ 396, 1124, 1188, 2048, 3744, 0 ]
         ];
 
-        let p_isolated_pre = -40;
-        let p_doubled_pre = -40;
+        let p_isolated_pre = -44;
+        let p_doubled_pre = -52;
         let p_phalanga_pre = 80;
-        let p_atk_center_pre = 40;
+        let p_atk_center_pre = 44;
         let p_outpost_pre = 80;
         let p_outpost_block_pre = 40;
         let p_semiblocked_pre = -200;
         let p_blocked_pre = -200;
-        let p_passing_pre = [0, 120, 140, 160, 180, 200, 200, 0];
+        let p_passing_pre = [0, 120, 140, 160, 190, 240, 300, 0];
         let nb_outpost_pre = 80;
         let nb_outpost_reach_pre = 80;
         let rq_atk_open_pre = 40;
@@ -72,9 +72,10 @@ impl Weights {
         let rq_open_pre = 100;
         let rq_semiopen_pre = 80;
         let k_opposition_pre = [0, 60];
+        let k_mobility_as_q_pre = [-4, 0]; // second is always 0
         let k_pawn_dist1_pre = [0, 140];
         let k_pawn_dist2_pre = [0, 60];
-        let k_center_dist_pre = [-20, 120];
+        let k_center_dist_pre = [-40, 100];
         let g_atk_pro_pre = 42;
         let g_atk_pro_pinned_pre = 710;
         let g_atk_pro_double_pre = 840;
@@ -92,7 +93,9 @@ impl Weights {
         /* These are PeSTO values (used as 1/4 score tiebreakers) + Kaissa weights (x4 of course) + my improvisation:
             +54/0 per pawn in center (d4-e6) in mittelspiel
             +20/0 per pawn at c4-c6
-            +10/10 per every rank starting from 3rd (e.g. +10/20/30...)
+            +10/10 for pawns per every rank starting from 3rd (e.g. +10/20/30...)
+            -10/0 for pawns on 5 rank
+            +10/0 for pawn on f4 (although the purpose usually is to remove e4)
             +54/30 per knight in center (d4-e6)
             -13/0 per knight on g3, d2
             -25/0 per knights and bishops at initial queen squares
@@ -110,8 +113,8 @@ impl Weights {
                       0,   0,   0,   0,   0,   0,  0,   0,
                      148, 184, 111, 145, 118, 176, 84,  39,
                      34,  47,  86, 125, 159,  96, 65,  20,
-                     16,  43,  56, 105, 107,  42, 47,   7,
-                     -7,  18,  35,  86,  91,  26, 30,  -5,
+                      6,  33,  46,  95,  97,  32, 37,  -3,
+                     -7,  18,  35,  86,  91,  36, 30,  -5,
                     -16,   6,   6,   0,  13,  13, 43,  -2,
                     -35,  -1, -20, -23, -15,  24, 38, -22,
                       0,   0,   0,   0,   0,   0,  0,   0,
@@ -288,6 +291,7 @@ impl Weights {
             rq_atk_open: colour_transform(rq_atk_open_pre),
             rq_atk_semiopen: colour_transform(rq_atk_semiopen_pre),
             k_opposition: [colour_transform(k_opposition_pre[0]), colour_transform(k_opposition_pre[1])],
+            k_mobility_as_q: [colour_transform(k_mobility_as_q_pre[0]), colour_transform(k_mobility_as_q_pre[1])],
             k_pawn_dist1: [colour_transform(k_pawn_dist1_pre[0]), colour_transform(k_pawn_dist1_pre[1])],
             k_pawn_dist2: [colour_transform(k_pawn_dist2_pre[0]), colour_transform(k_pawn_dist2_pre[1])],
             k_center_dist: [colour_transform(k_center_dist_pre[0]), colour_transform(k_center_dist_pre[1])],
