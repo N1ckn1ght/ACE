@@ -74,7 +74,7 @@ impl Weights {
         let rq_open_pre = 100;
         let rq_semiopen_pre = 80;
         let k_opposition_pre = [0, 60];
-        let k_mobility_as_q_pre = [-12, 0]; // second is always 0
+        let k_mobility_as_q_pre = [0, 0]; // second is always 0 | also temporary disabled lul
         let k_pawn_dist1_pre = [0, 120];
         let k_pawn_dist2_pre = [0, 40];
         let k_center_dist1_pre = [-40; 120];
