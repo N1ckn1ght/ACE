@@ -7,7 +7,7 @@ use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
-pub const MYNAME: &str = "Akira CE v1.0.13";
+pub const MYNAME: &str = "Akira CE v1.0.14";
 
 /* LIMITATIONS */
 
