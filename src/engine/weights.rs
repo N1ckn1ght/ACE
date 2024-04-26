@@ -84,7 +84,7 @@ impl Weights {
         let g_atk_ppt_pre = 20;
         let g_ppawn_block_pre = 40;
         let g_atk_pro_ppb_pre = 40;
-        let s_mobility = 6;
+        let s_mobility = 7;
         let s_bishop_pair_pre = 80;
         let s_qnight_pre = 40;
         let s_turn_pre = 35;
