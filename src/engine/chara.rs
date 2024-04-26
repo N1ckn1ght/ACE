@@ -10,8 +10,7 @@ use super::{clock::Clock, weights::Weights, zobrist::Zobrist};
 
 const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
 const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
-const CENTR1: [u64; 2] = [0b0000000000111100001111000011110000111100001111000000000000000000, 0b0000000000000000001111000011110000111100001111000011110000000000];
-const CENTR2: [u64; 2] = [0b0111111001111110011111100111111001111110011111100111111000000000, 0b0000000001111110011111100111111001111110011111100111111001111110];
+const ROUNDS: [u64; 3] = [0b1111111110000001100000011000000110000001100000011000000111111111, 0b0000000001111110010000100100001001000010010000100111111000000000, 0b0000000000000000001111000010010000100100001111000000000000000000];
 
 const DEFAULT_VEC_CAPACITY: usize = 300;
 
@@ -831,7 +830,7 @@ impl Chara {
         let mut score: i32 = 0;
         let mut score_pd: [i32; 2] = [0, 0];
         // [18 - 56] range
-        let phase_diff = f32::min((max(18, counter) - 18) as f32 * 0.025, 1.0);
+        let phase_diff = f32::min((max(18, counter) - 18) as f32 * 0.0264, 1.0);
 
         let mut pattacks     = [0; 2];
         let mut mobility     = [0; 2];
@@ -1209,8 +1208,6 @@ impl Chara {
             }
         }
 
-        score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
-        score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
         if mptr.attacks_king[kbits[0]] & (pass[0] | pass[1]) != 0 {
             score_pd[0] += self.w.k_pawn_dist1[0][0];
             score_pd[1] += self.w.k_pawn_dist1[1][0];
@@ -1225,7 +1222,7 @@ impl Chara {
             score_pd[0] += self.w.k_pawn_dist2[0][1];
             score_pd[1] += self.w.k_pawn_dist2[1][1];
         }
-        if ((kbits[0] & 7) as i32 - (kbits[1] & 7) as i32).abs() + ((kbits[0] >> 3) as i32  - (kbits[1] >> 3) as i32).abs() == 2 {
+        if bptr[P] | bptr[P2] != 0 && ((kbits[0] & 7) as i32 - (kbits[1] & 7) as i32).abs() + ((kbits[0] >> 3) as i32  - (kbits[1] >> 3) as i32).abs() == 2 {
             score_pd[0] += self.w.k_opposition[0][!self.board.turn as usize];
             score_pd[1] += self.w.k_opposition[1][!self.board.turn as usize];
         }
@@ -1241,33 +1238,22 @@ impl Chara {
         if bptr[B2] != 0 && (bptr[B2] & (bptr[B2] - 1)) != 0 {
             score += self.w.s_bishop_pair[1];
         }
-        if self.castled[0] {
-            score_pd[0] += self.w.s_castled[0][0];
-            score_pd[1] += self.w.s_castled[1][0];
-        }
-        if self.castled[1] {
-            score_pd[0] += self.w.s_castled[0][1];
-            score_pd[1] += self.w.s_castled[1][1];
-        }
-        if bptr[K] & CENTR1[0] != 0 {
-            score_pd[0] += self.w.k_center_dist1[0][0];
-            score_pd[1] += self.w.k_center_dist1[1][0];
-        } else if bptr[K] & CENTR2[0] != 0 {
-            score_pd[0] += self.w.k_center_dist2[0][0];
-            score_pd[1] += self.w.k_center_dist2[1][0];
-        }
-        if bptr[K2] & CENTR1[1] != 0 {
-            score_pd[0] += self.w.k_center_dist1[0][1];
-            score_pd[1] += self.w.k_center_dist1[1][1];
-        } else if bptr[K2] & CENTR2[1] != 0 {
-            score_pd[0] += self.w.k_center_dist2[0][1];
-            score_pd[1] += self.w.k_center_dist2[1][1];
+
+        for (ally, bb) in [bptr[K], bptr[K2]].into_iter().enumerate() {
+            let mut cpd = [0, 0];
+            for ring in ROUNDS.iter() {
+                if bb & ring != 0 {
+                    break;
+                }
+                cpd[0] += self.w.k_center_dist[0][ally];
+                cpd[1] += self.w.k_center_dist[1][ally];
+            }
+            score_pd[0] += cpd[0];
+            score_pd[1] += cpd[1];
         }
 
         score += ((score_pd[0] as f32 * phase_diff) + (score_pd[1] as f32 * (1.0 - phase_diff))) as i32;
         score += self.w.s_mobility * (mobility[0].count_ones() as i32 - mobility[1].count_ones() as i32);
-
-        println!("DEBUG\tRaw score = {}", score);
 
         if self.board.turn ^ (score > 0) {
             score += score / self.w.s_turn_div;
@@ -1385,7 +1371,7 @@ mod tests {
     use std::sync::mpsc::channel;
 
     #[test]
-    fn test_chara_eval_initial() {
+    fn test_chara_eval_initial_1() {
         let (tx, rx) = channel();
         let mut chara = Chara::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
         let moves = chara.board.get_legal_moves();

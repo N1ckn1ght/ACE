@@ -40,7 +40,7 @@ impl Clock {
         let kb = if is_ponder_on {
             140
         } else {
-            50
+            60
         };
 
         match self.time_control {

@@ -27,11 +27,10 @@ pub struct Weights {
     pub rq_atk_open:	  [i32;  2],			// rook/queen attacks any open file
     pub rq_atk_semiopen:  [i32;  2],			// rook/queen attacks any semiopen file
     pub k_opposition:	 [[i32;  2];  2],		// king has opposition (phased)
-    pub k_mobility_as_q: [[i32;  2];  2],		// king security (phased)
+    // pub k_mobility_as_q: [[i32;  2];  2],	// king security (phased)
     pub k_pawn_dist1:    [[i32;  2];  2],		// bonus if near passing pawn (phased)
     pub k_pawn_dist2:    [[i32;  2];  2],		// bonus if near passing pawn (phased)
-    pub k_center_dist1:  [[i32;  2];  2],		// if king near center (phased)
-    pub k_center_dist2:  [[i32;  2];  2],		// if king near center (phased)
+    pub k_center_dist:   [[i32;  2];  2],	    // if king in/near center (phased, per outer ring)
     pub g_atk_pro:		  [i32;  2],			// per profitable attack (lazy check for pawns)
     pub g_atk_pro_pinned: [i32;  2],			// per profitable attack on pinned piece (lazy check for pawns)
     pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
@@ -43,7 +42,6 @@ pub struct Weights {
     pub s_mobility:		   i32,					// per every square (for N, B, R, Q)
     pub s_bishop_pair:	  [i32;  2],			// bishop pair smol bonus
     pub s_qnight:		  [i32;  2],			// queen & knight smol bonus
-    pub s_castled:		 [[i32;  2];  2],
     pub s_turn:			  [i32;  2],
     pub s_turn_div:	       i32,					// score +/-= score / div
     pub rand:			   i32					// random weight of [-rand, +rand] will be added to an evaluated leaf
@@ -74,11 +72,9 @@ impl Weights {
         let rq_open_pre = 100;
         let rq_semiopen_pre = 80;
         let k_opposition_pre = [0, 60];
-        let k_mobility_as_q_pre = [0, 0]; // second is always 0 | also temporary disabled lul
-        let k_pawn_dist1_pre = [0, 120];
-        let k_pawn_dist2_pre = [0, 40];
-        let k_center_dist1_pre = [-40; 120];
-        let k_center_dist2_pre = [-40; 80];
+        let k_pawn_dist1_pre = [0, 140];
+        let k_pawn_dist2_pre = [0, 60];
+        let k_center_dist_pre = [-20, 120];
         let g_atk_pro_pre = 42;
         let g_atk_pro_pinned_pre = 710;
         let g_atk_pro_double_pre = 840;
@@ -90,7 +86,6 @@ impl Weights {
         let s_mobility = 6;
         let s_bishop_pair_pre = 80;
         let s_qnight_pre = 40;
-        let s_castled_pre = [0, 0]; // shady and unfair and also I don't like this
         let s_turn_pre = 35;
         let s_turn_div = 12;
 
@@ -293,11 +288,9 @@ impl Weights {
             rq_atk_open: colour_transform(rq_atk_open_pre),
             rq_atk_semiopen: colour_transform(rq_atk_semiopen_pre),
             k_opposition: [colour_transform(k_opposition_pre[0]), colour_transform(k_opposition_pre[1])],
-            k_mobility_as_q: [colour_transform(k_mobility_as_q_pre[0]), colour_transform(k_mobility_as_q_pre[1])],
             k_pawn_dist1: [colour_transform(k_pawn_dist1_pre[0]), colour_transform(k_pawn_dist1_pre[1])],
             k_pawn_dist2: [colour_transform(k_pawn_dist2_pre[0]), colour_transform(k_pawn_dist2_pre[1])],
-            k_center_dist1: [colour_transform(k_center_dist1_pre[0]), colour_transform(k_center_dist1_pre[1])],
-            k_center_dist2: [colour_transform(k_center_dist2_pre[0]), colour_transform(k_center_dist2_pre[1])],
+            k_center_dist: [colour_transform(k_center_dist_pre[0]), colour_transform(k_center_dist_pre[1])],
             g_atk_pro: colour_transform(g_atk_pro_pre),
             g_atk_pro_pinned: colour_transform(g_atk_pro_pinned_pre),
             g_atk_pro_double: colour_transform(g_atk_pro_double_pre),
@@ -309,7 +302,6 @@ impl Weights {
             s_mobility,
             s_bishop_pair: colour_transform(s_bishop_pair_pre),
             s_qnight: colour_transform(s_qnight_pre),
-            s_castled: [colour_transform(s_castled_pre[0]), colour_transform(s_castled_pre[1])],
             s_turn: colour_transform(s_turn_pre),
             s_turn_div,
             rand: 0
