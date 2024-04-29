@@ -4,7 +4,7 @@
 use std::{cmp::max, collections::{HashMap, HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
-use super::{clock::Clock, weights::Weights, zobrist::Zobrist};
+use super::{clock::Clock, options::Options, weights::Weights, zobrist::Zobrist};
 
 /* CONSTANTS FOR STATIC EVALUATION */
 
@@ -60,6 +60,7 @@ pub struct Chara {
 
     /* Comms */
     rx:		            Receiver<String>,
+    options:            Options,
     last_score:         i32,                    // last score for the current thinking side (?)
     force:              bool,                   // do not start thinking or pondering
     hard:               bool,                   // always pondering
@@ -109,6 +110,7 @@ impl Chara {
             cur_depth:          0,
             castled:		    [false, false],
             rx,
+            options:            Options::default(),
             last_score:         0,
             force:              false,
             hard:               true,
@@ -199,6 +201,13 @@ impl Chara {
                     "nopost" => {
                         self.post = false;
                     },
+                    "option" => {
+                        if cmd.len() < 1 {
+                            println!("Error (too few parameters): {}", line.trim());
+                        } else {
+                            self.options.parse(cmd[1]);
+                        }
+                    },
                     "otim" => {
                         self.clock.otim(cmd[1]);
                     },
@@ -218,20 +227,18 @@ impl Chara {
                             println!("feature done=0");
                             println!("feature myname=\"{}\"", MYNAME);
                             println!("feature analyze=0 debug=1 ping=1 setboard=1 usermove=1");
+                            println!("feature option=\"Random -spin 5 1 50\"");
                             println!("feature done=1");
                         } else {
                             // insert crashcode LOL
                         }
-                    },
-                    "st" => {
-                        self.clock.st(cmd[1]);
                     },
                     "quit" => {
                         self.quit = true;
                     },
                     "random" => {
                         if self.w.rand == 0 {
-                            self.w.rand = 20;
+                            self.w.rand = self.options.get_rand();
                         } else {
                             self.w.rand = 0;
                         }
@@ -246,6 +253,9 @@ impl Chara {
                     "setboard" => {
                         let fen = &cmd[1..].join(" ");
                         self.set_pos(fen);
+                    },
+                    "st" => {
+                        self.clock.st(cmd[1]);
                     },
                     "time" => {
                         self.clock.time(cmd[1]);
@@ -314,9 +324,10 @@ impl Chara {
                             println!("offer draw");
                         }
                     }
-                    println!("#Degug\tMaking move {}...", self.enqueued_move);
+                    println!("#Debug\tMaking move {}...", self.enqueued_move);
                     self.make_move(self.enqueued_move);
                     if !(self.force || self.playother) {
+                        self.post();
                         println!("move {}", move_transform(self.enqueued_move, !self.board.turn));
                         if !self.draw_offered && self.considerate_draw(0) {
                             println!("offer draw");
@@ -390,6 +401,13 @@ impl Chara {
                 "nopost" => {
                     self.post = false;
                 },
+                "option" => {
+                    if cmd.len() < 1 {
+                        println!("Error (too few parameters): {}", line.trim());
+                    } else {
+                        self.options.parse(cmd[1]);
+                    }
+                },
                 "otim" => {
                     self.clock.otim(cmd[1]);
                 },
@@ -406,7 +424,7 @@ impl Chara {
                 },
                 "random" => {
                     if self.w.rand == 0 {
-                        self.w.rand = 20;
+                        self.w.rand = self.options.get_rand();
                     } else {
                         self.w.rand = 0;
                     }
@@ -417,7 +435,7 @@ impl Chara {
                 },
                 "time" => {
                     self.clock.time(cmd[1]);
-                },
+                }, 
                 "undo" => {
                     self.enqueued_reverts = 1;
                     self.abort = true;
@@ -1210,6 +1228,11 @@ impl Chara {
 
         score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
         score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
+        
+        /* RANDOM DOESN'T APPLY FOR AN ENDSPIEL */
+        score_pd[0] -= self.w.rand;
+        score_pd[0] += self.rng.gen_range(0..=((self.w.rand as u32) << 1)) as i32;
+        
         if mptr.attacks_king[kbits[0]] & (pass[0] | pass[1]) != 0 {
             score_pd[0] += self.w.k_pawn_dist1[0][0];
             score_pd[1] += self.w.k_pawn_dist1[1][0];
@@ -1263,9 +1286,6 @@ impl Chara {
             score -= score / self.w.s_turn_div;
         }
         score += self.w.s_turn[self.board.turn as usize];
-
-        score -= self.w.rand;
-        score += self.rng.gen_range(0..=((self.w.rand as u32) << 1)) as i32;
 
         /* SCORE APPLICATION END */
         
