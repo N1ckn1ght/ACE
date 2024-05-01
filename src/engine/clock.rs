@@ -33,7 +33,7 @@ impl Clock {
     pub fn time_alloc(&mut self, halfmove_counter: i16, is_ponder_on: bool) -> u128 {
         let fullmove_counter = halfmove_counter / 2;
         let ka = if is_ponder_on {
-            6
+            9
         } else {
             12
         };
@@ -50,7 +50,7 @@ impl Clock {
                 let fs = min(alloc / ka, kb + alloc / 100);
                 alloc -= fs;
                 self.time -= alloc;
-                return alloc + self.inc;
+                return alloc;
             },
             TimeControl::Incremental => {
                 let divider = 70 - min(fullmove_counter, 10) * 2 - min(fullmove_counter, 20);
