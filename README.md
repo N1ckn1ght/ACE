@@ -10,7 +10,7 @@ Pre-calculations - Complete!
 
 Board - Complete! (~24m nps on perft)
 
-Engine - Complete! (~300k to 800k nps; Inspired by: BBC engine, shoutout to https://github.com/maksimKorzh)
+Engine - Complete! (~300k to 800k nps; Inspired by: [BBC engine](https://github.com/maksimKorzh))
 
 Eval - Complete! (Inspired by: Kaissa engine, also used PeSTO eval)
 
@@ -26,11 +26,13 @@ Opening books, endgame tables support
 
 ### Game samples:
 
-https://lichess.org/XoSX7uBB/white/ (40/900 vs BBC 1.2 as White)
+https://lichess.org/eAJeuTrS/white/ (40/300 vs BBC 1.2 as White)
 
-https://lichess.org/pb7SE6Bk/black/ (40/900 vs BBC 1.2 as Black)
+https://lichess.org/SvtcAEVm/black/ (40/30 vs Really Smart Human(tm) with 2k FIDE and ~inf time as Black)
 
-https://lichess.org/2A4kaKhR/ (40/6 vs self, hyperbullet basically)
+https://lichess.org/GfIy7Uxr/ (40/5 vs self, hyperbullet basically)
+
+##### TODO: add more CCRL format games (40/900), they are much cooler
 
 ### "I want to play against it!"
 
@@ -44,15 +46,19 @@ I'll deploy it as a lichess bot sooner or later.
 
 ### Special thanks (to All The Fellas)
 
-MegaMorpeh
+[MegaMorpeh](https://lichess.org/@/MegaMorpeh)
 
-Konstantin_Russia
+[Konstantin_Russia](https://lichess.org/@/Konstantin_Russia)
 
-Kivicatte
+[Kivicatte](https://lichess.org/@/Kivicatte)
 
-Ravile
+[Ravile](https://lichess.org/@/Ravile)
 
-paradoxine
+[paradoxine](https://lichess.org/@/paradoxine)
+
+mirkuriit
+
+[Avernial](https://ru.stackoverflow.com/users/178429/avernial)
 
 ##### ...and to All The other Fellas
 

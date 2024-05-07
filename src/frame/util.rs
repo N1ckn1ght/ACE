@@ -7,7 +7,7 @@ use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
-pub const MYNAME: &str = "Akira CE v1.0.16";
+pub const MYNAME: &str = "Akira CE v1.0.17";
 
 /* LIMITATIONS */
 
@@ -17,8 +17,10 @@ pub const CACHED_LEAVES_LIMIT: usize = ( (MEMORY_LIMIT_MB >> 2)    << 18 ) / 3; 
 pub const CACHED_BRANCHES_LIMIT: usize = (MEMORY_LIMIT_MB >> 3)    << 16;       // 128 bit
 pub const HALF_DEPTH_LIMIT: usize = 64;
 pub const HALF_DEPTH_LIMIT_SAFE: i16 = 50;                                      // for chara.think()
-pub const NODES_BETWEEN_COMMS: u64 = 0b00000000111111111111;
-pub const NODES_BETWEEN_POSTS: u64 = 0b00011111111111111111;
+pub const NODES_BETWEEN_UPDATES: u64    = 0b00000000111111111111; 
+pub const NODES_BETWEEN_COMMS_EASY: u64 = 0b00000111111111111111;
+pub const NODES_BETWEEN_COMMS_HARD: u64 = 0b00000000111111111111;
+pub const NODES_BETWEEN_POSTS: u64      = 0b00011111111111111111;
 pub const PONDER_TIME: u128 = 1 << 63;                                          // no limit
 
 /* SPECIFIED PATHES */

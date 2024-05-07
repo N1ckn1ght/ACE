@@ -64,6 +64,7 @@ pub struct Chara {
     last_score:         i32,                    // last score for the current thinking side (?)
     force:              bool,                   // do not start thinking or pondering
     hard:               bool,                   // always pondering
+    nbc:                u64,                    // nodes between comms (Dependent on ^)
     loop_force:         bool,                   // ignore command input in listen() for a current cycle
     playother:          bool,                   // send score for other side
     draw_offered:       bool,                   // by engine itself
@@ -114,6 +115,7 @@ impl Chara {
             last_score:         0,
             force:              false,
             hard:               true,
+            nbc:                NODES_BETWEEN_COMMS_HARD,
             loop_force:         false,
             playother:          false,
             draw_offered:       false,
@@ -155,6 +157,7 @@ impl Chara {
                     },
                     "easy" => {
                         self.hard = false;
+                        self.nbc = NODES_BETWEEN_COMMS_EASY;
                     },
                     "draw" => {
                         let temp = self.playother;
@@ -184,6 +187,7 @@ impl Chara {
                     },
                     "hard" => {
                         self.hard = true;
+                        self.nbc = NODES_BETWEEN_COMMS_HARD;
                     },
                     "level" => {
                         if cmd.len() > 4 {
@@ -383,93 +387,95 @@ impl Chara {
             self.abort = true;
         }
 
-        let last = self.rx.try_recv();
-        if last.is_ok() {
-            let line = last.unwrap();
-            let cmd = line.trim().split(' ').collect::<Vec<&str>>();
-            match cmd[0] {
-                "?" => {
-                    self.abort = true;
-                },
-                "draw" => {
-                    self.draw_got_offer = true;
-                },
-                "force" | "result" => {
-                    self.abort = true;
-                    self.force = true;
-                },
-                "nopost" => {
-                    self.post = false;
-                },
-                "option" => {
-                    if cmd.len() < 1 {
-                        println!("Error (too few parameters): {}", line.trim());
-                    } else {
-                        self.options.parse(cmd[1]);
-                    }
-                },
-                "otim" => {
-                    self.clock.otim(cmd[1]);
-                },
-                "ping" => {
-                    self.ping = cmd[1].parse::<i32>().unwrap_or(i32::MIN);
-                },
-                "post" => {
-                    self.post = true;
-                },
-                "quit" => {
-                    self.abort = true;
-                    self.force = true;
-                    self.quit = true;
-                },
-                "random" => {
-                    if self.w.rand == 0 {
-                        self.w.rand = self.options.get_rand();
-                    } else {
-                        self.w.rand = 0;
-                    }
-                },
-                "remove" => {
-                    self.enqueued_reverts = 2;
-                    self.abort = true;
-                },
-                "time" => {
-                    self.clock.time(cmd[1]);
-                }, 
-                "undo" => {
-                    self.enqueued_reverts = 1;
-                    self.abort = true;
-                },
-                "usermove" => {
-                    match move_transform_back(cmd[1], &self.legals, self.started_black) {
-                        Some(mov) => {
-                            self.enqueued_move = mov;
-                            self.abort = true;
-                        },
-                        None => {
-                            println!("Illegal move: {}", cmd[1])
+        if self.nodes & self.nbc == 0 {
+            let last = self.rx.try_recv();
+            if last.is_ok() {
+                let line = last.unwrap();
+                let cmd = line.trim().split(' ').collect::<Vec<&str>>();
+                match cmd[0] {
+                    "?" => {
+                        self.abort = true;
+                    },
+                    "draw" => {
+                        self.draw_got_offer = true;
+                    },
+                    "force" | "result" => {
+                        self.abort = true;
+                        self.force = true;
+                    },
+                    "nopost" => {
+                        self.post = false;
+                    },
+                    "option" => {
+                        if cmd.len() < 1 {
+                            println!("Error (too few parameters): {}", line.trim());
+                        } else {
+                            self.options.parse(cmd[1]);
                         }
-                    }
-                },
-                "accepted" | "black" | "easy" | "go" | "hard" | "level" | "new" | "playother" | "protover" | "rejected" | "setboard" | "st" | "xboard" | "white" => {
-                    println!("Error (command not legal now): {}", cmd[0]);
-                },
-                _ => {
-                    match move_transform_back(cmd[0], &self.legals, self.started_black) {
-                        Some(mov) => {
-                            self.enqueued_move = mov;
-                            self.abort = true;
-                        },
-                        None => {
-                            println!("Error (unknown command): {}", cmd[0]);
+                    },
+                    "otim" => {
+                        self.clock.otim(cmd[1]);
+                    },
+                    "ping" => {
+                        self.ping = cmd[1].parse::<i32>().unwrap_or(i32::MIN);
+                    },
+                    "post" => {
+                        self.post = true;
+                    },
+                    "quit" => {
+                        self.abort = true;
+                        self.force = true;
+                        self.quit = true;
+                    },
+                    "random" => {
+                        if self.w.rand == 0 {
+                            self.w.rand = self.options.get_rand();
+                        } else {
+                            self.w.rand = 0;
+                        }
+                    },
+                    "remove" => {
+                        self.enqueued_reverts = 2;
+                        self.abort = true;
+                    },
+                    "time" => {
+                        self.clock.time(cmd[1]);
+                    }, 
+                    "undo" => {
+                        self.enqueued_reverts = 1;
+                        self.abort = true;
+                    },
+                    "usermove" => {
+                        match move_transform_back(cmd[1], &self.legals, self.started_black) {
+                            Some(mov) => {
+                                self.enqueued_move = mov;
+                                self.abort = true;
+                            },
+                            None => {
+                                println!("Illegal move: {}", cmd[1])
+                            }
+                        }
+                    },
+                    "accepted" | "black" | "easy" | "go" | "hard" | "level" | "new" | "playother" | "protover" | "rejected" | "setboard" | "st" | "xboard" | "white" => {
+                        println!("Error (command not legal now): {}", cmd[0]);
+                    },
+                    _ => {
+                        match move_transform_back(cmd[0], &self.legals, self.started_black) {
+                            Some(mov) => {
+                                self.enqueued_move = mov;
+                                self.abort = true;
+                            },
+                            None => {
+                                println!("Error (unknown command): {}", cmd[0]);
+                            }
                         }
                     }
                 }
             }
-        }
         
-        if (self.nodes & NODES_BETWEEN_POSTS == 0) && self.tpv_len[0] != 0 {
-            self.post();
+            if (self.nodes & NODES_BETWEEN_POSTS == 0) && self.tpv_len[0] != 0 {
+                self.post();
+            }
         }
 
         if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
@@ -539,7 +545,7 @@ impl Chara {
             beta = score + base_aspiration_window;
             k = 1;
             self.cur_depth += 1;
-            if self.cur_depth > depth_limit {
+            if self.cur_depth > depth_limit || self.ts.elapsed().as_millis() > self.tl {
                 break;
             }
         }
@@ -625,7 +631,7 @@ impl Chara {
             }
         }
 
-        if self.nodes & NODES_BETWEEN_COMMS == 0 {
+        if self.nodes & NODES_BETWEEN_UPDATES == 0 {
             self.update();
         }
         if depth <= 0 {
@@ -773,7 +779,7 @@ impl Chara {
     }
 
     fn extension(&mut self, mut alpha: i32, beta: i32) -> i32 {
-        if self.nodes & NODES_BETWEEN_COMMS == 0 {
+        if self.nodes & NODES_BETWEEN_UPDATES == 0 {
             self.update();
         }
         self.nodes += 1;
