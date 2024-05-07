@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::max, collections::{HashMap, HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
+use std::{cmp::{max, Ordering}, collections::{HashMap, HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{clock::Clock, options::Options, weights::Weights, zobrist::Zobrist};
@@ -64,7 +64,6 @@ pub struct Chara {
     last_score:         i32,                    // last score for the current thinking side (?)
     force:              bool,                   // do not start thinking or pondering
     hard:               bool,                   // always pondering
-    nbc:                u64,                    // nodes between comms (Dependent on ^)
     loop_force:         bool,                   // ignore command input in listen() for a current cycle
     playother:          bool,                   // send score for other side
     draw_offered:       bool,                   // by engine itself
@@ -115,7 +114,6 @@ impl Chara {
             last_score:         0,
             force:              false,
             hard:               true,
-            nbc:                NODES_BETWEEN_COMMS_HARD,
             loop_force:         false,
             playother:          false,
             draw_offered:       false,
@@ -157,15 +155,10 @@ impl Chara {
                     },
                     "easy" => {
                         self.hard = false;
-                        self.nbc = NODES_BETWEEN_COMMS_EASY;
                     },
                     "draw" => {
                         let temp = self.playother;
-                        if self.hard {
-                            self.playother = true;
-                        } else {
-                            self.playother = false;
-                        }
+                        self.playother = self.hard;
                         if self.considerate_draw(0) {
                             self.post();
                             println!("offer draw");
@@ -187,15 +180,18 @@ impl Chara {
                     },
                     "hard" => {
                         self.hard = true;
-                        self.nbc = NODES_BETWEEN_COMMS_HARD;
                     },
                     "level" => {
-                        if cmd.len() > 4 {
-                            println!("Error (too many parameters): {}", line.trim());
-                        } else if cmd.len() < 4 {
-                            println!("Error (too few parameters): {}", line.trim());
-                        } else {
-                            self.clock.level(cmd[1], cmd[2], cmd[3]);
+                        match cmd.len().cmp(&4) {
+                            Ordering::Equal => {
+                                self.clock.level(cmd[1], cmd[2], cmd[3]);
+                            },
+                            Ordering::Less => {
+                                println!("Error (too few parameters): {}", line.trim());
+                            },
+                            Ordering::Greater => {
+                                println!("Error (too many parameters): {}", line.trim());
+                            }
                         }
                     },
                     "new" => {
@@ -206,7 +202,7 @@ impl Chara {
                         self.post = false;
                     },
                     "option" => {
-                        if cmd.len() < 1 {
+                        if cmd.is_empty() {
                             println!("Error (too few parameters): {}", line.trim());
                         } else {
                             self.options.parse(cmd[1]);
@@ -387,7 +383,7 @@ impl Chara {
             self.abort = true;
         }
 
-        if self.nodes & self.nbc == 0 {
+        if self.nodes & NODES_BETWEEN_COMMS_PASSIVE == 0 || (self.playother && self.nodes & NODES_BETWEEN_COMMS_ACTIVE == 0) {
             let last = self.rx.try_recv();
             if last.is_ok() {
                 let line = last.unwrap();
@@ -407,7 +403,7 @@ impl Chara {
                         self.post = false;
                     },
                     "option" => {
-                        if cmd.len() < 1 {
+                        if cmd.is_empty() {
                             println!("Error (too few parameters): {}", line.trim());
                         } else {
                             self.options.parse(cmd[1]);
@@ -550,7 +546,9 @@ impl Chara {
             }
         }
 
-        println!("DEBUG\tApproximate time spent: {} ms", self.ts.elapsed().as_millis());
+        let approx = self.ts.elapsed().as_millis() + 1;
+        self.clock.time_deduct(&approx);
+        println!("DEBUG\tApproximate time spent: {} ms", approx);
         EvalMove::new(self.tpv[0][0], score)
     }
 

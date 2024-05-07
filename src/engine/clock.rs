@@ -48,8 +48,7 @@ impl Clock {
                     return 1;
                 }
                 alloc -= fs;
-                self.time -= alloc;
-                return alloc;
+                alloc
             },
             TimeControl::Incremental => {
                 let divider = 70 - min(fullmove_counter, 10) * 2 - min(fullmove_counter, 20);
@@ -60,14 +59,17 @@ impl Clock {
                 }
                 // todo: fix when it's not 2 am
                 self.time += alloc;
-                let nalloc = self.time - 200;
-                self.time -= nalloc;
-                return nalloc;
+                self.time - 200
             },
             TimeControl::Deadline => {
-                return self.inc - k - (self.inc >> 7);
+                self.inc - k - (self.inc >> 7)
             }
         }
+    }
+
+    #[inline]
+    pub fn time_deduct(&mut self, penalty: &u128) {
+        self.time -= *penalty;
     }
 
     // ?
@@ -75,20 +77,20 @@ impl Clock {
         match self.time_control {
             TimeControl::Conventional => {
                 if self.time < 60000 || self.otim < 60000 {
-                    return max(min((i32::try_from(self.otim).unwrap_or(120000) - i32::try_from(self.time).unwrap_or(120000)) / 100, 400), -400);
+                    max(min((i32::try_from(self.otim).unwrap_or(120000) - i32::try_from(self.time).unwrap_or(120000)) / 100, 400), -400)
                 } else {
-                    return -200;
+                    -200
                 }
             },
             TimeControl::Incremental => {
                 if self.time < 60000 || self.otim < 60000 {
-                    return max(min((i32::try_from(self.otim).unwrap_or(120000) - i32::try_from(self.time).unwrap_or(120000)) / 100, 400), -400);
+                    max(min((i32::try_from(self.otim).unwrap_or(120000) - i32::try_from(self.time).unwrap_or(120000)) / 100, 400), -400)
                 } else {
-                    return -200;
+                    -200
                 }
             },
             TimeControl::Deadline => {
-                return 0;
+                0
             },
         }
     }
@@ -98,7 +100,7 @@ impl Clock {
     pub fn level(&mut self, mps: &str, btr: &str, inc: &str) {
         self.mps = mps.parse::<i16>().unwrap();
 
-        let bts = btr.split(":").collect::<Vec<&str>>();
+        let bts = btr.split(':').collect::<Vec<&str>>();
         let mut bt = bts[0].parse::<u128>().unwrap() * 60 * 1000; 
         if bts.len() > 1 {
             bt += bts[1].parse::<u128>().unwrap() * 1000;

@@ -21,7 +21,7 @@ impl Options {
 
     pub fn parse(&mut self, query: &str) {
         let cmd = query.split('=').collect::<Vec<&str>>();
-        if cmd.len() < 1 {
+        if cmd.is_empty() {
             println!("Error (bad syntax for option): {}", query);
             return;
         }
