@@ -183,7 +183,7 @@ pub fn get_bit8(value: u8, bit: usize) -> u8 {
 
 // since it's not a struct, let's use more inline fuctions
 // let's keep it in Most Valuable Victim - Least Valuable Attacker way
-// [1 - PV signature][4 - captured piece][2 - killer signature][4 - promotion][4 - SPECIAL][4 - !moving piece][6 - square to][6 - square from]
+// [1 - PV signature][4 - captured piece][2 - killer signature][1 - heuristic bit][4 - promotion][4 - SPECIAL][4 - !moving piece][6 - square to][6 - square from]
 // from-to squares are reversed for black pieces
 // note: this is the bottleneck.
 #[inline]
