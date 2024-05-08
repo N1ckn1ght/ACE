@@ -13,6 +13,7 @@ pub struct Clock {
     mps:                i16,                // moves per base time increment (for TimeControl::Conventional)
     bt:                 u128,               // base time (for TimeControl::Conventional)
     inc:                u128,               // fixed time per move / increment
+    pub updated:        bool
 }
 
 impl Default for Clock {
@@ -23,7 +24,8 @@ impl Default for Clock {
             time_control:   TimeControl::Incremental,
             mps:            1,
             bt:             60000,
-            inc:            0
+            inc:            0,
+            updated:        false
         }
     }
 }
@@ -69,6 +71,10 @@ impl Clock {
 
     #[inline]
     pub fn time_deduct(&mut self, penalty: &u128) {
+        if self.updated {
+            self.updated = false;
+            return;
+        }
         self.time -= *penalty;
     }
 
@@ -119,7 +125,8 @@ impl Clock {
         self.otim = bt;
     }
 
-    pub fn otim(&mut self, time: &str) {
+    pub fn otim(&mut self, time: &str, from_update: bool) {
+        self.updated = from_update;
         self.otim = time.parse::<u128>().unwrap() * 10;
     }
 
@@ -131,7 +138,8 @@ impl Clock {
         self.otim = self.inc;
     }
 
-    pub fn time(&mut self, time: &str) {
-        self.time = time.parse::<u128>().unwrap() * 10;
+    pub fn time(&mut self, time: &str, from_update: bool) {
+        self.updated = from_update;
+        self.time = time.parse::<u128>().unwrap() * 10;   
     }
 }

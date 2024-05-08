@@ -72,7 +72,7 @@ pub struct Chara {
     quit:               bool,                   // received in update()
     post:               bool,                   // post non-debug calculations info or not
     ping:               i32,                    // received in update(), but must be done when listen()
-    // depth_limit:        i32,
+    // depth_limit:     i32,
     enqueued_move:      u32,                    // received in update(), but must be done in listen()
     enqueued_reverts:   u32,                    // take back how many moves (comm got from update())
     clock:              Clock,
@@ -209,7 +209,7 @@ impl Chara {
                         }
                     },
                     "otim" => {
-                        self.clock.otim(cmd[1]);
+                        self.clock.otim(cmd[1], false);
                     },
                     "ping" => {
                         self.ping = cmd[1].parse::<i32>().unwrap_or(i32::MIN);
@@ -258,7 +258,7 @@ impl Chara {
                         self.clock.st(cmd[1]);
                     },
                     "time" => {
-                        self.clock.time(cmd[1]);
+                        self.clock.time(cmd[1], false);
                     },
                     "undo" => {
                         self.revert_move();
@@ -410,7 +410,7 @@ impl Chara {
                         }
                     },
                     "otim" => {
-                        self.clock.otim(cmd[1]);
+                        self.clock.otim(cmd[1], true);
                     },
                     "ping" => {
                         self.ping = cmd[1].parse::<i32>().unwrap_or(i32::MIN);
@@ -435,7 +435,7 @@ impl Chara {
                         self.abort = true;
                     },
                     "time" => {
-                        self.clock.time(cmd[1]);
+                        self.clock.time(cmd[1], true);
                     }, 
                     "undo" => {
                         self.enqueued_reverts = 1;
