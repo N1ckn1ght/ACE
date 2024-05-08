@@ -70,12 +70,16 @@ impl Clock {
     }
 
     #[inline]
-    pub fn time_deduct(&mut self, penalty: &u128) {
+    pub fn time_deduct(&mut self, penalty: &u128, playother: bool) {
         if self.updated {
             self.updated = false;
             return;
         }
-        self.time -= *penalty;
+        if playother {
+            self.otim -= *penalty;
+        } else {
+            self.time -= *penalty;
+        }
     }
 
     // ?
