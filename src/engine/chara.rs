@@ -10,7 +10,6 @@ use super::{clock::Clock, options::Options, weights::Weights, zobrist::Zobrist};
 
 const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
 const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
-const ROUNDS: [u64; 3] = [0b1111111110000001100000011000000110000001100000011000000111111111, 0b0000000001111110010000100100001001000010010000100111111000000000, 0b0000000000000000001111000010010000100100001111000000000000000000];
 
 const DEFAULT_VEC_CAPACITY: usize = 300;
 
@@ -1230,6 +1229,11 @@ impl Chara {
             }
         }
 
+        score_pd[0] += self.w.heatmap[0][K ][kbits[0]];
+        score_pd[0] += self.w.heatmap[0][K2][kbits[1]];
+        score_pd[1] += self.w.heatmap[1][K ][kbits[0]];
+        score_pd[1] += self.w.heatmap[1][K2][kbits[1]];
+
         score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
         score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
         
@@ -1266,19 +1270,6 @@ impl Chara {
         }
         if bptr[B2] != 0 && (bptr[B2] & (bptr[B2] - 1)) != 0 {
             score += self.w.s_bishop_pair[1];
-        }
-        
-        for (ally, bb) in [bptr[K], bptr[K2]].into_iter().enumerate() {
-            let mut cpd = [0, 0];
-            for ring in ROUNDS.iter() {
-                if bb & ring != 0 {
-                    break;
-                }
-                cpd[0] += self.w.k_center_dist[0][ally];
-                cpd[1] += self.w.k_center_dist[1][ally];
-            }
-            score_pd[0] += cpd[0];
-            score_pd[1] += cpd[1];
         }
 
         score += ((score_pd[0] as f32 * phase_diff) + (score_pd[1] as f32 * (1.0 - phase_diff))) as i32;

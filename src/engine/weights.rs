@@ -1,4 +1,4 @@
-use crate::frame::util::flip;
+use crate::frame::util::*;
 
 pub struct Weights {
     /* These weights are stored with respect to the colour, black pieces will provide negative values
@@ -30,7 +30,6 @@ pub struct Weights {
     pub k_mobility_as_q: [[i32;  2];  2],	    // king security (phased)
     pub k_pawn_dist1:    [[i32;  2];  2],		// bonus if near passing pawn (phased)
     pub k_pawn_dist2:    [[i32;  2];  2],		// bonus if near passing pawn (phased)
-    pub k_center_dist:   [[i32;  2];  2],	    // if king in/near center (phased, per outer ring)
     pub g_atk_pro:		  [i32;  2],			// per profitable attack (lazy check for pawns)
     pub g_atk_pro_pinned: [i32;  2],			// per profitable attack on pinned piece (lazy check for pawns)
     pub g_atk_pro_double: [i32;  2],			// per double profitable attack (e.g. knight fork!)
@@ -75,7 +74,6 @@ impl Weights {
         let k_mobility_as_q_pre = [-4, 0]; // second is always 0
         let k_pawn_dist1_pre = [0, 140];
         let k_pawn_dist2_pre = [0, 60];
-        let k_center_dist_pre = [-40, 100];
         let g_atk_pro_pre = 42;
         let g_atk_pro_pinned_pre = 710;
         let g_atk_pro_double_pre = 840;
@@ -90,7 +88,7 @@ impl Weights {
         let s_turn_pre = 35;
         let s_turn_div = 12;
 
-        /* These are PeSTO values (used as 1/4 score tiebreakers) + Kaissa weights (x4 of course) + my improvisation:
+        /* These are PeSTO values (used as 3/8 score tiebreakers) + Kaissa weights (x4 of course) + my improvisation:
             +54/0 per pawn in center (d4-e6) in mittelspiel
             +20/0 per pawn at c4-c6
             +10/10 for pawns per every rank starting from 3rd (e.g. +10/20/30...)
@@ -103,6 +101,7 @@ impl Weights {
             -25/0 per rook at b1, g1
             +120/30 per rook on 7th
             +8/0 per queen at initial
+            -!! additional weights in Lazy Application
         */
 
         let pesto = [
@@ -258,6 +257,22 @@ impl Weights {
             }
         }
 
+        /* Lazy Application */
+
+        // additional king near center weights (-40 per ring in mittelspiel, +100 per ring in endspiel)
+        const ROUNDS: [u64; 3] = [0b0000000001111110010000100100001001000010010000100111111000000000, 0b0000000000000000001111000010010000100100001111000000000000000000, 0b0000000000000000000000000001100000011000000000000000000000000000];
+        let kcm = -10;
+        let kce = 60;
+        for (mult, mut round) in ROUNDS.into_iter().enumerate() {
+            while round != 0 {
+                let bit = pop_bit(&mut round);
+                heatmap[0][K ][bit] += kcm * (mult as i32 + 1);
+                heatmap[0][K2][bit] -= kcm * (mult as i32 + 1);
+                heatmap[1][K ][bit] += kce * (mult as i32 + 1);
+                heatmap[1][K2][bit] -= kce * (mult as i32 + 1);
+            }
+        }
+
         /* Transform other W */
     
         let mut g_atk_near_king: [[i32; 5]; 2] = [g_atk_near_king_pre, g_atk_near_king_pre];
@@ -294,7 +309,6 @@ impl Weights {
             k_mobility_as_q: [colour_transform(k_mobility_as_q_pre[0]), colour_transform(k_mobility_as_q_pre[1])],
             k_pawn_dist1: [colour_transform(k_pawn_dist1_pre[0]), colour_transform(k_pawn_dist1_pre[1])],
             k_pawn_dist2: [colour_transform(k_pawn_dist2_pre[0]), colour_transform(k_pawn_dist2_pre[1])],
-            k_center_dist: [colour_transform(k_center_dist_pre[0]), colour_transform(k_center_dist_pre[1])],
             g_atk_pro: colour_transform(g_atk_pro_pre),
             g_atk_pro_pinned: colour_transform(g_atk_pro_pinned_pre),
             g_atk_pro_double: colour_transform(g_atk_pro_double_pre),
