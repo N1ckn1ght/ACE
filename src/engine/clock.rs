@@ -36,16 +36,16 @@ impl Clock {
         let fullmove_counter = halfmove_counter / 2;
         
         let k = if is_ponder_on {
-            60
+            64
         } else {
-            45
+            48
         };
 
         match self.time_control {
             TimeControl::Conventional => {
                 let fraction = self.mps - fullmove_counter % self.mps;
                 let mut alloc = self.time / fraction as u128;
-                let fs = k + (alloc >> 7);
+                let fs = k + (alloc >> 6);
                 if fs > alloc {
                     return 1;
                 }
@@ -64,7 +64,7 @@ impl Clock {
                 self.time - 200
             },
             TimeControl::Deadline => {
-                self.inc - k - (self.inc >> 7)
+                self.inc - k - (self.inc >> 6)
             }
         }
     }
