@@ -1,5 +1,8 @@
 use std::cmp::{max, min};
 
+const TPS: [[u128;  2]; 2] = [[45, 60], [67, 90]]; // [safe/unsafe][no_ponder/ponder]
+const TDS: [[usize; 2]; 2] = [[ 7,  7], [ 6,  6]]; // [safe/unsafe][no_ponder/ponder]
+
 enum TimeControl {
     Conventional,
     Incremental,
@@ -34,18 +37,12 @@ impl Clock {
     // in fact, board.no is required
     pub fn time_alloc(&mut self, halfmove_counter: i16, is_ponder_on: bool) -> u128 {
         let fullmove_counter = halfmove_counter / 2;
-        
-        let k = if is_ponder_on {
-            64
-        } else {
-            48
-        };
 
         match self.time_control {
             TimeControl::Conventional => {
                 let fraction = self.mps - fullmove_counter % self.mps;
                 let mut alloc = self.time / fraction as u128;
-                let fs = k + (alloc >> 6);
+                let fs = TPS[(fraction == 1) as usize][is_ponder_on as usize] + (alloc >> TDS[(fraction == 1) as usize][is_ponder_on as usize]);
                 if fs > alloc {
                     return 1;
                 }
@@ -64,7 +61,8 @@ impl Clock {
                 self.time - 200
             },
             TimeControl::Deadline => {
-                self.inc - k - (self.inc >> 6)
+                let fs = TPS[1][is_ponder_on as usize] + (self.inc >> TDS[1][is_ponder_on as usize]);
+                self.inc - fs
             }
         }
     }
