@@ -547,7 +547,7 @@ impl Chara {
 
         let approx = self.ts.elapsed().as_millis() + 1;
         self.clock.time_deduct(&approx, self.playother);
-        println!("DEBUG\tApproximate time spent: {} ms", approx);
+        println!("#DEBUG\tApproximate time spent: {} ms", approx);
         EvalMove::new(self.tpv[0][0], score)
     }
 

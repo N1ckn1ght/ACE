@@ -42,9 +42,6 @@ fn main() {
         }
     });
 
-    // println!("#DEBUG\tAce online.\n");
     chara.listen();
-
-    // println!("#DEBUG\tShutting down!\n");
     let _ = handle.join();
 }
