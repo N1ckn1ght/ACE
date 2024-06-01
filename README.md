@@ -1,6 +1,6 @@
 First edition.
 
-It works, but... there's still a long road ahead!
+It works fine, but... there's still a long road ahead!
 
 Approx. CCRL rating: 1750
 
@@ -18,13 +18,13 @@ Comms - Partially complete (Musthave features work, xboard protocol only)
 
 ### TODO:
 
-Full xboard (CECP v2) and/or UCI support
+Full UCI support, hosting it as a [lichess](https://lichess.org) bot
 
 Resolve issues (incompatibilities, enhancements, there are a lot)
 
-Opening books, endgame tables support
+Opening books and endgame tables support
 
-### How to set up a game
+### How to set up a game:
 
 1. Download and install xboard (WinBoard) or any interface with CECP v2 protocol supported
 
@@ -56,7 +56,7 @@ https://lichess.org/rZ6fKTkP/black/ (40/180 vs Fox 1.1 as Black)
 
 ##### * - used much better PC for hosting this game
 
-### Special thanks (to All The Fellas)
+### Special thanks (to All The Fellas):
 
 [MegaMorpeh](https://lichess.org/@/MegaMorpeh)
 
