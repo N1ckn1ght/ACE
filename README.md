@@ -32,7 +32,13 @@ https://lichess.org/SvtcAEVm/black/ (40/30 vs Really Smart Human(tm) with 2k FID
 
 https://lichess.org/GfIy7Uxr/ (40/5 vs self, hyperbullet basically)
 
-##### TODO: add more CCRL format games (40/900), they are much cooler
+https://lichess.org/V4Zq4DPA/white/ (40/900* vs Roce 0.0390 as White)
+
+https://lichess.org/kblZvQqi/black/ (40/60* vs Cinnamon 1.2c as Black)
+
+https://lichess.org/rZ6fKTkP/black/ (40/180 vs Fox 1.1 as Black)
+
+#####* - used much better PC for hosting this game
 
 ### "I want to play against it!"
 
@@ -40,9 +46,15 @@ https://lichess.org/GfIy7Uxr/ (40/5 vs self, hyperbullet basically)
 
 2. Add Akira CE latest .exe from github releases (e.g. http://hgm.nubati.net/xboard/winboard/help/html/20.htm)
 
-3. Enjoy!
+3. Options -> Common Engine Settings, set Hash Size as 512 MB (it's hardcoded for now, sorry)
+
+Akira doesn't use any opening books or endspiel tables.
+
+Set time controls to whatever odds, you may also want to disable pondering in Options -> General.
 
 I'll deploy it as a lichess bot sooner or later.
+
+Enjoy!
 
 ### Special thanks (to All The Fellas)
 
