@@ -54,7 +54,7 @@ https://lichess.org/kblZvQqi/black/ (40/60* vs Cinnamon 1.2c as Black)
 
 https://lichess.org/rZ6fKTkP/black/ (40/180 vs Fox 1.1 as Black)
 
-#####* - used much better PC for hosting this game
+##### * - used much better PC for hosting this game
 
 ### Special thanks (to All The Fellas)
 
