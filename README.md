@@ -18,7 +18,7 @@ Comms - Partially complete (Musthave features work, xboard protocol only)
 
 ### TODO:
 
-Full UCI support, hosting it as a [lichess](https://lichess.org) bot
+Full UCI support, host it as a [lichess](https://lichess.org) bot
 
 Resolve issues (incompatibilities, enhancements, there are a lot)
 
