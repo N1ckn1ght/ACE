@@ -32,13 +32,9 @@ Opening books and endgame tables support
 
 3. Options -> Common Engine Settings, set Hash Size as 512 MB (it's hardcoded for now, sorry)
 
-Akira doesn't use any opening books or endspiel tables.
+4. Set time controls to whatever odds, you may also want to disable pondering in Options -> General.
 
-Set time controls to whatever odds, you may also want to disable pondering in Options -> General.
-
-I'll deploy it as a lichess bot sooner or later.
-
-Enjoy!
+5. Enjoy!
 
 ### Game samples:
 
