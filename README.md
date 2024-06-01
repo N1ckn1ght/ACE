@@ -24,6 +24,22 @@ Resolve issues (incompatibilities, enhancements, there are a lot)
 
 Opening books, endgame tables support
 
+### How to set up a game
+
+1. Download and install xboard (WinBoard) or any interface with CECP v2 protocol supported
+
+2. Add Akira CE latest .exe from github releases (e.g. http://hgm.nubati.net/xboard/winboard/help/html/20.htm)
+
+3. Options -> Common Engine Settings, set Hash Size as 512 MB (it's hardcoded for now, sorry)
+
+Akira doesn't use any opening books or endspiel tables.
+
+Set time controls to whatever odds, you may also want to disable pondering in Options -> General.
+
+I'll deploy it as a lichess bot sooner or later.
+
+Enjoy!
+
 ### Game samples:
 
 https://lichess.org/eAJeuTrS/white/ (40/300 vs BBC 1.2 as White)
@@ -39,22 +55,6 @@ https://lichess.org/kblZvQqi/black/ (40/60* vs Cinnamon 1.2c as Black)
 https://lichess.org/rZ6fKTkP/black/ (40/180 vs Fox 1.1 as Black)
 
 #####* - used much better PC for hosting this game
-
-### "I want to play against it!"
-
-1. Download and install xboard (WinBoard) or any interface with CECP v2 protocol supported
-
-2. Add Akira CE latest .exe from github releases (e.g. http://hgm.nubati.net/xboard/winboard/help/html/20.htm)
-
-3. Options -> Common Engine Settings, set Hash Size as 512 MB (it's hardcoded for now, sorry)
-
-Akira doesn't use any opening books or endspiel tables.
-
-Set time controls to whatever odds, you may also want to disable pondering in Options -> General.
-
-I'll deploy it as a lichess bot sooner or later.
-
-Enjoy!
 
 ### Special thanks (to All The Fellas)
 
