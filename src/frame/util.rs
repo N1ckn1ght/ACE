@@ -7,12 +7,14 @@ use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
-pub const MYNAME: &str = "Akira CE v1.2";
+pub const MYNAME: &str = "Akira CE v1.2.1";
 
 /* LIMITATIONS */
 
-pub const MEMORY_LIMIT_MB: usize = 512;                                         // needs to be >16
-pub const CACHE_CAPACITY: usize = (MEMORY_LIMIT_MB - 2) << 16;
+pub const CACHE_SIZE: usize = 25;  // entries, in power of 2;
+                                   // keep in mind, programm will eat additional 1.4 MB bc of lookup tables.
+                                   // 25 is recommended (it's 512 MB)
+pub const TEMP_PRE_CALC_CACHE_BITMASK: u64 = (1 << CACHE_SIZE) - 1; // sorry for that
 
 pub const HALF_DEPTH_LIMIT: usize = 64;
 pub const HALF_DEPTH_LIMIT_SAFE: i16 = 50;                                      // for chara.think()

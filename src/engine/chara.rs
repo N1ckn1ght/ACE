@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::{max, Ordering}, collections::{HashMap, HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
+use std::{cmp::{max, Ordering}, collections::{HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{clock::Clock, options::Options, weights::Weights, zobrist::Zobrist};
@@ -89,7 +89,7 @@ impl Chara {
             board,
             w:				    Weights::init(),
             baw:                300, // pretty much default value, divide by 400 to get centipawns
-            cache:	            vec![EvalHash::default(); CACHE_CAPACITY],
+            cache:	            vec![EvalHash::default(); 1 << CACHE_SIZE],
             history_vec:	    cache_perm_vec,
             history_set:	    HashSet::default(),
             zobrist,
@@ -550,7 +550,7 @@ impl Chara {
         self.history_vec.push(self.zobrist.cache_new(&self.board));
         self.castled = [false, false];
         self.cache.clear();
-        self.cache.resize(CACHE_CAPACITY, EvalHash::default());
+        self.cache.resize(1 << CACHE_SIZE, EvalHash::default());
         self.cur_depth = 0;
         self.draw_offered = false;
         self.draw_got_offer = false;
@@ -595,13 +595,15 @@ impl Chara {
         self.tpv_len[self.hmc] = self.hmc;
 
         let hash = *self.history_vec.last().unwrap();
-        let hash_index = hash as usize % CACHE_CAPACITY;
+        let hash_index = (hash & TEMP_PRE_CALC_CACHE_BITMASK) as usize;
         if self.hmc != 0 && (self.board.hmc > 99 || self.history_set.contains(&hash)) {
             return self.w.rand + 1;
         }
         
+        let hash_is_same = self.cache[hash_index].hash == hash;
+
         // if not a "prove"-search
-        if self.hmc != 0 && beta - alpha < 2 && self.cache[hash_index].hash == hash {
+        if hash_is_same && self.hmc != 0 && beta - alpha < 2 {
             let br = self.cache[hash_index];
             if br.depth >= depth {
                 if br.flag & HF_PRECISE != 0 {
@@ -662,10 +664,8 @@ impl Chara {
         let mut moves = self.board.get_legal_moves();
         if moves.is_empty() {
             if in_check {
-                self.cache[hash_index] = EvalHash::new(hash, -LARGE, 0, HF_PRECISE);
                 return -LARGE + self.hmc as i32;
             }
-            self.cache[hash_index] = EvalHash::new(hash, 0, 0, HF_PRECISE);
             return 0;
         }
 
@@ -718,7 +718,7 @@ impl Chara {
             self.make_move(*mov);
             self.hmc += 1;
             let mut score = if i != 0 && depth > 2 && !(*mov > ME_PROMISING_MIN || in_check) {
-                -self.search(-beta, -alpha, depth * 2 / 3)
+                -self.search(-beta, -alpha, depth - 2 - (depth > 3 && i > 7 && i + 9 > moves.len()) as i16)
             } else {
                 alpha + 1
             };
@@ -748,7 +748,9 @@ impl Chara {
                 self.tpv_len[self.hmc] = self.tpv_len[self.hmc + 1];
             
                 if alpha >= beta {
-                    self.cache[hash_index] = EvalHash::new(hash, score, depth, HF_HIGH);
+                    if hash_is_same || self.cache[hash_index].depth == 0 || depth > 4 {
+                        self.cache[hash_index] = EvalHash::new(hash, score, depth, HF_HIGH);
+                    }
                     if *mov < ME_CAPTURE_MIN {
                         self.killer[1][self.hmc] = self.killer[0][self.hmc];
                         self.killer[0][self.hmc] = *mov & MFE_CLEAR;
@@ -758,11 +760,13 @@ impl Chara {
             }
         }
 
-        self.cache[hash_index] = EvalHash::new(hash, alpha, depth, hf_cur);	
-        if alpha < -LARGM {
-            self.cache[hash_index].score -= self.hmc as i32;
-        } else if alpha > LARGM {
-            self.cache[hash_index].score += self.hmc as i32;
+        if hash_is_same || self.cache[hash_index].depth == 0 || depth > 4 {
+            self.cache[hash_index] = EvalHash::new(hash, alpha, depth, hf_cur);	
+            if alpha < -LARGM {
+                self.cache[hash_index].score -= self.hmc as i32;
+            } else if alpha > LARGM {
+                self.cache[hash_index].score += self.hmc as i32;
+            }
         }
 
         alpha // fail low
@@ -822,8 +826,6 @@ impl Chara {
         3) Eval is not great on evaluating checks and detecting possibilities - it's HCE, wdy want?
     */
     fn eval(&mut self) -> i32 {
-        let hash = *self.history_vec.last().unwrap();
-
         /* SETUP SCORE APPLICATION */
 
         let counter = (self.board.bbs[N] | self.board.bbs[N2]).count_ones() * 3 + 
