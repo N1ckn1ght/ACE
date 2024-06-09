@@ -1,7 +1,7 @@
 // The main module of the chess engine.
 // ANY changes to the board MUST be done through the character's methods!
 
-use std::{cmp::{max, Ordering}, collections::{HashSet}, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
+use std::{cmp::{max, min, Ordering}, collections::HashSet, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
 use rand::{rngs::ThreadRng, Rng};
 use crate::frame::{util::*, board::Board};
 use super::{clock::Clock, options::Options, weights::Weights, zobrist::Zobrist};
@@ -748,7 +748,7 @@ impl Chara {
                 self.tpv_len[self.hmc] = self.tpv_len[self.hmc + 1];
             
                 if alpha >= beta {
-                    if hash_is_same || self.cache[hash_index].depth == 0 || depth > 4 {
+                    if hash_is_same || depth > min(self.cache[hash_index].depth, 4) {
                         self.cache[hash_index] = EvalHash::new(hash, score, depth, HF_HIGH);
                     }
                     if *mov < ME_CAPTURE_MIN {
@@ -760,7 +760,7 @@ impl Chara {
             }
         }
 
-        if hash_is_same || self.cache[hash_index].depth == 0 || depth > 4 {
+        if hash_is_same || depth > min(self.cache[hash_index].depth, 4) {
             self.cache[hash_index] = EvalHash::new(hash, alpha, depth, hf_cur);	
             if alpha < -LARGM {
                 self.cache[hash_index].score -= self.hmc as i32;
