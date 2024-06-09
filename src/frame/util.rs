@@ -7,14 +7,15 @@ use std::{cmp::min, fs, io::Cursor, path::Path};
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
-pub const MYNAME: &str = "Akira CE v1.1.2";
+pub const MYNAME: &str = "Akira CE v1.2.1";
 
 /* LIMITATIONS */
 
-// todo: this limit is underused :D
-pub const MEMORY_LIMIT_MB: usize = 512;
-pub const CACHED_LEAVES_LIMIT: usize = ( (MEMORY_LIMIT_MB >> 2)    << 18 ) / 3; // 96 bit
-pub const CACHED_BRANCHES_LIMIT: usize = (MEMORY_LIMIT_MB >> 3)    << 16;       // 128 bit
+pub const CACHE_SIZE: usize = 25;  // entries, in power of 2;
+                                   // keep in mind, programm will eat additional 1.4 MB bc of lookup tables.
+                                   // 25 is recommended (it's 512 MB)
+pub const TEMP_PRE_CALC_CACHE_BITMASK: u64 = (1 << CACHE_SIZE) - 1; // sorry for that
+
 pub const HALF_DEPTH_LIMIT: usize = 64;
 pub const HALF_DEPTH_LIMIT_SAFE: i16 = 50;                                      // for chara.think()
 pub const NODES_BETWEEN_UPDATES: u64       = 0b00000000111111111111; 
@@ -252,19 +253,32 @@ impl EvalMove {
 }
 
 #[derive(Copy, Clone)]
-pub struct EvalBr {
+pub struct EvalHash {
+    pub hash: u64,
     pub score: i32, 
     pub depth: i16,
     pub flag: i16
 }
 
-impl EvalBr {
+impl EvalHash {    
     #[inline]
-    pub fn new(score: i32, depth: i16, flag: i16) -> Self {
-        EvalBr {
+    pub fn new(hash: u64, score: i32, depth: i16, flag: i16) -> Self {
+        EvalHash {
+            hash,
             score,
             depth,
             flag
+        }
+    }
+}
+
+impl Default for EvalHash {
+    fn default() -> Self {
+        Self {
+            hash: 0,
+            score: 0,
+            depth: 0,
+            flag: 0
         }
     }
 }

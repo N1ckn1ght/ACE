@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
-const TPS: [[u128;  2]; 2] = [[45, 60], [67, 90]]; // [safe/unsafe][no_ponder/ponder]
-const TDS: [[usize; 2]; 2] = [[ 7,  7], [ 6,  6]]; // [safe/unsafe][no_ponder/ponder]
+const TPS: [[u128;  2]; 2] = [[45, 75], [67, 100]]; // [safe/unsafe][no_ponder/ponder]
+const TDS: [[usize; 2]; 2] = [[ 7,  7], [ 6,  6]];  // [safe/unsafe][no_ponder/ponder]
 
 enum TimeControl {
     Conventional,
