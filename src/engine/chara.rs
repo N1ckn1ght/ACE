@@ -26,8 +26,7 @@ pub struct Chara {
     baw:                i32,                    // aspiration window base
     
     /* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
-    cache_leaves:		HashMap<u64, i32>,
-    cache_branches:		HashMap<u64, EvalBr>,
+    cache:		        Vec<EvalHash>,
     
     /* Cache for already made in board moves to track drawish positions */
     history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
@@ -90,8 +89,7 @@ impl Chara {
             board,
             w:				    Weights::init(),
             baw:                300, // pretty much default value, divide by 400 to get centipawns
-            cache_leaves:	    HashMap::default(),
-            cache_branches:	    HashMap::default(),
+            cache:	            vec![EvalHash::default(); CACHE_CAPACITY],
             history_vec:	    cache_perm_vec,
             history_set:	    HashSet::default(),
             zobrist,
@@ -226,7 +224,7 @@ impl Chara {
                             println!("feature done=0");
                             println!("feature myname=\"{}\"", MYNAME);
                             println!("feature analyze=0 debug=1 ping=1 setboard=1 usermove=1");
-                            println!("feature option=\"Random -spin 5 1 50\"");
+                            println!("feature option=\"Random -spin 5 0 50\"");
                             println!("feature done=1");
                         } else {
                             // insert crashcode LOL
@@ -236,11 +234,12 @@ impl Chara {
                         self.quit = true;
                     },
                     "random" => {
-                        if self.w.rand == 0 {
-                            self.w.rand = self.options.get_rand();
-                        } else {
+                        if self.options.rand_status {
                             self.w.rand = 0;
+                        } else {
+                            self.w.rand = self.options.rand;
                         }
+                        self.options.rand_status = !self.options.rand_status;
                     },
                     "rejected" => {
                         // who cares
@@ -423,11 +422,12 @@ impl Chara {
                         self.quit = true;
                     },
                     "random" => {
-                        if self.w.rand == 0 {
-                            self.w.rand = self.options.get_rand();
-                        } else {
+                        if self.options.rand_status {
                             self.w.rand = 0;
+                        } else {
+                            self.w.rand = self.options.rand;
                         }
+                        self.options.rand_status = !self.options.rand_status;
                     },
                     "remove" => {
                         self.enqueued_reverts = 2;
@@ -471,14 +471,6 @@ impl Chara {
             if (self.nodes & NODES_BETWEEN_POSTS == 0) && self.tpv_len[0] != 0 {
                 self.post();
             }
-        }
-
-        if self.cache_leaves.len() > CACHED_LEAVES_LIMIT {
-            println!("#DEBUG\tClearing cache of leaves ({} entries dropped).", self.cache_leaves.len());
-            self.cache_leaves.clear();
-        } else if self.cache_branches.len() > CACHED_BRANCHES_LIMIT {
-            println!("#DEBUG\tClearing cache of branches ({} entries dropped).", self.cache_branches.len());
-            self.cache_branches.clear();
         }
     }
 
@@ -557,8 +549,8 @@ impl Chara {
         self.history_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         self.history_vec.push(self.zobrist.cache_new(&self.board));
         self.castled = [false, false];
-        self.cache_leaves.clear();
-        self.cache_branches.clear();
+        self.cache.clear();
+        self.cache.resize(CACHE_CAPACITY, EvalHash::default());
         self.cur_depth = 0;
         self.draw_offered = false;
         self.draw_got_offer = false;
@@ -603,13 +595,14 @@ impl Chara {
         self.tpv_len[self.hmc] = self.hmc;
 
         let hash = *self.history_vec.last().unwrap();
+        let hash_index = hash as usize % CACHE_CAPACITY;
         if self.hmc != 0 && (self.board.hmc > 99 || self.history_set.contains(&hash)) {
             return self.w.rand + 1;
         }
         
         // if not a "prove"-search
-        if self.hmc != 0 && beta - alpha < 2 && self.cache_branches.contains_key(&hash) {
-            let br = self.cache_branches[&hash];
+        if self.hmc != 0 && beta - alpha < 2 && self.cache[hash_index].hash == hash {
+            let br = self.cache[hash_index];
             if br.depth >= depth {
                 if br.flag & HF_PRECISE != 0 {
                     if br.score < -LARGM {
@@ -669,10 +662,10 @@ impl Chara {
         let mut moves = self.board.get_legal_moves();
         if moves.is_empty() {
             if in_check {
-                self.cache_branches.insert(hash, EvalBr::new(-LARGE, 0, HF_PRECISE));
+                self.cache[hash_index] = EvalHash::new(hash, -LARGE, 0, HF_PRECISE);
                 return -LARGE + self.hmc as i32;
             }
-            self.cache_branches.insert(hash, EvalBr::new(0, 0, HF_PRECISE));
+            self.cache[hash_index] = EvalHash::new(hash, 0, 0, HF_PRECISE);
             return 0;
         }
 
@@ -725,7 +718,7 @@ impl Chara {
             self.make_move(*mov);
             self.hmc += 1;
             let mut score = if i != 0 && depth > 2 && !(*mov > ME_PROMISING_MIN || in_check) {
-                -self.search(-beta, -alpha, depth - 2 - (depth > 3 && i > 7 && i + 9 > moves.len()) as i16)
+                -self.search(-beta, -alpha, depth * 2 / 3)
             } else {
                 alpha + 1
             };
@@ -755,7 +748,7 @@ impl Chara {
                 self.tpv_len[self.hmc] = self.tpv_len[self.hmc + 1];
             
                 if alpha >= beta {
-                    self.cache_branches.insert(hash, EvalBr::new(score, depth, HF_HIGH));
+                    self.cache[hash_index] = EvalHash::new(hash, score, depth, HF_HIGH);
                     if *mov < ME_CAPTURE_MIN {
                         self.killer[1][self.hmc] = self.killer[0][self.hmc];
                         self.killer[0][self.hmc] = *mov & MFE_CLEAR;
@@ -765,11 +758,11 @@ impl Chara {
             }
         }
 
-        self.cache_branches.insert(hash, EvalBr::new(alpha, depth, hf_cur));	
+        self.cache[hash_index] = EvalHash::new(hash, alpha, depth, hf_cur);	
         if alpha < -LARGM {
-            self.cache_branches.get_mut(&hash).unwrap().score -= self.hmc as i32;	
+            self.cache[hash_index].score -= self.hmc as i32;
         } else if alpha > LARGM {
-            self.cache_branches.get_mut(&hash).unwrap().score += self.hmc as i32;
+            self.cache[hash_index].score += self.hmc as i32;
         }
 
         alpha // fail low
@@ -831,10 +824,6 @@ impl Chara {
     fn eval(&mut self) -> i32 {
         let hash = *self.history_vec.last().unwrap();
 
-        if self.cache_leaves.contains_key(&hash) {
-            return self.cache_leaves[&hash];
-        }
-
         /* SETUP SCORE APPLICATION */
 
         let counter = (self.board.bbs[N] | self.board.bbs[N2]).count_ones() * 3 + 
@@ -844,7 +833,6 @@ impl Chara {
         // 56 - full board, 30 - most likely, endgame?..
 
         if counter < 4 && self.board.bbs[P] | self.board.bbs[P2] == 0 {
-            self.cache_leaves.insert(hash, 0);
             return 0;
         }
 
@@ -1288,7 +1276,6 @@ impl Chara {
             score = -score;
         }
 
-        self.cache_leaves.insert(hash, score);
         score
     }
 
