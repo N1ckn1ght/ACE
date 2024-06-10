@@ -646,7 +646,6 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
-    use test::Bencher;
     use super::*;
 
     #[test]
@@ -912,14 +911,5 @@ mod tests {
         // Kiwipete again
         let mut board = Board::import("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
         assert_eq!(board.perft(6), 8031647685);
-    }
-
-    #[bench]
-    fn perft_5(b: &mut Bencher) {
-        let depth = 5;
-        let mut board = Board::default();
-        let mut x = 0;
-        b.iter(|| x = board.perft(depth));
-        println!("perft {} result: {}", depth, x);
     }
 }
