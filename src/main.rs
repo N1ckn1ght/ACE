@@ -9,10 +9,13 @@ use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::i
 use crate::engine::chara::Chara;
 
 fn main() {
-    init_magics(&mut 1773); // good random number!
-    init_leaping_attacks();
-    init_secondary_maps();
-    
+    // don't create files
+    // init_magics(&mut 1773); // good random number!
+    // init_leaping_attacks();
+    // init_secondary_maps();
+
+    // wait for uci declaration?
+    //
     let (tx, rx) = channel();
     let mut chara = Chara::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
 
