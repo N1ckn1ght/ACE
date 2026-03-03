@@ -5,7 +5,6 @@ mod engine;
 use std::time::Duration;
 use std::{io, thread};
 use std::sync::mpsc::channel;
-use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::init_secondary_maps};
 use crate::engine::chara::Chara;
 
 fn main() {

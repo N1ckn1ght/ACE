@@ -58,24 +58,7 @@ pub struct Chara {
 
     /* Comms */
     rx:		            Receiver<String>,
-    options:            Options,
     last_score:         i32,                    // last score for the current thinking side (?)
-    force:              bool,                   // do not start thinking or pondering
-    hard:               bool,                   // always pondering
-    loop_force:         bool,                   // ignore command input in listen() for a current cycle
-    playother:          bool,                   // send score for other side
-    draw_offered:       bool,                   // by engine itself
-    draw_got_offer:     bool,                   // from opfor
-    resign_offered:     bool,                   // UNUSED by now
-    quit:               bool,                   // received in update()
-    post:               bool,                   // post non-debug calculations info or not
-    ping:               i32,                    // received in update(), but must be done when listen()
-    // depth_limit:     i32,
-    enqueued_move:      u32,                    // received in update(), but must be done in listen()
-    enqueued_reverts:   u32,                    // take back how many moves (comm got from update())
-    clock:              Clock,
-    started_black:      bool,                   // hotfix for unusual move transformation (playother for think())
-    legals:             Vec<u32>                // hotfix for a bug preventing usermove while pondering
 }
 
 impl Chara {
@@ -107,23 +90,7 @@ impl Chara {
             cur_depth:          0,
             castled:		    [false, false],
             rx,
-            options:            Options::default(),
-            last_score:         0,
-            force:              false,
-            hard:               true,
-            loop_force:         false,
-            playother:          false,
-            draw_offered:       false,
-            draw_got_offer:     false,
-            resign_offered:     false,
-            quit:               false,
-            post:               false,
-            ping:               i32::MIN,
-            enqueued_move:      0,
-            enqueued_reverts:   0,
-            clock:              Clock::default(),
-            started_black:      false,
-            legals:             Vec::default()
+            last_score:         0
         }
     }
 
@@ -149,8 +116,6 @@ impl Chara {
         self.cur_depth = 1;
         let mut k = 1;
         let mut score = 0;
-        self.started_black = self.board.turn;
-        self.legals = self.board.get_legal_moves();
         loop {
             self.tpv_flag = true;
             let temp = self.search(alpha, beta, self.cur_depth);
@@ -199,7 +164,6 @@ impl Chara {
         }
 
         let approx = self.ts.elapsed().as_millis() + 1;
-        self.clock.time_deduct(&approx, self.playother);
         println!("#DEBUG\tApproximate time spent: {} ms", approx);
         EvalMove::new(self.tpv[0][0], score)
     }
@@ -213,16 +177,8 @@ impl Chara {
         self.cache.clear();
         self.cache.resize(1 << CACHE_SIZE, EvalHash::default());
         self.cur_depth = 0;
-        self.draw_offered = false;
-        self.draw_got_offer = false;
-        self.resign_offered = false;
-        self.playother = false;
-        self.force = false;
         self.nodes = 0;
-        self.enqueued_move = 0;
-        self.enqueued_reverts = 0;
         self.last_score = 0;
-        self.clock = Clock::default();
     }
 
     fn set_pos(&mut self, fen: &str) {
@@ -956,41 +912,6 @@ impl Chara {
 
     /* Play functions */
 
-    fn considerate_draw(&self, wadd: i32) -> bool {
-        let pl = if self.playother {
-            -1
-        } else {
-            1
-        };
-        let mut weight_for_draw = -self.last_score * pl;
-        let pieces_left = (self.board.get_occupancies(false) | self.board.get_occupancies(true)).count_ones();
-        if pieces_left < 5 && weight_for_draw > -300 {
-            return true;
-        }
-        if pieces_left > 24 {
-            weight_for_draw -= 600;
-        }
-        else if pieces_left > 16 {
-            weight_for_draw -= 400;
-        } else if pieces_left > 8 {
-            weight_for_draw -= 200;
-        }
-        // weight_for_draw += self.clock.is_it_time_for_draw() * pl;
-        if self.board.hmc > 20 {
-            weight_for_draw += 200;
-            if self.board.hmc > 40 {
-                weight_for_draw += 300;
-                if self.board.hmc > 60 {
-                    weight_for_draw += 400;
-                }
-            }
-        }
-        weight_for_draw -= (self.w.rand - 2) * pl;
-        weight_for_draw += wadd;
-        println!("#DEBUG\tCalculated draw offer: {}", weight_for_draw);
-        weight_for_draw > 0
-    }
-
     fn get_result(&mut self) -> GameResult {
         let moves = self.board.get_legal_moves();
         if moves.is_empty() {
@@ -1010,24 +931,13 @@ impl Chara {
     }
 
     fn post(&self) {
-        if !self.post {
-            return;
-        }
-        let scu = if self.playother {
-            -self.last_score
-        } else {
-            self.last_score
-        };
+        let scu = self.last_score;
+        let started_black = true;
         print!("{} {} {} {}", self.cur_depth, scu, self.ts.elapsed().as_millis() / 10, self.nodes);
         for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
-            print!(" {}", move_transform(*mov, (i & 1 != 0) ^ self.started_black));
+            print!(" {}", move_transform(*mov, (i & 1 != 0) ^ started_black));
         }
         println!();
-    }
-
-    #[inline]
-    fn time_alloc(&mut self) -> u128 {
-        self.clock.time_alloc(self.board.no, self.hard)
     }
 }
 

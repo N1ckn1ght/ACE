@@ -1,4 +1,5 @@
-use super::util::*;
+use crate::gen::magic::*;
+
 
 pub struct Maps {
     pub attacks_rook:        Vec<u64>,
@@ -22,30 +23,30 @@ pub struct Maps {
     pub ranks:               Vec<u64>,
     pub flanks:              Vec<u64>,
     pub fwd:                [Vec<u64>; 2],
-    pub rad2:                 Vec<u64>
+    pub rad2:                Vec<u64>
 }
 
 impl Default for Maps {
     fn default() -> Maps {
-        let bbs_rook = file_to_vector(PATH_BBR);
-        let mut ais_rook            = [0; 64];
-        let mut magics_rook         = [0; 64];
-        let mut magic_bits_rook     = [0; 64];
-        let attack_maps_rook        = file_to_magics(PATH_AMR, &mut magics_rook, &mut magic_bits_rook, &mut ais_rook);
-        let bbs_bishop              = file_to_vector(PATH_BBB);
-        let mut ais_bishop          = [0; 64];
-        let mut magics_bishop       = [0; 64];
-        let mut magic_bits_bishop   = [0; 64];
-        let attack_maps_bishop      = file_to_magics(PATH_AMB, &mut magics_bishop, &mut magic_bits_bishop, &mut ais_bishop);
-        let attack_maps_king        = file_to_vector(PATH_AMK);
-        let attack_maps_knight      = file_to_vector(PATH_AMN);
-        let attack_maps_pawns       = [file_to_vector(PATH_AMP), file_to_vector(PATH_AMP2)];
-        let step_pawns              = [file_to_vector(PATH_SMP), file_to_vector(PATH_SMP2)];
-        let files                   = file_to_vector(PATH_FLS);
-        let ranks                   = file_to_vector(PATH_RNK);
-        let flanks                  = file_to_vector(PATH_FKS);
-        let fwd                     = [file_to_vector(PATH_FWD), file_to_vector(PATH_FWD2)];
-        let rad2                    = file_to_vector(PATH_RAD2);
+        let bbs_rook = get_blocker_boards_rook();
+        let mut ais_rook = [0; 64];
+        let mut magics_rook = [0; 64];
+        let mut magic_bits_rook = [0; 64];
+        let attack_maps_rook = file_to_magics(PATH_AMR, &mut magics_rook, &mut magic_bits_rook, &mut ais_rook);
+        let bbs_bishop = get_blocker_boards_bishop();
+        let mut ais_bishop = [0; 64];
+        let mut magics_bishop = [0; 64];
+        let mut magic_bits_bishop = [0; 64];
+        let attack_maps_bishop = file_to_magics(PATH_AMB, &mut magics_bishop, &mut magic_bits_bishop, &mut ais_bishop);
+        let attack_maps_king = file_to_vector(PATH_AMK);
+        let attack_maps_knight = file_to_vector(PATH_AMN);
+        let attack_maps_pawns = [file_to_vector(PATH_AMP), file_to_vector(PATH_AMP2)];
+        let step_pawns = [file_to_vector(PATH_SMP), file_to_vector(PATH_SMP2)];
+        let files = file_to_vector(PATH_FLS);
+        let ranks = file_to_vector(PATH_RNK);
+        let flanks = file_to_vector(PATH_FKS);
+        let fwd = [file_to_vector(PATH_FWD), file_to_vector(PATH_FWD2)];
+        let rad2 = file_to_vector(PATH_RAD2);
 
         Self {
             attacks_rook: attack_maps_rook,

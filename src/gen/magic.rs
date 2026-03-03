@@ -1,217 +1,64 @@
-// This module allows search for magics,
-// it will save results to specified PATHes (utility.rs).
+/// Search for magic numbers for perfect hashing of board blockers to calculate sliding pieces attacks
+/// 
+/// The algorithm of feeding in randoms provided by Tord Romstad
+/// www.talkchess.com/forum3/viewtopic.php?topic_view=threads&p=175834
 
-// Magics are numbers that are necessary for
-// hashing attack maps for sliding pieces (R, B, Q),
-// the only reliant way to find them is a bruteforce.
-
-// The algorithm of feeding in randoms provided by Tord Romstad
-// www.talkchess.com/forum3/viewtopic.php?topic_view=threads&p=175834
-
-use std::{fs, path::Path};
 use crate::frame::util::*;
 
-pub fn init_magics(seed: &mut u64) {
-    let _ = fs::create_dir_all(PATH_RES);
 
-    let mut blocker_boards_rook  : Vec<u64>;
-    let mut blocker_boards_bishop: Vec<u64>;
+fn search_for_magic(
+    sq: usize,
+    is_rook: bool,
+    target: usize,
+    bb: u64,
+    seed: &mut u64
+) -> u64 {
+    let bits = bb.count_ones() as usize;
 
-    // init blocker boards for rook if not present
-
-    if Path::new(PATH_BBR).exists() {
-        // println!("#DEBUG\tFound rook blocker boards.");
-        blocker_boards_rook = file_to_vector(PATH_BBR);
-    } else {
-        // println!("#DEBUG\tNo rook blocker boards found! Creating file at: {}", PATH_BBR);
-        blocker_boards_rook = vec![0; 64];
-        init_blocker_boards(true, &mut blocker_boards_rook);
-        vector_to_file(&blocker_boards_rook, PATH_BBR);
-    }
-
-    // search for magic & generate attack maps if not present
-
-    if Path::new(PATH_AMR).exists() {
-        //println!("#DEBUG\tRook attack maps are present.");
-    } else {
-        //println!("#DEBUG\tNo rook attack maps found! Initiating search for magic...");
-        let mut magics_rook          : Vec<u64>;
-        let comb_bits_rook           : Vec<usize> = Vec::from([
-            12, 11, 11, 11, 11, 11, 11, 12,
-            11, 10, 10, 10, 10, 10, 10, 11,
-            11, 10, 10, 10, 10, 10, 10, 11,
-            11, 10, 10, 10, 10, 10, 10, 11,
-            11, 10, 10, 10, 10, 10, 10, 11,
-            11, 10, 10, 10, 10, 10, 10, 11,
-            11, 10, 10, 10, 10, 10, 10, 11,
-            12, 11, 11, 11, 11, 11, 11, 12
-        ]);
-        // note: in some cases it's possible to go further below this bit count,
-        // search of such magic will require a lot of time
-        let magic_bits_rook = &comb_bits_rook;
-
-        // search for magic
-
-        if Path::new(PATH_MR).exists() {
-            //println!("#DEBUG\tFound rook magics.");
-            magics_rook = file_to_vector(PATH_MR);
-        } else {
-            //println!("#DEBUG\tNo rook magics found! Creating file at: {}", PATH_MR);
-            magics_rook = vec![0; 64];
-            let mut magic = *seed;
-            for i in 0..64 {
-                magics_rook[i] = search_for_magic(i, true, comb_bits_rook[i], magic_bits_rook[i], blocker_boards_rook[i], 1 << 20, seed, &mut magic);
-            }
-        }
-
-        // generate attack maps
-
-        let mut total_capacity = 0;
-        for bits in magic_bits_rook.iter() {
-            total_capacity += 1 << bits;
-        }
-        let mut maps = vec![0; total_capacity];
-        let mut current_capacity = 0;
-        for i in 0..64 {
-            let mut combs = vec![0; 1 << comb_bits_rook[i]];
-            init_combs(&mut combs, blocker_boards_rook[i]);
-            let mut attacks = vec![0; 1 << magic_bits_rook[i]];
-            init_attacks(i, true, &mut attacks, &mut combs, 1 << magic_bits_rook[i]);
-            for (j, comb) in combs.iter().enumerate() {
-                let magic_index = (comb.wrapping_mul(magics_rook[i]) >> (64 - magic_bits_rook[i])) as usize;
-                maps[magic_index + current_capacity] = attacks[j];
-            }
-            current_capacity += 1 << magic_bits_rook[i];
-        }
-        magics_to_file(PATH_AMR, &magics_rook, magic_bits_rook, &maps);
-    }
-
-    // init blocker boards for bishop if not present
-    
-    if Path::new(PATH_BBB).exists() {
-        //println!("#DEBUG\tFound bishop blocker boards.");
-        blocker_boards_bishop = file_to_vector(PATH_BBB);
-    } else {
-        //println!("#DEBUG\tNo bishop blocker boards found! Creating file at: {}", PATH_BBR);
-        blocker_boards_bishop = vec![0; 64];
-        init_blocker_boards(false, &mut blocker_boards_bishop);
-        vector_to_file(&blocker_boards_bishop, PATH_BBB);
-    }
-
-    // search for magic & generate attack maps if not present
-
-    if Path::new(PATH_AMB).exists() {
-        //println!("#DEBUG\tBishop attack maps are present.");
-    } else {
-        //println!("#DEBUG\tNo bishop attack maps found! Initiating search for magic...");
-
-        let mut magics_bishop        : Vec<u64>;
-        let comb_bits_bishop         : Vec<usize> = Vec::from([
-            6, 5, 5, 5, 5, 5, 5, 6,
-            5, 5, 5, 5, 5, 5, 5, 5,
-            5, 5, 7, 7, 7, 7, 5, 5,
-            5, 5, 7, 9, 9, 7, 5, 5,
-            5, 5, 7, 9, 9, 7, 5, 5,
-            5, 5, 7, 7, 7, 7, 5, 5,
-            5, 5, 5, 5, 5, 5, 5, 5,
-            6, 5, 5, 5, 5, 5, 5, 6
-        ]);
-        let magic_bits_bishop = &comb_bits_bishop;
-    
-        // search for magic
-
-        if Path::new(PATH_MB).exists() {
-            //println!("#DEBUG\tFound bishop magics.");
-            magics_bishop = file_to_vector(PATH_MB);
-        } else {
-            //println!("#DEBUG\tNo bishop magics found! Creating file at: {}", PATH_MB);
-            magics_bishop = vec![0; 64];
-            let mut magic = *seed;
-            for i in 0..64 {
-                magics_bishop[i] = search_for_magic(i, false, comb_bits_bishop[i], magic_bits_bishop[i], blocker_boards_bishop[i], 1 << 18, seed, &mut magic);
-            }
-        }
-
-        // generate attack maps
-
-        let mut total_capacity = 0;
-        for bits in magic_bits_bishop.iter() {
-            total_capacity += 1 << bits;
-        }
-        let mut maps = vec![0; total_capacity];
-        let mut current_capacity = 0;
-        for i in 0..64 {
-            let mut combs = vec![0; 1 << comb_bits_bishop[i]];
-            init_combs(&mut combs, blocker_boards_bishop[i]);
-            let mut attacks = vec![0; 1 << magic_bits_bishop[i]];
-            init_attacks(i, false, &mut attacks, &mut combs, 1 << magic_bits_bishop[i]);
-            for (j, comb) in combs.iter().enumerate() {
-                let magic_index = (comb.wrapping_mul(magics_bishop[i]) >> (64 - magic_bits_bishop[i])) as usize;
-                maps[magic_index + current_capacity] = attacks[j];
-            }
-            current_capacity += 1 << magic_bits_bishop[i];
-        }
-        magics_to_file(PATH_AMB, &magics_bishop, magic_bits_bishop, &maps);
-    }
-}
-
-#[allow(clippy::too_many_arguments)] // c'mon, this is the way!
-fn search_for_magic(sq: usize, is_rook: bool, bits: usize, target: usize, bb: u64, limit: usize, seed: &mut u64, magic: &mut u64) -> u64 {
-    let mut text = "BISHOP";
-    if is_rook {
-        text = "ROOK";
-    }
-
-    let comb_count: usize = 1 << bits;
-    let hash_count: usize = 1 << target;
-    
     // generate all possible combinations of blockers (we still don't care about last ranks and files)
-    let mut combs: Vec<u64> = vec![0; comb_count];
-    init_combs(&mut combs, bb);
-    
-    // generate attack maps for every combination of blockers (there WE CARE about last ranks and files!)
-    let mut attacks: Vec<u64> = vec![0; comb_count];
-    init_attacks(sq, is_rook, &mut attacks, &mut combs, comb_count);
+    let combs = get_combs(bb, bits);
 
-    let mut fail = true;
-    for _tries in 0..limit {
+    // generate attack maps for every combination of blockers (here WE DO CARE about last ranks and files)
+    let attacks = get_attacks(sq, is_rook, &combs);
+
+    // bruteforce approach, let's go over random numbers and find magic ones
+    let mut magic;
+    loop {
+        magic = next_random_magic(&mut *seed);
+
         // fast heuristic optimization
-        if u64::count_ones(bb.wrapping_mul(*magic) & 0xFF00000000000000) < 6 {
-            *magic = next_random_magic(&mut *seed);
+        if u64::count_ones(bb.wrapping_mul(magic) & 0xFF00000000000000) < 6 {
             continue;
         }
 
-        fail = false;
-        let mut used = vec![0; hash_count];
-        for i in 0..comb_count {
-            let index = (combs[i].wrapping_mul(*magic) >> (64 - target)) as usize;
-            // different blocker boards often will produce same attack maps (e.g. 0-1-square-..., 1-1-square-... => 0-1-square-...)
-            // it's totally ok to have hash collision in such scenario; although otherwise, the magic has failed.
+        // we try to hash positions and see if there's a collision* or not
+        // hashed value should contain necessary information about blockers
+        // we are not interested in other pieces placements
+        let mut fail = false;
+        let mut used = vec![0; attacks.len()];
+        for i in 0..combs.len() {
+            let index = (combs[i].wrapping_mul(magic) >> (64 - target)) as usize;
+            // *except different blocker boards often produce the same attack map
+            // and the same hash on the same attack is even better!
             if used[index] > 0 && used[index] != attacks[i] {
                 fail = true;
                 break;
             }
             used[index] = attacks[i];
         }
-
         if fail {
-            *magic = next_random_magic(&mut *seed);
-        } else {
-            break;
+            continue;
         }
     }
 
-    // probably shouldn't even panic, but with proper seed and decent target bits count, this will never occur anyway
-    if fail {
-        panic!("Failed to generate a magic!\n{} {}, {} bits, tries = {}", text, sq, target, limit);
-    } else {
-        //println!("#DEBUG\t{} {}, {} bits, new magic = {}", text, sq, target, magic);
-    }
-    *magic
+    magic
 }
 
-// similar to attack in empty blocker board comb, but we stop before the last rank/file
-/* Examples:
+
+/* Blocker boards are similar to attacks on an empty blocker board combination,
+    except we stop before the last rank/file
+
+   Examples:
 
     0 0 0 0 0 0 0 0    0 0 0 0 0 0 0 0    0 0 0 0 0 0 0 0    0 0 0 0 0 0 0 0
     0 0 0 1 0 0 0 0    1 0 0 0 0 0 0 0    0 1 0 0 0 1 0 0    0 0 0 0 0 0 1 0
@@ -222,51 +69,61 @@ fn search_for_magic(sq: usize, is_rook: bool, bits: usize, target: usize, bb: u6
     0 0 0 1 0 0 0 0    1 0 0 0 0 0 0 0    0 0 0 0 0 0 1 0    0 T 0 0 0 0 0 0
     0 0 0 0 0 0 0 0    T 1 1 1 1 1 1 0    0 0 0 0 0 0 0 0    0 0 0 0 0 0 0 0
 */
-fn init_blocker_boards(is_rook: bool, bbs: &mut [u64]) {
+pub fn get_blocker_boards(is_rook: bool) -> Vec<u64> {
+    let mut bbs = vec![0; 64];
     if is_rook {
         for (i, bb) in bbs.iter_mut().enumerate() {
-            // bbs[i] = 0;
-            for j in (i..56).step_by(8) {                                       // up
+            for j in (i..56).step_by(8) {
+                // up
                 set_bit(bb, j);
             }
-            for j in (8..i + 1).rev().step_by(8) {                              // down (including 8, i)
+            for j in (8..i + 1).rev().step_by(8) {
+                // down (including 8, i)
                 set_bit(bb, j);
             }
-            for j in (i & 56) + 1..i + 1 {                                     // left (still left-to-right though)
+            for j in (i & 56) + 1..i + 1 {
+                // left (still left-to-right though)
                 set_bit(bb, j);
             }
-            for j in i..(i | 7) {                                   // right
+            for j in i..(i | 7) {
+                // right
                 set_bit(bb, j);
             }
             del_bit(bb, i);
         }
     } else {
         for (i, bb) in bbs.iter_mut().enumerate() {
-            // bbs[i] = 0;
-            for j in (i..).step_by(7).take_while(|j| j / 8 < 7 && j & 7 > 0) {  // up-left
+            for j in (i..).step_by(7).take_while(|j| j / 8 < 7 && j & 7 > 0) {
+                // up-left
                 set_bit(bb, j);
             }
-            for j in (i..).step_by(9).take_while(|j| j / 8 < 7 && j & 7 < 7) {  // up-right
+            for j in (i..).step_by(9).take_while(|j| j / 8 < 7 && j & 7 < 7) {
+                // up-right
                 set_bit(bb, j);
             }
-            // if you'll find a way to do this using for loops, leave an issue on github =)
             let mut j = i;
-            while j / 8 > 0 && j & 7 < 7 {                                      // down-right
+            while j / 8 > 0 && j & 7 < 7 {
+                // down-right
                 set_bit(bb, j);
                 j -= 7;
             }
             j = i;
-            while j / 8 > 0 && j & 7 > 0 {                                      // down-left
+            while j / 8 > 0 && j & 7 > 0 {
+                // down-left
                 set_bit(bb, j);
                 j -= 9;
             }
             del_bit(bb, i);
         }
     }
+    bbs
 }
 
-// init all possible permutations of blockers by given blocker board
-fn init_combs(combs: &mut [u64], bb: u64) {
+
+// Generate all possible permutations of blockers by given blocker board
+
+fn get_combs(bb: u64, bits: usize) -> Vec<u64> {
+    let mut combs = vec![0; 1 << bits];
     for (i, comb) in combs.iter_mut().enumerate() {
         let mut mask = bb;
         let mut bit: usize = 0;
@@ -278,74 +135,85 @@ fn init_combs(combs: &mut [u64], bb: u64) {
             bit += 1;
         }
     }
+    combs
 }
+
 
 /* Example of an attack result by given comb for a rook:
     (we can always do 'ATTACKS &= !ALLY_PIECES' stuff later in the board/engine logic)
 
     0 0 0 1 0 0 0 0    0 0 0 1 0 0 0 0          *the '1' at the upper rank is not possible
     0 0 0 0 0 0 0 0    0 0 0 1 0 0 0 0           because of the blocker board generation,
-    0 0 0 0 0 0 0 0    0 0 0 1 0 0 0 0           but this example explains why
+    0 0 0 0 0 0 0 0    0 0 0 1 0 0 0 0           but this example shows why
     0 1 0 T 0 0 0 0    0 1 1 T 1 1 1 1           it's designed such way
     0 0 0 1 0 0 0 0    0 0 0 1 0 0 0 0
     0 0 0 0 0 0 0 0    0 0 0 0 0 0 0 0
     0 0 0 1 0 0 0 0    0 0 0 0 0 0 0 0 
     0 0 0 0 0 0 0 0    0 0 0 0 0 0 0 0
 */
-fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64], count: usize) {
-    for i in 0..count {
+fn get_attacks(sq: usize, is_rook: bool, combs: &[u64]) -> Vec<u64> {
+    let cnt = combs.len();
+    let mut attacks = vec![0; cnt];
+    for i in 0..cnt {
         // attacks[i] = 0;
         if is_rook {
-            for j in (sq..64).step_by(8) {              // up
+            for j in (sq..64).step_by(8) {
+                // up
                 set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
+                if get_bit(combs[i], j) != 0 {
                     break;
                 }
             }
-            for j in (0..sq + 1).rev().step_by(8) {     // down
+            for j in (0..sq + 1).rev().step_by(8) {
+                // down
                 set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
+                if get_bit(combs[i], j) != 0 {
                     break;
                 }
             }
-            for j in (sq & 56..sq + 1).rev() {          // left
+            for j in (sq & 56..sq + 1).rev() {
+                // left
                 set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
+                if get_bit(combs[i], j) != 0 {
                     break;
                 }
             }
-            for j in sq..(sq | 7) + 1 {                 // right
+            for j in sq..(sq | 7) + 1 {
+                // right
                 set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
+                if get_bit(combs[i], j) != 0 {
                     break;
                 }
             }
             del_bit(&mut attacks[i], sq);
         } else {
             let mut j = sq;
-            loop {                                      // up-right
+            loop {
+                // up-right
                 j += 7;
                 if j & 7 >= sq & 7 || j > 62 {
                     break;
                 }
                 set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
+                if get_bit(combs[i], j) != 0 {
                     break;
                 }
             }
             j = sq;
-            loop {                                      // up-left
+            loop {
+                // up-left
                 j += 9;
                 if j & 7 <= sq & 7 || j > 63 {
                     break;
                 }
                 set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
+                if get_bit(combs[i], j) != 0 {
                     break;
                 }
             }
             j = sq;
-            loop {                                      // down-left
+            loop {
+                // down-left
                 if j < 8 {
                     break;
                 }
@@ -354,12 +222,13 @@ fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64]
                     break;
                 }
                 set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
+                if get_bit(combs[i], j) != 0 {
                     break;
                 }
             }
             j = sq;
-            loop {                                      // down-right
+            loop {
+                // down-right
                 if j < 9 {
                     break;
                 }
@@ -368,13 +237,97 @@ fn init_attacks(sq: usize, is_rook: bool, attacks: &mut [u64], combs: &mut [u64]
                     break;
                 }
                 set_bit(&mut attacks[i], j);
-                if get_bit(combs[i], j) > 0 {
+                if get_bit(combs[i], j) != 0 {
                     break;
                 }
             }
         }
     }
+    attacks
 }
+
+pub fn get_magic_maps(
+    is_rook: bool,
+    magic_numbers: Option<&Vec<u64>>,
+    bbss: &Vec<u64>,
+    seed: Option<u64>
+) -> Vec<u64> {
+    let comb_bits: Vec<usize> = if is_rook {
+        Vec::from([
+            12, 11, 11, 11, 11, 11, 11, 12,
+            11, 10, 10, 10, 10, 10, 10, 11,
+            11, 10, 10, 10, 10, 10, 10, 11,
+            11, 10, 10, 10, 10, 10, 10, 11,
+            11, 10, 10, 10, 10, 10, 10, 11,
+            11, 10, 10, 10, 10, 10, 10, 11,
+            11, 10, 10, 10, 10, 10, 10, 11,
+            12, 11, 11, 11, 11, 11, 11, 12
+        ])
+    } else {
+        Vec::from([
+            6, 5, 5, 5, 5, 5, 5, 6,
+            5, 5, 5, 5, 5, 5, 5, 5,
+            5, 5, 7, 7, 7, 7, 5, 5,
+            5, 5, 7, 9, 9, 7, 5, 5,
+            5, 5, 7, 9, 9, 7, 5, 5,
+            5, 5, 7, 7, 7, 7, 5, 5,
+            5, 5, 5, 5, 5, 5, 5, 5,
+            6, 5, 5, 5, 5, 5, 5, 6
+        ])
+    };
+
+    // it's possible to go further below this bit count, but search of such magic is consuming
+    let magic_bits = &comb_bits;
+
+    // call search for magic or use presented values
+    let mut magics = match magic_numbers {
+        Some(numbers) => {
+            numbers.clone()
+        },
+        None => {
+            log(&format!("Magic numbers (is_rook = {}) are not found, generating...", is_rook));
+            let mut numbers = vec![0; 64];
+            let mut seed = match seed {
+                Some(seed) => {
+                    seed
+                },
+                None => {
+                    12345679  // fallback seed, paste any
+                }
+            };
+            for i in 0..64 {
+                numbers[i] = search_for_magic(i, is_rook, magic_bits[i], bbss[i], &mut seed);
+                log(&format!("Found magic | {:2} sq: {}", i, numbers[i]));
+            }
+            numbers
+        }
+    };
+
+    // generate attack maps
+    let mut total_capacity = 0;
+    for bits in magic_bits.iter() {
+        total_capacity += 1 << bits;
+    }
+
+    let mut maps = vec![0; total_capacity];
+    let mut current_capacity = 0;
+    for i in 0..64 {
+        // let mut combs = vec![0; 1 << comb_bits_rook[i]];
+        // init_combs(&mut combs, blocker_boards_rook[i]);
+        let mut combs = get_combs();
+        let mut attacks = vec![0; 1 << magic_bits_rook[i]];
+        init_attacks(i, true, &mut attacks, &mut combs, 1 << magic_bits_rook[i]);
+        for (j, comb) in combs.iter().enumerate() {
+            let magic_index = (comb.wrapping_mul(magics_rook[i]) >> (64 - magic_bits_rook[i])) as usize;
+            maps[magic_index + current_capacity] = attacks[j];
+        }
+        current_capacity += 1 << magic_bits_rook[i];
+    }
+
+    vec![]
+}
+
+
 
 fn next_random_magic(seed: &mut u64) -> u64 {
     *seed = xor64(*seed);
