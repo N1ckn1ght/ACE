@@ -49,7 +49,6 @@ pub struct Weights {
 impl Weights {
     // possible modify by some multipliers
     pub fn init() -> Self {
-
         let pieces_weights_const = [
             [ 328, 1348, 1460, 1908, 4100, 0 ],
             [ 396, 1124, 1188, 2048, 3744, 0 ]

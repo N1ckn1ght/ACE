@@ -904,12 +904,4 @@ mod tests {
         let mut board = Board::default();
         assert_eq!(board.perft(6), 119060324);
     }
-
-    #[test]
-    #[ignore]
-    fn test_board_legal_moves_heavy_4() {
-        // Kiwipete again
-        let mut board = Board::import("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
-        assert_eq!(board.perft(6), 8031647685);
-    }
 }

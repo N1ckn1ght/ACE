@@ -5,7 +5,7 @@ mod engine;
 use std::time::Duration;
 use std::{io, thread};
 use std::sync::mpsc::channel;
-use crate::engine::chara::Chara;
+use crate::engine::search::Search;
 
 fn main() {
     // don't create files
@@ -16,30 +16,29 @@ fn main() {
     // wait for uci declaration?
     //
     let (tx, rx) = channel();
-    let mut chara = Chara::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
+    let mut chara = Search::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
 
-    let handle = thread::spawn(move || {
-        loop {
-            let mut input = String::new();
-            let mut quit = false;
-            match io::stdin().read_line(&mut input) {
-                Ok(_goes_into_input_above) => {
-                    if input.trim() == "quit" {
-                        quit = true;
-                    }
-                    let _ = tx.send(input);
-                }
-                Err(_no_updates_is_fine) => {
+    // let handle = thread::spawn(move || {
+    //     loop {
+    //         let mut input = String::new();
+    //         let mut quit = false;
+    //         match io::stdin().read_line(&mut input) {
+    //             Ok(_goes_into_input_above) => {
+    //                 if input.trim() == "quit" {
+    //                     quit = true;
+    //                 }
+    //                 let _ = tx.send(input);
+    //             }
+    //             Err(_no_updates_is_fine) => {
     
-                }
-            }
-            if quit {
-                break;
-            }
-            thread::sleep(Duration::from_millis(1));
-        }
-    });
+    //             }
+    //         }
+    //         if quit {
+    //             break;
+    //         }
+    //         thread::sleep(Duration::from_millis(1));
+    //     }
+    // });
 
-    chara.listen();
-    let _ = handle.join();
+    // let _ = handle.join();
 }
