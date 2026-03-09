@@ -5,6 +5,7 @@ mod engine;
 use std::time::Duration;
 use std::{io, thread};
 use std::sync::mpsc::channel;
+use crate::engine::hc_eval::HCEval;
 use crate::engine::search::Search;
 
 fn main() {
@@ -16,7 +17,7 @@ fn main() {
     // wait for uci declaration?
     //
     let (tx, rx) = channel();
-    let mut chara = Search::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
+    let mut chara = Search::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx, HCEval::init(None));
 
     // let handle = thread::spawn(move || {
     //     loop {

@@ -1,26 +1,56 @@
-use crate::{engine::weights::Weights, frame::{board::Board, util::*}};
+use std::cmp::max;
+use crate::{engine::{hc_weights::HCWeights, search::Eval}, frame::{board::Board, util::*}};
 
-pub struct Eval {
-    w: Weights
+
+const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
+const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
+
+impl Eval for HCEval {
+    fn eval(&self, board: &Board) -> i32 {
+        HCEval::eval(self, board)
+    }
 }
 
-impl Default for Eval {
+/// Provides eval(&Board) -> i32
+/// 
+/// Hand-crafted static evaluation
+pub struct HCEval {
+    w: HCWeights
+}
+
+impl Default for HCEval {
     fn default() -> Self {
         Self {
-            w: Weights::init()
+            w: HCWeights::init()
         }
     }
 }
 
-impl Eval {
-    pub fn eval(board: &Board) -> i32 {
-        let counter = (self.board.bbs[N] | self.board.bbs[N2]).count_ones() * 3 + 
-            (self.board.bbs[B] | self.board.bbs[B2]).count_ones() * 3 + 
-            (self.board.bbs[R] | self.board.bbs[R2]).count_ones() * 4 +
-            (self.board.bbs[Q] | self.board.bbs[Q2]).count_ones() * 8;
+impl HCEval {
+    /// Initialize using hand-crafted weights
+    pub fn init(weights: Option<HCWeights>) -> Self {
+        let w = match weights {
+            Some(ws) => {
+                ws
+            },
+            None => {
+                HCWeights::init()
+            }
+        };
+        Self {
+            w
+        }
+    }
+
+    /// Return static evaluation score on a given board
+    pub fn eval(&self, board: &Board) -> i32 {
+        let counter = (board.bbs[N] | board.bbs[N2]).count_ones() * 3 + 
+            (board.bbs[B] | board.bbs[B2]).count_ones() * 3 + 
+            (board.bbs[R] | board.bbs[R2]).count_ones() * 4 +
+            (board.bbs[Q] | board.bbs[Q2]).count_ones() * 8;
         // 56 - full board, 30 - most likely, endgame?..
 
-        if counter < 4 && self.board.bbs[P] | self.board.bbs[P2] == 0 {
+        if counter < 4 && board.bbs[P] | board.bbs[P2] == 0 {
             return 0;
         }
 
@@ -37,10 +67,10 @@ impl Eval {
         let mut pass         = [0; 2];
 
         // quality of life fr
-        let bptr = &self.board.bbs;
-        let mptr = &self.board.maps;
+        let bptr = &board.bbs;
+        let mptr = &board.maps;
 
-        let sides = [self.board.get_occupancies(false), self.board.get_occupancies(true)];
+        let sides = [board.get_occupancies(false), board.get_occupancies(true)];
         let occup = sides[0] | sides[1];
         let kbits = [gtz(bptr[K]), gtz(bptr[K2])];
 
@@ -49,7 +79,7 @@ impl Eval {
         let rvic = [bptr[K] | bptr[Q],           bptr[K2] | bptr[Q2]];
         let bvic = [rvic[0] | bptr[R],           rvic[1]  | bptr[R2]];
 
-        /* SCORE APPLICATION BEGIN */
+        /* SCORE APPLICATION BEGINS */
 
         // pawn quick detections
         for (ally, mut bb) in [bptr[P], bptr[P2]].into_iter().enumerate() {
@@ -66,10 +96,10 @@ impl Eval {
                 } else {
                     let mut flanks = 0;
                     if sq & 7 != 0 {
-                        flanks += self.board.get_sliding_straight_opportunities(sq - 1, bptr[P] | bptr[P2]);
+                        flanks += board.get_sliding_straight_opportunities(sq - 1, bptr[P] | bptr[P2]);
                     }
                     if sq & 7 != 7 {
-                        flanks += self.board.get_sliding_straight_opportunities(sq + 1, bptr[P] | bptr[P2]);
+                        flanks += board.get_sliding_straight_opportunities(sq + 1, bptr[P] | bptr[P2]);
                     }
                     if flanks & mptr.flanks[sq] & bptr[P | ally] == 0 {
                         score += self.w.p_isolated[ally];
@@ -147,7 +177,7 @@ impl Eval {
                 score_pd[0] += self.w.heatmap[0][Q | ally][sq];
                 score_pd[1] += self.w.heatmap[1][Q | ally][sq];
                 
-                let opr = self.board.get_sliding_straight_opportunities(sq, occup) & self.board.get_sliding_diagonal_opportunities(sq, occup);
+                let opr = board.get_sliding_straight_opportunities(sq, occup) & board.get_sliding_diagonal_opportunities(sq, occup);
                 let atk = opr & !sides[ally];
                 mobility[ally] += atk.count_ones();
 
@@ -179,15 +209,15 @@ impl Eval {
                     score_pd[1] += self.w.g_atk_center[1][ally];
                 }
 
-                let mut rook_pinned_to   = self.board.get_sliding_straight_attacks(sq, occup & !atk, sides[ally]) & !atk & bptr[K | enemy];
-                let mut bishop_pinned_to = self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & !atk & bptr[K | enemy];
+                let mut rook_pinned_to   = board.get_sliding_straight_attacks(sq, occup & !atk, sides[ally]) & !atk & bptr[K | enemy];
+                let mut bishop_pinned_to = board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & !atk & bptr[K | enemy];
                 while rook_pinned_to != 0 {
                     let csq = pop_bit(&mut rook_pinned_to);
-                    pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & rpin[enemy];
+                    pins[enemy] |= board.get_sliding_diagonal_path_unsafe(sq, csq) & rpin[enemy];
                 }
                 while bishop_pinned_to != 0 {
                     let csq = pop_bit(&mut bishop_pinned_to);
-                    pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & bpin[enemy];
+                    pins[enemy] |= board.get_sliding_diagonal_path_unsafe(sq, csq) & bpin[enemy];
                 }
 
                 let profit = atk & bptr[K | enemy];
@@ -204,7 +234,7 @@ impl Eval {
                 score_pd[0] += self.w.heatmap[0][R | ally][sq];
                 score_pd[1] += self.w.heatmap[1][R | ally][sq];
 
-                let opr = self.board.get_sliding_straight_opportunities(sq, occup);
+                let opr = board.get_sliding_straight_opportunities(sq, occup);
                 let atk = opr & !sides[ally];
                 mobility[ally] += atk.count_ones();
                 
@@ -239,10 +269,10 @@ impl Eval {
                     score_pd[1] += self.w.g_atk_center[1][ally];
                 }
                 
-                let mut pinned_to = self.board.get_sliding_straight_attacks(sq, occup & !atk, sides[ally]) & !atk & rvic[enemy];
+                let mut pinned_to = board.get_sliding_straight_attacks(sq, occup & !atk, sides[ally]) & !atk & rvic[enemy];
                 while pinned_to != 0 {
                     let csq = pop_bit(&mut pinned_to);
-                    pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & rpin[enemy];
+                    pins[enemy] |= board.get_sliding_diagonal_path_unsafe(sq, csq) & rpin[enemy];
                 }
 
                 let mut profit = atk & rvic[enemy];
@@ -264,7 +294,7 @@ impl Eval {
                 score_pd[0] += self.w.heatmap[0][B | ally][sq];
                 score_pd[1] += self.w.heatmap[0][B | ally][sq];
 
-                let opr = self.board.get_sliding_diagonal_opportunities(sq, occup);
+                let opr = board.get_sliding_diagonal_opportunities(sq, occup);
                 let atk = opr & !sides[ally];
                 mobility[ally] += atk.count_ones();
 
@@ -291,10 +321,10 @@ impl Eval {
                     score_pd[1] += self.w.g_atk_center[1][ally];
                 }
                 
-                let mut pinned_to = self.board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & !atk & bvic[enemy];
+                let mut pinned_to = board.get_sliding_diagonal_attacks(sq, occup & !atk, sides[ally]) & !atk & bvic[enemy];
                 while pinned_to != 0 {
                     let csq = pop_bit(&mut pinned_to);
-                    pins[enemy] |= self.get_sliding_diagonal_path_unsafe(sq, csq) & bpin[enemy];
+                    pins[enemy] |= board.get_sliding_diagonal_path_unsafe(sq, csq) & bpin[enemy];
                 }
 
                 let mut profit = atk & bvic[enemy];
@@ -373,7 +403,7 @@ impl Eval {
             let enemy = (ally == 0) as usize;
             while bb != 0 {
                 let sq = pop_bit(&mut bb);
-                let mut atk = self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally]) & pins[enemy];
+                let mut atk = board.get_sliding_diagonal_attacks(sq, occup, sides[ally]) & pins[enemy];
                 while atk != 0 {
                     pop_bit(&mut atk);
                     score += self.w.g_atk_pro_pinned[ally];
@@ -385,7 +415,7 @@ impl Eval {
             let enemy = (ally == 0) as usize;
             while bb != 0 {
                 let sq = pop_bit(&mut bb);
-                let mut atk = self.board.get_sliding_straight_attacks(sq, occup, sides[ally]) & pins[enemy];
+                let mut atk = board.get_sliding_straight_attacks(sq, occup, sides[ally]) & pins[enemy];
                 while atk != 0 {
                     pop_bit(&mut atk);
                     score += self.w.g_atk_pro_pinned[ally];
@@ -397,7 +427,7 @@ impl Eval {
             let enemy = (ally == 0) as usize;
             while bb != 0 {
                 let sq = pop_bit(&mut bb);
-                let mut atk = (self.board.get_sliding_diagonal_attacks(sq, occup, sides[ally]) | self.board.get_sliding_straight_attacks(sq, occup, sides[ally])) & pins[enemy];
+                let mut atk = (board.get_sliding_diagonal_attacks(sq, occup, sides[ally]) | board.get_sliding_straight_attacks(sq, occup, sides[ally])) & pins[enemy];
                 while atk != 0 {
                     pop_bit(&mut atk);
                     score += self.w.g_atk_pro_pinned[ally];
@@ -410,13 +440,9 @@ impl Eval {
         score_pd[1] += self.w.heatmap[1][K ][kbits[0]];
         score_pd[1] += self.w.heatmap[1][K2][kbits[1]];
 
-        score_pd[0] += self.w.k_mobility_as_q[0][0] * (self.board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | self.board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
-        score_pd[0] += self.w.k_mobility_as_q[0][1] * (self.board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | self.board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
-        
-        /* RANDOM DOESN'T APPLY FOR AN ENDSPIEL */
-        score_pd[0] -= self.w.rand;
-        score_pd[0] += self.rng.gen_range(0..=((self.w.rand as u32) << 1)) as i32;
-        
+        score_pd[0] += self.w.k_mobility_as_q[0][0] * (board.get_sliding_diagonal_attacks(kbits[0], occup, sides[0]) | board.get_sliding_straight_attacks(kbits[0], occup, sides[0])).count_ones() as i32;
+        score_pd[0] += self.w.k_mobility_as_q[0][1] * (board.get_sliding_diagonal_attacks(kbits[1], occup, sides[1]) | board.get_sliding_straight_attacks(kbits[1], occup, sides[1])).count_ones() as i32;
+
         if mptr.attacks_king[kbits[0]] & (pass[0] | pass[1]) != 0 {
             score_pd[0] += self.w.k_pawn_dist1[0][0];
             score_pd[1] += self.w.k_pawn_dist1[1][0];
@@ -432,8 +458,8 @@ impl Eval {
             score_pd[1] += self.w.k_pawn_dist2[1][1];
         }
         if bptr[P] | bptr[P2] != 0 && ((kbits[0] & 7) as i32 - (kbits[1] & 7) as i32).abs() + ((kbits[0] >> 3) as i32  - (kbits[1] >> 3) as i32).abs() == 2 {
-            score_pd[0] += self.w.k_opposition[0][!self.board.turn as usize];
-            score_pd[1] += self.w.k_opposition[1][!self.board.turn as usize];
+            score_pd[0] += self.w.k_opposition[0][!board.turn as usize];
+            score_pd[1] += self.w.k_opposition[1][!board.turn as usize];
         }
         if bptr[K] != 0 && bptr[Q] != 0 {
             score += self.w.s_qnight[0];
@@ -451,19 +477,18 @@ impl Eval {
         score += ((score_pd[0] as f32 * phase_diff) + (score_pd[1] as f32 * (1.0 - phase_diff))) as i32;
         score += self.w.s_mobility * (mobility[0].count_ones() as i32 - mobility[1].count_ones() as i32);
 
-        if self.board.turn ^ (score > 0) {
+        if board.turn ^ (score > 0) {
             score += score / self.w.s_turn_div;
         } else {
             score -= score / self.w.s_turn_div;
         }
-        score += self.w.s_turn[self.board.turn as usize];
+        score += self.w.s_turn[board.turn as usize];
 
-        /* SCORE APPLICATION END */
-        
-        if self.board.turn {
-            score = -score;
+        /* SCORE APPLICATION ENDS */
+
+        if board.turn {
+            return -score;
         }
-
         score
     }
 }

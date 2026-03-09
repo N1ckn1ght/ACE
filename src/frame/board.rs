@@ -571,12 +571,25 @@ impl Board {
         self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]]
     }
 
-    // although it's unused by the board itself
+
+    /* Auxiliary (used by search or eval) */
+
+    #[inline]
+    pub fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+        self.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.get_sliding_straight_attacks(sq2, 1 << sq1, 0)
+    }
+
+    #[inline]
+    pub fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+        self.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
+    }
+
     pub fn is_in_check(&self) -> bool {
         let ally = self.get_occupancies(self.turn);
         let enemy = self.get_occupancies(!self.turn);
         self.is_under_attack(!self.turn, gtz(self.bbs[K | self.turn as usize]), ally | enemy, ally)
     }
+
 
     /* Debug and benchmarking */
 
@@ -595,7 +608,6 @@ impl Board {
         count
     }
 
-    // uses standard output instead
     #[allow(dead_code)]
     pub fn perft_divided(&mut self, depth: usize) {
         let moves = self.get_legal_moves();
@@ -606,7 +618,7 @@ impl Board {
         }
     }
 
-    // [moves, captures, en passants, castles, promotions]
+    /// Counts \[moves, captures, en passants, castles, promotions\]
     #[allow(dead_code)]
     pub fn perft_verbosed(&mut self, depth: usize) -> [u64; 5] {
         let moves = self.get_legal_moves();
@@ -881,6 +893,25 @@ mod tests {
     fn test_board_legal_moves_advanced_16() {
         let mut board = Board::import("r7/1pp4R/2kp3P/4n3/4p3/2P5/p1P2KP1/8 b - - 0 31");
         assert_eq!(board.perft(5), 4563829);
+    }
+
+    #[test]
+    fn test_board_aux() {
+        let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
+        let board = Board::import("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        for case in ar_true.into_iter() {
+            assert_ne!(board.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
+        }
+
+        let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
+        for case in ar_true.into_iter() {
+            assert_ne!(board.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
+        }
+
+        let board = Board::default();
+        assert_eq!(board.is_in_check(), false);
+        let board = Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+        assert_eq!(board.is_in_check(), true);
     }
 
     #[test]

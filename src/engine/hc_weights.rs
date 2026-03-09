@@ -1,6 +1,7 @@
 use crate::frame::util::*;
 
-pub struct Weights {
+#[derive(Clone, Copy)]
+pub struct HCWeights {
     /* These weights are stored with respect to the colour, black pieces will provide negative values
         - Usual order is:
         - [ Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]
@@ -46,7 +47,7 @@ pub struct Weights {
     pub rand:			   i32					// random weight of [-rand, +rand] will be added to an evaluated leaf
 }
 
-impl Weights {
+impl HCWeights {
     // possible modify by some multipliers
     pub fn init() -> Self {
         let pieces_weights_const = [

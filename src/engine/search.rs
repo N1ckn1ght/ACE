@@ -1,15 +1,8 @@
-// The main module of the chess engine.
-// ANY changes to the board MUST be done through the character's methods!
-
-use std::{cmp::{max, min, Ordering}, collections::HashSet, sync::mpsc::Receiver, thread, time::{Duration, Instant}};
-use rand::{rngs::ThreadRng, Rng};
+use std::{cmp::{max, min}, collections::HashSet, sync::mpsc::Receiver, time::Instant};
+use rand::{rngs::ThreadRng};
 use crate::frame::{util::*, board::Board};
 use super::zobrist::Zobrist;
 
-/* CONSTANTS FOR STATIC EVALUATION */
-
-const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
-const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
 
 const DEFAULT_VEC_CAPACITY: usize = 300;
 
@@ -20,8 +13,14 @@ enum GameResult {
     BlackWon
 }
 
+pub trait Eval {
+    /// Return static evaluation score on a given board
+    fn eval(&self, board: &Board) -> i32;
+}
+
 pub struct Search {
     board:				Board,
+    eval:               Box<dyn Eval>,
     baw:                i32,                    // aspiration window base
     
     /* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
@@ -31,7 +30,7 @@ pub struct Search {
     history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
     history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
                                                 // note: it's always 1 hash behind
-    
+
     /* Accessible constants */
     zobrist:			Zobrist,
     rng:				ThreadRng,
@@ -52,16 +51,18 @@ pub struct Search {
     mate_flag:			bool,					// if mate is present
     cur_depth:          i16,                    // current depth of the iterative dfs (comm-related)
 
-    /* Static eval addon */
-    castled:			[bool; 2],				// white used castle, black used castle
-
     /* Comms */
     rx:		            Receiver<String>,
     last_score:         i32,                    // last score for the current thinking side (?)
 }
 
 impl Search {
-    pub fn init(fen: &str, rx: Receiver<String>) -> Self {
+    // Currently uses the board within itself, so doesn't take one as an argument
+    pub fn init<E: Eval + 'static>(
+        fen: &str,
+        rx: Receiver<String>,
+        eval: E
+    ) -> Self {
         let board = Board::import(fen);
         let zobrist = Zobrist::default();
         let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
@@ -69,7 +70,7 @@ impl Search {
 
         Self {
             board,
-            w:				    Weights::init(),
+            eval:               Box::new(eval),
             baw:                300, // pretty much default value, divide by 400 to get centipawns
             cache:	            vec![EvalHash::default(); 1 << CACHE_SIZE],
             history_vec:	    cache_perm_vec,
@@ -87,7 +88,6 @@ impl Search {
             tpv_flag:		    false,
             mate_flag:		    false,
             cur_depth:          0,
-            castled:		    [false, false],
             rx,
             last_score:         0
         }
@@ -172,7 +172,6 @@ impl Search {
         self.history_set.clear();
         self.history_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         self.history_vec.push(self.zobrist.cache_new(&self.board));
-        self.castled = [false, false];
         self.cache.clear();
         self.cache.resize(1 << CACHE_SIZE, EvalHash::default());
         self.cur_depth = 0;
@@ -188,9 +187,6 @@ impl Search {
     }
 
     fn make_move(&mut self, mov: u32) {
-        if mov & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
-            self.castled[self.board.turn as usize] = true;
-        }
         let prev_hash = *self.history_vec.last().unwrap();
         self.history_set.insert(prev_hash);
         self.board.make_move(mov);
@@ -199,9 +195,6 @@ impl Search {
     }
 
     fn revert_move(&mut self) {
-        if self.board.move_history.last().unwrap() & (MSE_CASTLE_SHORT | MSE_CASTLE_LONG) != 0 {
-            self.castled[!self.board.turn as usize] = false;
-        }
         self.board.revert_move();
         self.history_vec.pop();
         self.history_set.remove(self.history_vec.last().unwrap());
@@ -213,9 +206,9 @@ impl Search {
         let hash = *self.history_vec.last().unwrap();
         let hash_index = (hash & TEMP_PRE_CALC_CACHE_BITMASK) as usize;
         if self.hmc != 0 && (self.board.hmc > 99 || self.history_set.contains(&hash)) {
-            return self.w.rand + 1;
+            return 1;  // draw, but we just a liiiiiitle bit dislike it =)
         }
-        
+
         let hash_is_same = self.cache[hash_index].hash == hash;
 
         // if not a "prove"-search
@@ -442,19 +435,7 @@ impl Search {
         3) Eval is not great on evaluating checks and detecting possibilities - it's HCE, wdy want?
     */
     fn static_eval(&mut self) -> i32 {
-        
-    }
-
-    /* Auxiliary (used by eval()) */
-
-    #[inline]
-    fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
-        self.board.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_straight_attacks(sq2, 1 << sq1, 0)
-    }
-
-    #[inline]
-    fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
-        self.board.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.board.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
+        self.eval.eval(&self.board)
     }
 
     /* Play functions */
@@ -494,85 +475,4 @@ mod tests {
     use super::*;
     use std::sync::mpsc::channel;
 
-    #[test]
-    fn test_chara_eval_initial_1() {
-        let (tx, rx) = channel();
-        let mut chara = Search::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
-        let moves = chara.board.get_legal_moves();
-        chara.make_move(move_transform_back("e2e4", &moves, chara.board.turn).unwrap());
-        let moves = chara.board.get_legal_moves();
-        let mov = move_transform_back("e7e5", &moves, chara.board.turn).unwrap();
-        chara.make_move(mov);
-        let eval = chara.eval();
-        let cur = chara.w.s_turn[chara.board.turn as usize];
-        assert_eq!(eval, cur);
-    }
-
-    #[test]
-    fn test_chara_eval_initial_2() {
-        let fens = [
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
-            "rnbqkb1r/pppp1ppp/8/4p2n/4P2N/8/PPPP1PPP/RNBQKB1R w KQkq - 4 4",
-            "r3k2r/pbppnpp1/1p1bn2p/4p1q1/4P1Q1/1P1BN2P/PBPPNPP1/R3K2R w KQkq - 2 11",
-            "4k2r/p4ppp/8/8/8/8/P4PPP/4K2R w Kk - 0 1",
-            // "8/5P2/p3k3/6P1/1p6/3K3P/2p5/8 w - - 0 1" - assymetric because of PeSto
-        ];
-        for fen in fens.into_iter() {
-            let (tx, rx) = channel();
-            let mut chara = Search::init(fen, rx);
-            let eval = chara.eval();
-            let cur = chara.w.s_turn[0];
-            assert_eq!(eval, cur);
-        }
-
-        for fen in fens.into_iter() {
-            let (tx, rx) = channel();
-            let mut board = Board::import(fen);
-            board.turn = !board.turn;
-            let mut chara = Search::init(&board.export(), rx);
-            let eval = chara.eval();
-            let cur = chara.w.s_turn[0];
-            assert_eq!(eval, cur);
-        }
-    }
-
-    #[test]
-    fn test_chara_eval_initial_3() {
-        let wfens = [
-            "4k3/8/1pp5/8/7P/6P1/8/4K3 w - - 0 1",
-            "rnbq1rk1/ppp2ppp/5n2/2bpp3/4P3/2N2N2/PPPPBPPP/R1BQK2R w KQ - 0 1"
-        ];
-        let bfens = [
-            "4k3/8/6p1/7p/8/1PP5/8/4K3 b - - 0 1",
-            "r1bqk2r/ppppbppp/2n2n2/4p3/2BPP3/5N2/PPP2PPP/RNBQ1RK1 b kq - 0 1"
-        ];
-        for i in 0..wfens.len() {
-            let (tx, rx) = channel();
-            let mut chara1 = Search::init(wfens[i], rx);
-            let (tx2, rx2) = channel();
-            let mut chara2 = Search::init(bfens[i], rx2);
-            assert_eq!(chara1.eval(), chara2.eval());
-        }
-    }
-
-    #[test]
-    fn test_board_aux() {
-        let (tx, rx) = channel();
-        let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
-        let chara = Search::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
-        for case in ar_true.into_iter() {
-            assert_ne!(chara.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
-        }
-
-        let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
-        for case in ar_true.into_iter() {
-            assert_ne!(chara.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
-        }
-
-        let board = Board::default();
-        assert_eq!(board.is_in_check(), false);
-        let board = Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
-        assert_eq!(board.is_in_check(), true);
-    }
 }
