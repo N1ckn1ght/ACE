@@ -70,4 +70,3 @@ impl Default for Maps {
         }
     }
 }
-

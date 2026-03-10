@@ -9,6 +9,7 @@ use phf::phf_map;
 
 
 pub const MYNAME: &str = "Akira CE v2.0.0";
+pub const AUTHOR: &str = "N1ckn1ght";
 
 
 /* CONTROL */

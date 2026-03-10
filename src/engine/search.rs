@@ -18,7 +18,7 @@ pub trait Eval {
     fn eval(&self, board: &Board) -> i32;
 }
 
-pub struct Search {
+pub struct Search<'a> {
     board:				Board,
     eval:               Box<dyn Eval>,
     baw:                i32,                    // aspiration window base
@@ -52,18 +52,14 @@ pub struct Search {
     cur_depth:          i16,                    // current depth of the iterative dfs (comm-related)
 
     /* Comms */
-    rx:		            Receiver<String>,
+    rx:		            &'a Receiver<String>,
     last_score:         i32,                    // last score for the current thinking side (?)
 }
 
-impl Search {
+impl<'a> Search<'a> {
     // Currently uses the board within itself, so doesn't take one as an argument
-    pub fn init<E: Eval + 'static>(
-        fen: &str,
-        rx: Receiver<String>,
-        eval: E
-    ) -> Self {
-        let board = Board::import(fen);
+    pub fn init<E: Eval + 'static>(eval: E, rx: &'a Receiver<String>) -> Self {
+        let board = Board::default();
         let zobrist = Zobrist::default();
         let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         cache_perm_vec.push(zobrist.cache_new(&board));
@@ -124,7 +120,7 @@ impl Search {
                 println!("#DEBUG\tAbort signal reached!");
                 break;
             }
-            self.last_score = score_to_gui(score, false);
+            // self.last_score = score_to_gui(score, false);
             if self.tpv_len[0] != 0 {
                 self.post();
             }
@@ -152,7 +148,7 @@ impl Search {
                 continue;
             }
 
-            self.last_score = score_to_gui(score, false);
+            // self.last_score = score_to_gui(score, false);
             alpha = score - base_aspiration_window;
             beta = score + base_aspiration_window;
             k = 1;
@@ -176,7 +172,7 @@ impl Search {
         self.cache.resize(1 << CACHE_SIZE, EvalHash::default());
         self.cur_depth = 0;
         self.nodes = 0;
-        self.last_score = 0;
+        // self.last_score = 0;
     }
 
     fn set_pos(&mut self, fen: &str) {
@@ -459,7 +455,8 @@ impl Search {
     }
 
     fn post(&self) {
-        let scu = self.last_score;
+        // let scu = self.last_score;
+        let scu = 0;
         let started_black = true;
         print!("{} {} {} {}", self.cur_depth, scu, self.ts.elapsed().as_millis() / 10, self.nodes);
         for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
