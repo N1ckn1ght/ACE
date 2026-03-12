@@ -54,6 +54,11 @@ pub struct Search<'a> {
     /* Comms */
     rx:		            &'a Receiver<String>,
     last_score:         i32,                    // last score for the current thinking side (?)
+
+    /* Options */
+
+    cache_size_bits:    i32,
+    rand:               i32
 }
 
 impl<'a> Search<'a> {
@@ -97,7 +102,7 @@ impl<'a> Search<'a> {
         // TODO
     }
 
-    fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
+    pub fn think(&mut self, base_aspiration_window: i32, time_limit_ms: u128, depth_limit: i16) -> EvalMove {
         self.ts = Instant::now();
         self.tl = time_limit_ms;
         self.abort = false;
@@ -163,26 +168,29 @@ impl<'a> Search<'a> {
         EvalMove::new(self.tpv[0][0], score)
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.board = Board::default();
         self.history_set.clear();
         self.history_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         self.history_vec.push(self.zobrist.cache_new(&self.board));
-        self.cache.clear();
-        self.cache.resize(1 << CACHE_SIZE, EvalHash::default());
         self.cur_depth = 0;
         self.nodes = 0;
         // self.last_score = 0;
     }
 
-    fn set_pos(&mut self, fen: &str) {
+    pub fn reset_cache(&mut self) {
+        self.cache.clear();
+        self.cache.resize(1 << self.cache_size_bits, EvalHash::default());
+    }
+
+    pub fn set_pos(&mut self, fen: &str) {
         self.clear();
         self.board = Board::import(fen);
         self.history_vec.pop();
         self.history_vec.push(self.zobrist.cache_new(&self.board));
     }
 
-    fn make_move(&mut self, mov: u32) {
+    pub fn make_move(&mut self, mov: u32) {
         let prev_hash = *self.history_vec.last().unwrap();
         self.history_set.insert(prev_hash);
         self.board.make_move(mov);
@@ -190,7 +198,7 @@ impl<'a> Search<'a> {
         self.history_vec.push(hash);
     }
 
-    fn revert_move(&mut self) {
+    pub fn revert_move(&mut self) {
         self.board.revert_move();
         self.history_vec.pop();
         self.history_set.remove(self.history_vec.last().unwrap());
@@ -202,7 +210,7 @@ impl<'a> Search<'a> {
         let hash = *self.history_vec.last().unwrap();
         let hash_index = (hash & TEMP_PRE_CALC_CACHE_BITMASK) as usize;
         if self.hmc != 0 && (self.board.hmc > 99 || self.history_set.contains(&hash)) {
-            return 1;  // draw, but we just a liiiiiitle bit dislike it =)
+            return 0;
         }
 
         let hash_is_same = self.cache[hash_index].hash == hash;

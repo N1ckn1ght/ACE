@@ -58,10 +58,36 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                 
             },
             "ucinewgame" => {
-
+                engine.clear();
             },
             "position" => {
+                if cmd.len() < 3 {
+                    log("Error (not enough arguments)");
+                    continue;
+                }
+                match cmd[1] {
+                    "fen" => {
+                        engine.set_pos(cmd[2]);
+                        if cmd.len() > 3 {
+                            if cmd[4] == "moves" {
 
+                            }
+                        }
+                    },
+                    "startpos" => {
+                        if cmd[2] == "moves" {
+                            // call parse from +1
+                        } else {
+                            // call parse
+                        }
+                    },
+                    "moves" => {
+                        // call parse
+                    },
+                    _ => {
+                        
+                    }
+                }
             },
             "go" => {
 
@@ -73,5 +99,11 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
 
             }
         }
+    }
+}
+
+fn parse_moves(moves: &[&str], engine: &mut Search) {
+    for mov in moves {
+        
     }
 }

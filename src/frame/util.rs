@@ -8,7 +8,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 use phf::phf_map;
 
 
-pub const MYNAME: &str = "Akira CE v2.0.0";
+pub const MYNAME: &str = "Akira CE v1.3.0";
 pub const AUTHOR: &str = "N1ckn1ght";
 
 
@@ -135,9 +135,9 @@ pub const LARGM: i32 = LARGE - (HALF_DEPTH_LIMIT << 1) as i32;
 
 /* Branch cache search flags */
 
-pub const HF_PRECISE: i16 = 1;
-pub const HF_LOW: i16 = 2;
-pub const HF_HIGH: i16 = 4;
+pub const HF_PRECISE: u16 = 1;
+pub const HF_LOW: u16 = 2;
+pub const HF_HIGH: u16 = 4;
 
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
 
@@ -271,12 +271,12 @@ pub struct EvalHash {
     pub hash: u64,
     pub score: i32, 
     pub depth: i16,
-    pub flag: i16
+    pub flag: u16
 }
 
 impl EvalHash {    
     #[inline]
-    pub fn new(hash: u64, score: i32, depth: i16, flag: i16) -> Self {
+    pub fn new(hash: u64, score: i32, depth: i16, flag: u16) -> Self {
         EvalHash {
             hash,
             score,
