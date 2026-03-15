@@ -490,7 +490,7 @@ impl Board {
                     fen.push(char::from_u32(skip + '0' as u32).unwrap());
                     skip = 0;
                 }
-                fen.push(PIECES_REV[&(*piece as u32)]);
+                fen.push(PIECES_REV[*piece]);
             } else {
                 skip += 1;
             }

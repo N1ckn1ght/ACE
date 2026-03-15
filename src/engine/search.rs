@@ -90,7 +90,9 @@ impl<'a> Search<'a> {
             mate_flag:		    false,
             cur_depth:          0,
             rx,
-            last_score:         0
+            last_score:         0,
+            cache_size_bits:    0,
+            rand:               0
         }
     }
 
@@ -183,9 +185,9 @@ impl<'a> Search<'a> {
         self.cache.resize(1 << self.cache_size_bits, EvalHash::default());
     }
 
-    pub fn set_pos(&mut self, fen: &str) {
+    pub fn set_pos(&mut self, fen: Option<&str>) {
         self.clear();
-        self.board = Board::import(fen);
+        self.board = Board::import(fen.unwrap_or("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"));
         self.history_vec.pop();
         self.history_vec.push(self.zobrist.cache_new(&self.board));
     }
@@ -471,6 +473,20 @@ impl<'a> Search<'a> {
             print!(" {}", move_transform(*mov, (i & 1 != 0) ^ started_black));
         }
         println!();
+    }
+
+    /* Aux */
+
+    pub fn get_legal_moves(&mut self) -> Vec<u32> {
+        self.board.get_legal_moves()        
+    }
+
+    pub fn get_pseudo_legal_moves(&self) -> Vec<u32> {
+        self.board.get_pseudo_legal_moves()
+    }
+
+    pub fn get_turn(&self) -> bool {
+        self.board.turn
     }
 }
 

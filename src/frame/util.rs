@@ -357,21 +357,7 @@ pub static PIECES: phf::Map<char, usize> = phf_map! {
     'K' => K
 };
 
-// TODO (optional): find a way to use usize key, if there is one, same with changing keys to constants from above
-pub static PIECES_REV: phf::Map<u32, char> = phf_map! {
-    2u32  => 'P',
-    3u32  => 'p',
-    4u32  => 'N',
-    5u32  => 'n',
-    6u32  => 'B',
-    7u32  => 'b',
-    8u32  => 'R',
-    9u32  => 'r',
-    10u32 => 'Q',
-    11u32 => 'q',
-    12u32 => 'K',
-    13u32 => 'k'
-};
+pub const PIECES_REV: [char; 14] = ['E', 'e', 'P', 'p', 'N', 'n', 'B', 'b', 'R', 'r', 'Q', 'q', 'K', 'k'];
 
 /* INTERFACE */
 
@@ -386,7 +372,7 @@ pub fn move_transform(mov: u32, turn: bool) -> String {
     str.push(char::from_u32((to   & 7) as u32 + 'a' as u32).unwrap());
     str.push(char::from_u32((to   / 8) as u32 + '1' as u32).unwrap());
     if promotion != E {
-        str.push(PIECES_REV[&((promotion | 1) as u32)]);
+        str.push(PIECES_REV[promotion | 1]);
     }
     str
 }

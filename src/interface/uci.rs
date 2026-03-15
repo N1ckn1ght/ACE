@@ -1,4 +1,5 @@
-use std::{io, sync::mpsc::{Receiver, channel}, thread, time::Duration};
+use std::{collections::HashSet, io, sync::mpsc::{Receiver, channel}, thread, time::Duration};
+use once_cell::sync::Lazy;
 use crate::{engine::{hc_eval::HCEval, search::Search}, frame::util::*};
 
 
@@ -51,50 +52,80 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
         let line = last.unwrap().to_ascii_lowercase();
         let cmd = line.trim().split(' ').collect::<Vec<&str>>();
         match cmd[0] {
+            
             "isready" => {
                 println!("readyok");
             },
+
             "setoption" => {
                 
             },
+
             "ucinewgame" => {
                 engine.clear();
             },
+
             "position" => {
-                if cmd.len() < 3 {
-                    log("Error (not enough arguments)");
+                if cmd.len() < 2 {
+                    engine.set_pos(None);
                     continue;
                 }
                 match cmd[1] {
                     "fen" => {
-                        engine.set_pos(cmd[2]);
-                        if cmd.len() > 3 {
-                            if cmd[4] == "moves" {
-
-                            }
+                        if cmd.len() < 3 {
+                            engine.set_pos(None);
+                            continue;
                         }
+                        engine.set_pos(Some(cmd[2]));
+                        if cmd.len() < 4 {
+                            continue;
+                        }
+                        if cmd[3] != "moves" {
+                            continue;
+                        }
+                        if cmd.len() < 5 {
+                            continue;
+                        }
+                        parse_apply_moves(&cmd[4..], engine);
                     },
                     "startpos" => {
-                        if cmd[2] == "moves" {
-                            // call parse from +1
-                        } else {
-                            // call parse
+                        engine.set_pos(None);
+                        if cmd.len() < 4 {
+                            continue;
                         }
+                        if cmd[2] != "moves" {
+                            log(&format!("Error (unexpected argument {})", cmd[2]));
+                            continue;
+                        }
+                        parse_apply_moves(&cmd[3..], engine);
                     },
                     "moves" => {
-                        // call parse
+                        engine.set_pos(None);
+                        if cmd.len() > 2 {
+                            parse_apply_moves(&cmd[2..], engine);
+                        }
                     },
                     _ => {
-                        
+                        log(&format!("Error (unexpected argument {})", cmd[1]));
                     }
                 }
             },
+
             "go" => {
 
             },
+            
+            "glm" => {
+                let mvs = engine.get_legal_moves();
+                for mv in mvs {
+                    println!("{}", move_transform(mv, engine.get_turn()));
+                }
+            },
+
             "quit" => {
                 return;
             }
+
             _ => {
 
             }
@@ -102,8 +133,28 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
     }
 }
 
-fn parse_moves(moves: &[&str], engine: &mut Search) {
+fn parse_apply_moves(moves: &[&str], engine: &mut Search) {
     for mov in moves {
-        
+        engine.make_move(move_transform_back(
+            *mov,
+            &engine.get_pseudo_legal_moves(),
+            engine.get_turn()).unwrap());
     }
 }
+
+static GO_ARGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+    HashSet::from([
+        "searchmoves",
+        "pomnder",
+        "wtime",
+        "btime",
+        "winc",
+        "binc",
+        "movestogo",
+        "depth",
+        "nodes",
+        "mate",
+        "movetime",
+        "infinite"
+    ])
+});
