@@ -56,7 +56,6 @@ pub struct Search<'a> {
     last_score:         i32,                    // last score for the current thinking side (?)
 
     /* Options */
-
     cache_size_bits:    i32,
     rand:               i32
 }

@@ -52,19 +52,15 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
         let line = last.unwrap().to_ascii_lowercase();
         let cmd = line.trim().split(' ').collect::<Vec<&str>>();
         match cmd[0] {
-            
             "isready" => {
                 println!("readyok");
             },
-
             "setoption" => {
                 
             },
-
             "ucinewgame" => {
                 engine.clear();
             },
-
             "position" => {
                 if cmd.len() < 2 {
                     engine.set_pos(None);
@@ -110,22 +106,29 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                     }
                 }
             },
-
             "go" => {
+                fn parse_arg() {
 
+                }
+
+                let mut time_ms = 2985;
+
+                let mut ib = 1;
+                let mut ie = 1;
+                let mut last_arg = "";
+                for (i, arg) in cmd.iter().skip(1).enumerate() {
+                    
+                }
             },
-            
             "glm" => {
                 let mvs = engine.get_legal_moves();
                 for mv in mvs {
-                    println!("{}", move_transform(mv, engine.get_turn()));
+                    print!("{} ", move_transform(mv, engine.get_turn()));
                 }
             },
-
             "quit" => {
                 return;
             }
-
             _ => {
 
             }
