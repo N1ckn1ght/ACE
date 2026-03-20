@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io, sync::mpsc::{Receiver, channel}, thread, time::Duration};
 use once_cell::sync::Lazy;
-use crate::{engine::{hc_eval::HCEval, search::Search}, frame::util::*};
+use crate::{engine::{clock::calc_time_to_think, hc_eval::HCEval, search::Search}, frame::util::*};
 
 
 pub fn uci_loop() -> bool {
@@ -107,17 +107,68 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                 }
             },
             "go" => {
-                fn parse_arg() {
+                let mut wtime: Option<u64> = None;
+                let mut btime: Option<u64> = None;
+                let mut winc: Option<u64> = None;
+                let mut binc: Option<u64> = None;
+                let mut movestogo: Option<u64> = None;
+                let mut forcetime: u128 = 0;
+                let mut search_for_mate_in: u16 = 0;
+                let mut node_limit: u32 = 0;
+                let mut depth_limit: u16 = 0;
+                // ponder
+                // searchmoves
 
+                let mut last_arg_index = 1;
+                for (i, arg) in cmd.iter().skip(2).enumerate() {
+                    if GO_ARGS.contains(arg) || i + 1 == cmd.len() {
+                        match cmd[last_arg_index] {
+                            "searchmoves" => {
+                                
+                            },
+                            "ponder" => {
+
+                            },
+                            "wtime" => {
+                                wtime = Some(cmd[i - 1].parse::<u64>().unwrap());
+                            },
+                            "btime" => {
+                                btime = Some(cmd[i - 1].parse::<u64>().unwrap());
+                            },
+                            "winc" => {
+                                winc = Some(cmd[i - 1].parse::<u64>().unwrap());
+                            },
+                            "binc" => {
+                                binc = Some(cmd[i - 1].parse::<u64>().unwrap());
+                            },
+                            "movestogo" => {
+                                movestogo = Some(cmd[i - 1].parse::<u64>().unwrap());
+                            },
+                            "depth" => {
+
+                            },
+                            "nodes" => {
+
+                            },
+                            "mate" => {
+
+                            },
+                            "movetime" => {
+                                forcetime = cmd[i - 1].parse::<u128>().unwrap();
+                            },
+                            "infinite" => {
+                                forcetime = u64::MAX as u128;
+                            },
+                            _ => {
+
+                            }
+                        };
+                        last_arg_index = i;
+                    }
                 }
 
-                let mut time_ms = 2985;
-
-                let mut ib = 1;
-                let mut ie = 1;
-                let mut last_arg = "";
-                for (i, arg) in cmd.iter().skip(1).enumerate() {
-                    
+                if forcetime == 0 {
+                    forcetime = calc_time_to_think(engine.get_turn(), wtime, btime, winc, binc, movestogo);
                 }
             },
             "glm" => {
@@ -148,7 +199,7 @@ fn parse_apply_moves(moves: &[&str], engine: &mut Search) {
 static GO_ARGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     HashSet::from([
         "searchmoves",
-        "pomnder",
+        "ponder",
         "wtime",
         "btime",
         "winc",
