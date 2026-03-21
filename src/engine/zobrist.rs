@@ -116,7 +116,7 @@ mod tests {
                 let hash2 = zob.cache_new(&board);
                 assert_eq!(hash1, hash2);
                 assert_ne!(hash1, prev_hash);
-                board.revert_move();
+                board.undo_move();
             }
         }
     }

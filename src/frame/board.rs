@@ -126,7 +126,7 @@ impl Board {
         }
     }
 
-    /* TODO (optimize): it is possible to generate leval moves using some extra bitboards WITHOUT making and reverting pseudo-legal moves.
+    /* TODO (optimize): it is possible to generate leval moves using some extra bitboards WITHOUT making and undoing pseudo-legal moves.
        This is proven to be slightly faster (with the exception of en passant, probably), but also depends on the code. */
     pub fn get_legal_moves(&mut self) -> Vec<u32> {
         let mut moves = self.get_pseudo_legal_moves();
@@ -143,7 +143,7 @@ impl Board {
             } else {
                 i += 1;
             }
-            self.revert_move();
+            self.undo_move();
         }
         moves
     }
@@ -222,7 +222,7 @@ impl Board {
         self.turn = !self.turn;
     }
 
-    pub fn revert_move(&mut self) {
+    pub fn undo_move(&mut self) {
         let mov = self.move_history.pop().unwrap();
         self.en_passant = self.enp_history.pop().unwrap();
         self.hmc        = self.hmc_history.pop().unwrap();
@@ -603,7 +603,7 @@ impl Board {
         for mov in moves.iter() {
             self.make_move(*mov);
             count += self.perft(depth - 1);
-            self.revert_move();
+            self.undo_move();
         }
         count
     }
@@ -614,7 +614,7 @@ impl Board {
         for mov in moves.iter() {
             self.make_move(*mov);
             println!("{}\t{}\t{}\t{}", mov, move_transform(*mov, self.turn), self.perft(depth - 1), self.export());
-            self.revert_move();
+            self.undo_move();
         }
     }
 
@@ -649,7 +649,7 @@ impl Board {
             for (i, elem) in count.iter_mut().enumerate() {
                 *elem += temp[i];
             }
-            self.revert_move();
+            self.undo_move();
         }
         count
     }
@@ -689,7 +689,7 @@ mod tests {
         assert_eq!("0000000010101000011100001101111101110000101010000000000000000000", bb_to_str(dmask | smask));
     }
     
-    // it also tests make/revert move because of get_legal_move() realization (I AM lazy)
+    // it also tests make/undo move because of get_legal_move() realization (I AM lazy)
     #[test]
     fn test_board_legal_moves_1() {
         assert_eq!(Board::default().get_legal_moves().len(), 20);

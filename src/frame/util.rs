@@ -25,11 +25,6 @@ pub fn log(line: &str) {
 
 /* LIMITATIONS */
 
-pub const CACHE_SIZE: usize = 25;  // entries, in power of 2;
-                                   // keep in mind, programm will eat additional 1.4 MB bc of lookup tables.
-                                   // 25 is recommended (it's 512 MB)
-pub const TEMP_PRE_CALC_CACHE_BITMASK: u64 = (1 << CACHE_SIZE) - 1; // sorry for that
-
 pub const HALF_DEPTH_LIMIT: usize = 64;
 pub const HALF_DEPTH_LIMIT_SAFE: i16 = 50;                                      // for chara.think()
 pub const NODES_BETWEEN_UPDATES: u64       = 0b00000000111111111111; 

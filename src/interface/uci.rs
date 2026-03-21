@@ -41,6 +41,7 @@ pub fn uci_loop() -> bool {
 }
 
 fn listen(engine: &mut Search, rx: &Receiver<String>) {
+    let mut ponder_move = "";
     loop {
         thread::sleep(Duration::from_micros(1));
 
@@ -59,17 +60,18 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                 
             },
             "ucinewgame" => {
-                engine.clear();
+                engine.clear_history();
+                engine.set_pos(None);
             },
             "position" => {
                 if cmd.len() < 2 {
-                    engine.set_pos(None);
+                    log("Error (this command requires arguments): position");
                     continue;
                 }
                 match cmd[1] {
                     "fen" => {
                         if cmd.len() < 3 {
-                            engine.set_pos(None);
+                            log("Error (this argument requires parameter): fen");
                             continue;
                         }
                         engine.set_pos(Some(cmd[2]));
@@ -90,7 +92,7 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                             continue;
                         }
                         if cmd[2] != "moves" {
-                            log(&format!("Error (unexpected argument {})", cmd[2]));
+                            log(&format!("Error (unexpected argument): {}", cmd[2]));
                             continue;
                         }
                         parse_apply_moves(&cmd[3..], engine);
@@ -102,7 +104,7 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                         }
                     },
                     _ => {
-                        log(&format!("Error (unexpected argument {})", cmd[1]));
+                        log(&format!("Error (unexpected argument): {}", cmd[1]));
                     }
                 }
             },
@@ -113,9 +115,9 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                 let mut binc: Option<u64> = None;
                 let mut movestogo: Option<u64> = None;
                 let mut forcetime: u128 = 0;
-                let mut search_for_mate_in: u16 = 0;
-                let mut node_limit: u32 = 0;
-                let mut depth_limit: u16 = 0;
+                let mut node_limit: u64 = 0;
+                let mut depth_limit: i16 = 0;
+                let mut mate_flag = false;
                 // ponder
                 // searchmoves
 
@@ -124,10 +126,10 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                     if GO_ARGS.contains(arg) || i + 1 == cmd.len() {
                         match cmd[last_arg_index] {
                             "searchmoves" => {
-                                
+                                log("Error (not supported): searchmoves");
                             },
                             "ponder" => {
-
+                                ponder_move = cmd[i - 1];
                             },
                             "wtime" => {
                                 wtime = Some(cmd[i - 1].parse::<u64>().unwrap());
@@ -145,13 +147,14 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                                 movestogo = Some(cmd[i - 1].parse::<u64>().unwrap());
                             },
                             "depth" => {
-
+                                depth_limit = cmd[i - 1].parse::<i16>().unwrap();
                             },
                             "nodes" => {
-
+                                node_limit = cmd[i - 1].parse::<u64>().unwrap();
                             },
                             "mate" => {
-
+                                depth_limit = cmd[i - 1].parse::<i16>().unwrap();
+                                mate_flag = true;
                             },
                             "movetime" => {
                                 forcetime = cmd[i - 1].parse::<u128>().unwrap();
@@ -160,7 +163,7 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                                 forcetime = u64::MAX as u128;
                             },
                             _ => {
-
+                                // log(&format!("Error (not supported): {}", cmd[last_arg_index]));  -- unreachable
                             }
                         };
                         last_arg_index = i;
@@ -169,6 +172,9 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
 
                 if forcetime == 0 {
                     forcetime = calc_time_to_think(engine.get_turn(), wtime, btime, winc, binc, movestogo);
+                }
+                if mate_flag {
+                    let result = engine.go((u64::MAX) as u128, depth_limit, 0, true);
                 }
             },
             "glm" => {

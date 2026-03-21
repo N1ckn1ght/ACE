@@ -22,6 +22,16 @@ pub fn calc_time_to_think(
         winc.unwrap_or(0)
     };
     let horizon = movestogo.unwrap_or(50);
-    let time = (rem / horizon + (inc >> 6) * 61).clamp(10, (rem - 10).max(10));
+    let time = rem / horizon + (inc >> 6) * 61;
+
+    if time < 9 {
+        return 9;
+    }
+    if time + 11 > rem {
+        if rem < 20 {
+            return 9;
+        }
+        return (rem - 11) as u128;
+    }
     time as u128
 }
