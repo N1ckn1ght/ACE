@@ -356,7 +356,9 @@ pub const PIECES_REV: [char; 14] = ['E', 'e', 'P', 'p', 'N', 'n', 'B', 'b', 'R',
 
 /* INTERFACE */
 
-// engine -> gui
+/// engine -> gui
+/// 
+/// turn as the current board.turn on which this move is legal
 pub fn move_transform(mov: u32, turn: bool) -> String {
     let from = move_get_from(mov, turn);
     let to = move_get_to(mov, turn);
@@ -372,7 +374,7 @@ pub fn move_transform(mov: u32, turn: bool) -> String {
     str
 }
 
-// gui -> Option<engine>, if null - it's illegal
+/// gui -> Option<engine>, if null - it's illegal
 pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Option<u32> {
     let command     = input.as_bytes();
     if command.len() < 4 {

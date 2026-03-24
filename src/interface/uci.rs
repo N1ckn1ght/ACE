@@ -3,6 +3,8 @@ use once_cell::sync::Lazy;
 use crate::{engine::{clock::calc_time_to_think, hc_eval::HCEval, search::Search}, frame::util::*};
 
 
+static STATE_IN_THE_STATELESS_INTERFACE: bool = false;
+
 pub fn uci_loop() -> bool {
     println!("id name {}", MYNAME);
     println!("id author {}", AUTHOR);
@@ -20,6 +22,14 @@ pub fn uci_loop() -> bool {
                     let line = input.to_ascii_lowercase();
                     if line.trim() == "quit" {
                         quit = true;
+                    }
+                    // This is the worst code I've ever seen! -- So it would seem.
+                    if STATE_IN_THE_STATELESS_INTERFACE {
+                        // The idea is to recv twice - first inside the engine,
+                        // to just abort the whatever happens there in case it's necessary,
+                        // then - inside the listening loop.
+
+                        // TODO
                     }
                     let _ = tx.send(input);
                 }
@@ -118,18 +128,18 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                 let mut node_limit: u64 = 0;
                 let mut depth_limit: i16 = 0;
                 let mut mate_flag = false;
+                let mut searchmoves: Option<&[&str]> = None;
                 // ponder
-                // searchmoves
 
                 let mut last_arg_index = 1;
                 for (i, arg) in cmd.iter().skip(2).enumerate() {
                     if GO_ARGS.contains(arg) || i + 1 == cmd.len() {
                         match cmd[last_arg_index] {
                             "searchmoves" => {
-                                log("Error (not supported): searchmoves");
+                                searchmoves = Some(&cmd[last_arg_index+1..i]);
                             },
                             "ponder" => {
-                                ponder_move = cmd[i - 1];
+                                // it's, like, it doesn't matter. does it?
                             },
                             "wtime" => {
                                 wtime = Some(cmd[i - 1].parse::<u64>().unwrap());
@@ -155,6 +165,7 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                             "mate" => {
                                 depth_limit = cmd[i - 1].parse::<i16>().unwrap();
                                 mate_flag = true;
+                                forcetime = u64::MAX as u128;
                             },
                             "movetime" => {
                                 forcetime = cmd[i - 1].parse::<u128>().unwrap();
@@ -163,18 +174,22 @@ fn listen(engine: &mut Search, rx: &Receiver<String>) {
                                 forcetime = u64::MAX as u128;
                             },
                             _ => {
-                                // log(&format!("Error (not supported): {}", cmd[last_arg_index]));  -- unreachable
+                                // -- unreachable in this implementation
                             }
                         };
                         last_arg_index = i;
                     }
                 }
-
                 if forcetime == 0 {
                     forcetime = calc_time_to_think(engine.get_turn(), wtime, btime, winc, binc, movestogo);
                 }
-                if mate_flag {
-                    let result = engine.go((u64::MAX) as u128, depth_limit, 0, true);
+
+                // -- LAUNCH SEARCH -- ALWAYS RETURN THE RESULT --
+                let (bestmove, ponder) = engine.go(forcetime, depth_limit, node_limit, mate_flag, searchmoves);
+                if ponder.is_some() {
+                    println!("bestmove {} ponder {}", bestmove, ponder.unwrap());
+                } else {
+                    println!("bestmove {}", bestmove);
                 }
             },
             "glm" => {

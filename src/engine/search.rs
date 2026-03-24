@@ -108,19 +108,45 @@ impl<'a> Search<'a> {
     fn update(&mut self) {
         if self.ts.elapsed().as_millis() > self.tl {
             self.abort = true;
+            return;
         }
 
-        // TODO
+        let last = self.rx.try_recv();
+        if last.is_err() {
+            return;
+        }
+
+        let line = last.unwrap().to_ascii_lowercase();
+        let cmd = line.trim().split(' ').collect::<Vec<&str>>();
+        match cmd[0] {
+            "isready" => {
+                println!("readyok");
+            },
+            "setoption" => {
+                
+            },
+            "ucinewgame" => {
+
+            },
+            _ => {
+
+            }
+        };
     }
 
+    /// Use this public function to initiate search and pass limitations
+    /// 
+    /// Input (searchmoves) and output goes in string format (e.g. e2e4, e7e5)
+    /// 
+    /// Returns bestmove and Option(ponder) with some, if present in tpv
     pub fn go(
         &mut self,
         time_limit_ms: u128,
         depth_target: i16,
         node_limit: u64,  // pass 0 if None
         strict_search: bool,  // search for mate on given depth_target
-        searchmoves: Option<Vec<&str>>
-    ) -> EvalMove {
+        searchmoves: Option<&[&str]>
+    ) -> (String, Option<String>) {
         self.ts = Instant::now();
         self.tl = time_limit_ms;
         self.nl = node_limit;
@@ -139,12 +165,14 @@ impl<'a> Search<'a> {
             self.cur_depth = 1;
             self.mate_flag = false;
         }
+        self.searchmoves = vec![];
         if searchmoves.is_some() {
-            // TODO SEARCHMOVES
-        } else {
+            let plm = self.get_pseudo_legal_moves();  // assuming...
             self.searchmoves = vec![];
+            for move_str in searchmoves.unwrap().iter() {
+                self.searchmoves.push(move_transform_back(move_str, &plm, self.board.turn).unwrap());
+            }
         }
-
         let mut k = 1;
         let mut score = 0;
         let baw = 300;  // divide by 400 to get centipawns
@@ -193,10 +221,14 @@ impl<'a> Search<'a> {
             if self.cur_depth > depth_target || self.ts.elapsed().as_millis() > self.tl {
                 break;
             }
+            // TODO: don't exit search in ponder!!
         }
 
         log(&format!("Approximate time spent: {} ms", self.ts.elapsed().as_millis() + 1));
-        EvalMove::new(self.tpv[0][0], score)
+        if self.tpv_len[0] > 1 {
+            return (move_transform(self.tpv[0][0], self.board.turn), Some(move_transform(self.tpv[0][1], !self.board.turn)));
+        }
+        (move_transform(self.tpv[0][0], self.board.turn), None)
     }
 
     pub fn set_pos(&mut self, fen: Option<&str>) {
@@ -313,6 +345,7 @@ impl<'a> Search<'a> {
         }
 
         let mut moves = self.board.get_legal_moves();
+        // uci "go searchmoves" de momento
         if root_node && !self.searchmoves.is_empty() {
             moves.retain(|x| self.searchmoves.contains(x));
         }
