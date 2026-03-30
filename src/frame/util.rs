@@ -3,8 +3,7 @@
 
 // #![allow(dead_code)]
 
-use std::{cmp::min, fs, io::Cursor, path::Path};
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use std::cmp::min;
 use phf::phf_map;
 
 
@@ -26,40 +25,8 @@ pub fn log(line: &str) {
 /* LIMITATIONS */
 
 pub const HALF_DEPTH_LIMIT: usize = 64;
-pub const HALF_DEPTH_LIMIT_SAFE: i16 = 50;                                      // for chara.think()
-pub const NODES_BETWEEN_UPDATES: u64       = 0b00000000111111111111; 
-pub const NODES_BETWEEN_COMMS_PASSIVE: u64 = 0b00000111111111111111;
-pub const NODES_BETWEEN_COMMS_ACTIVE: u64  = 0b00000000111111111111;
-pub const NODES_BETWEEN_POSTS: u64         = 0b00011111111111111111;
-pub const PONDER_TIME: u128 = 1 << 63;                                          // no limit
-
-// /* SPECIFIED PATHES */
-
-// // dir
-// pub const PATH_RES:  &str = "./res";
-
-// // magic (sliding pieces attack) maps
-// pub const PATH_MR:   &str = "./res/magics_rook";
-// pub const PATH_BBR:  &str = "./res/blocker_boards_rook";
-// pub const PATH_AMR:  &str = "./res/attack_maps_rook";
-// pub const PATH_MB:   &str = "./res/magics_bishop";
-// pub const PATH_BBB:  &str = "./res/blocker_boards_bishop";
-// pub const PATH_AMB:  &str = "./res/attack_maps_bishop";
-// // no attack maps for queen specifically, refer to AMB | AMR after magic operations
-// // leaping pieces attack maps
-// pub const PATH_AMK:  &str = "./res/attack_maps_king";
-// pub const PATH_AMN:  &str = "./res/attack_maps_knight";
-// pub const PATH_AMP:  &str = "./res/attack_maps_pawn_white";
-// pub const PATH_AMP2: &str = "./res/attack_maps_pawn_black";
-// pub const PATH_SMP:  &str = "./res/step_maps_pawn_white";   // double pawn move (e.g. e2e4) NOT included
-// pub const PATH_SMP2: &str = "./res/step_maps_pawn_black";
-// // secondary maps
-// pub const PATH_RNK:  &str = "./res/ranks";                  // disincluding current square
-// pub const PATH_FLS:  &str = "./res/files";
-// pub const PATH_FKS:  &str = "./res/flanks";                 // left and right files (edge has one)
-// pub const PATH_FWD:  &str = "./res/forward_field_white";          // all ranks starting from Rank + 1 (colour-dependent)
-// pub const PATH_FWD2: &str = "./res/forward_field_black";
-// pub const PATH_RAD2: &str = "./res/attack_maps_radius_2";   // like king map, but radius 2
+pub const NODES_BETWEEN_UPDATES: u64 = 0b00000000111111111111;
+pub const INFINITE_TIME: u64 = 1 << 48;
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 

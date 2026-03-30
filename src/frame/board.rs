@@ -38,12 +38,30 @@ impl Default for Board {
 
 impl Board {
     pub fn import(fen: &str) -> Self {
-        let mut bbs = [0; 14];
-        let mut turn = false;
-        let mut castlings = 0;
-        let mut en_passant = 0;
-        let mut hmc = 0;
-        let mut no = 0;
+        let mut b = Self { 
+            bbs:          [0; 14],
+            turn:         false,
+            castlings:    0,
+            en_passant:   0,
+            hmc:          0,
+            no:           0,
+            maps:         Maps::default(),
+            move_history: Vec::with_capacity(300),
+            hmc_history:  Vec::with_capacity(300),
+            enp_history:  Vec::with_capacity(300),
+            cst_history:  Vec::with_capacity(300)
+        };
+        b.set_pos(fen);
+        b
+    }
+
+    pub fn set_pos(&mut self, fen: &str) {
+        self.bbs = [0; 14];
+        self.turn = false;
+        self.castlings = 0;
+        self.en_passant = 0;
+        self.hmc = 0;
+        self.no = 0;
 
         let mut parts = fen.split_whitespace();
 
@@ -52,7 +70,7 @@ impl Board {
         let mut bit = 0;
         for char in part.chars() {
             if PIECES.contains_key(&char) {
-                set_bit(&mut bbs[PIECES[&char]], flip(bit));
+                set_bit(&mut self.bbs[PIECES[&char]], flip(bit));
                 bit += 1;
             } else if char != '/' {
                 bit += char.to_digit(10).unwrap() as usize;
@@ -62,17 +80,17 @@ impl Board {
         // turn
         let part = parts.next().unwrap();
         if part.starts_with('b') {
-            turn = true;
+            self.turn = true;
         }
 
         // castle rights
         let part = parts.next().unwrap();
         for char in part.chars() {
             match char {
-                'K' => castlings |= CSW,
-                'Q' => castlings |= CLW,
-                'k' => castlings |= CSB,
-                'q' => castlings |= CLB,
+                'K' => self.castlings |= CSW,
+                'Q' => self.castlings |= CLW,
+                'k' => self.castlings |= CSB,
+                'q' => self.castlings |= CLB,
                 '-' => (),
                 _   => panic!("Failed to import from FEN")
             };
@@ -85,45 +103,31 @@ impl Board {
                 break;
             }
             if char > '9' { 
-                en_passant += char as usize - 'a' as usize;
+                self.en_passant += char as usize - 'a' as usize;
             } else { 
-                en_passant += (char as usize - '0' as usize) * 8 - 8;
+                self.en_passant += (char as usize - '0' as usize) * 8 - 8;
             };
         }
-        if en_passant > 63 { 
+        if self.en_passant > 63 { 
             panic!("Failed to import from FEN")
         };
 
         // halfmove clock
         let part = parts.next().unwrap();
         for char in part.chars() {
-            hmc *= 10;
-            hmc += char as u16 - '0' as u16;
+            self.hmc *= 10;
+            self.hmc += char as u16 - '0' as u16;
         }
 
         // fullmove number
         let part = parts.next().unwrap();
         for char in part.chars() {
-            no *= 10;
-            no += char as i16 - '0' as i16;
+            self.no *= 10;
+            self.no += char as i16 - '0' as i16;
         }
 
         // fullmove to halfmove
-        no = (no - 1) * 2 + turn as i16;
-
-        Self { 
-            bbs, 
-            turn,
-            castlings,
-            en_passant,
-            hmc,
-            no,
-            maps:         Maps::default(),
-            move_history: Vec::with_capacity(300),
-            hmc_history:  Vec::with_capacity(300),
-            enp_history:  Vec::with_capacity(300),
-            cst_history:  Vec::with_capacity(300)
-        }
+        self.no = (self.no - 1) * 2 + self.turn as i16;
     }
 
     /* TODO (optimize): it is possible to generate leval moves using some extra bitboards WITHOUT making and undoing pseudo-legal moves.

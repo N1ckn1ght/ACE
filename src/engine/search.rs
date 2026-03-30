@@ -1,6 +1,5 @@
-use std::{cmp::{max, min}, collections::HashSet, sync::mpsc::Receiver, time::Instant};
-use rand::{rngs::ThreadRng};
-use crate::{engine::search, frame::{board::Board, util::*}};
+use std::{cmp::{max, min}, collections::HashSet, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread, time::{Duration, Instant}};
+use crate::frame::{board::Board, util::*};
 use super::zobrist::Zobrist;
 
 
@@ -24,9 +23,11 @@ pub trait Eval {
     fn eval(&self, board: &Board) -> i32;
 }
 
-pub struct Search<'a> {
+pub struct Search {
     board:				Board,
-    eval:               Box<dyn Eval>,
+
+    /* Handles */
+    pub abort:			Arc<AtomicBool>,		// stop search signal
     
     /* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
     cache:		        Vec<EvalHash>,
@@ -39,12 +40,10 @@ pub struct Search<'a> {
 
     /* Accessible constants */
     zobrist:			Zobrist,
-    rng:				ThreadRng,
 
     /* Search trackers */
     ts:					Instant,				// timer start
-    tl:					u128,					// time limit in ms
-    abort:				bool,					// stop search signal
+    tl:					u64,					// time limit in ms
     nodes:				u64,					// nodes searched
     nl:                 u64,                    // node_limit_set
     ply:				usize,					// current distance to root of the search
@@ -59,7 +58,6 @@ pub struct Search<'a> {
     cur_depth:          i16,                    // current depth of the iterative dfs (comm-related)
 
     /* Comms */
-    rx:		            &'a Receiver<String>,
     last_score:         i32,                    // last score for the current thinking side (?)
 
     /* Options */
@@ -68,9 +66,9 @@ pub struct Search<'a> {
     searchmoves:        Vec<u32>
 }
 
-impl<'a> Search<'a> {
+impl Search {
     // Currently uses the board within itself, so doesn't take one as an argument
-    pub fn init<E: Eval + 'static>(eval: E, rx: &'a Receiver<String>) -> Self {
+    pub fn init() -> Self {
         let board = Board::default();
         let zobrist = Zobrist::default();
         let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
@@ -78,16 +76,14 @@ impl<'a> Search<'a> {
 
         Self {
             board,
-            eval:               Box::new(eval),
             cache:	            vec![EvalHash::default(); 1 << CACHE_SIZE],
             cached_cnt:         0,
             history_vec:	    cache_perm_vec,
             history_set:	    HashSet::default(),
             zobrist,
-            rng:			    rand::thread_rng(),
             ts:				    Instant::now(),
             tl:				    0,
-            abort:			    false,
+            abort:			    Arc::new(AtomicBool::new(true)),
             nodes:			    0,
             nl:                 0,
             ply:			    0,
@@ -97,7 +93,6 @@ impl<'a> Search<'a> {
             tpv_flag:		    false,
             mate_flag:		    false,
             cur_depth:          0,
-            rx,
             last_score:         0,
             cache_size_bits:    0,
             rand:               0,
@@ -105,43 +100,15 @@ impl<'a> Search<'a> {
         }
     }
 
-    fn update(&mut self) {
-        if self.ts.elapsed().as_millis() > self.tl {
-            self.abort = true;
-            return;
-        }
-
-        let last = self.rx.try_recv();
-        if last.is_err() {
-            return;
-        }
-
-        let line = last.unwrap().to_ascii_lowercase();
-        let cmd = line.trim().split(' ').collect::<Vec<&str>>();
-        match cmd[0] {
-            "isready" => {
-                println!("readyok");
-            },
-            "setoption" => {
-                
-            },
-            "ucinewgame" => {
-
-            },
-            _ => {
-
-            }
-        };
-    }
-
     /// Use this public function to initiate search and pass limitations
     /// 
     /// Input (searchmoves) and output goes in string format (e.g. e2e4, e7e5)
     /// 
     /// Returns bestmove and Option(ponder) with some, if present in tpv
-    pub fn go(
+    pub fn go<E: Eval>(
         &mut self,
-        time_limit_ms: u128,
+        eval: &E,
+        time_limit_ms: u64,
         depth_target: i16,
         node_limit: u64,  // pass 0 if None
         strict_search: bool,  // search for mate on given depth_target
@@ -150,7 +117,7 @@ impl<'a> Search<'a> {
         self.ts = Instant::now();
         self.tl = time_limit_ms;
         self.nl = node_limit;
-        self.abort = false;
+        self.abort.store(false, Ordering::Relaxed);
         self.nodes = 0;
         for line in self.tpv.iter_mut() { for node in line.iter_mut() { *node = 0 } };
         for len in self.tpv_len.iter_mut() { *len = 0 };
@@ -174,16 +141,16 @@ impl<'a> Search<'a> {
             }
         }
         let mut k = 1;
-        let mut score = 0;
+        let mut score;
         let baw = 300;  // divide by 400 to get centipawns
         loop {
             self.tpv_flag = true;
-            let temp = self.search(alpha, beta, self.cur_depth);
-            if !self.abort {
-                score = temp;	
-            } else {
-                log("Abort signal reached!");
+            let temp = self.search(eval, alpha, beta, self.cur_depth);
+            if self.abort.load(Ordering::Relaxed) {
+                log(&format!("Abort signal reached! Nodecount: {}", self.nodes));
                 break;
+            } else {
+                score = temp;
             }
             // self.last_score = score_to_gui(score, false);
             if self.tpv_len[0] != 0 {
@@ -218,10 +185,10 @@ impl<'a> Search<'a> {
             beta = score + baw;
             k = 1;
             self.cur_depth += 1;
-            if self.cur_depth > depth_target || self.ts.elapsed().as_millis() > self.tl {
+            if self.cur_depth > depth_target || self.ts.elapsed().as_millis() as u64 > self.tl {
                 break;
             }
-            // TODO: don't exit search in ponder!!
+            // TODO: don't exit search in ponder!!?
         }
 
         log(&format!("Approximate time spent: {} ms", self.ts.elapsed().as_millis() + 1));
@@ -233,7 +200,7 @@ impl<'a> Search<'a> {
 
     pub fn set_pos(&mut self, fen: Option<&str>) {
         self.clear_history();
-        self.board = Board::import(fen.unwrap_or("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"));
+        self.board.set_pos(fen.unwrap_or("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"));
         self.history_vec.pop();
         self.history_vec.push(self.zobrist.cache_new(&self.board));
     }
@@ -244,7 +211,7 @@ impl<'a> Search<'a> {
         self.history_vec.push(self.zobrist.cache_new(&self.board));
     }
 
-    pub fn reset_cache(&mut self) {
+    pub fn clear_cache(&mut self) {
         self.cache.clear();
         self.cache.resize(1 << self.cache_size_bits, EvalHash::default());
         self.cached_cnt = 0;
@@ -264,11 +231,28 @@ impl<'a> Search<'a> {
         self.history_set.remove(self.history_vec.last().unwrap());
     }
 
+    fn update(&mut self) {
+        if self.nl != 0 && self.nodes > self.nl {
+            self.abort.store(true, Ordering::Relaxed);
+            return;
+        }
+        if self.nodes & NODES_BETWEEN_UPDATES == 0 {
+            if self.ts.elapsed().as_millis() as u64 > self.tl {
+                self.abort.store(true, Ordering::Relaxed);
+                return;
+            }
+            thread::sleep(Duration::from_micros(1));
+        }
+    }
+
     /// Launch a search with given a/b to a certain depth limit
     /// 
+    /// Takes an object with eval implemented as a parameter
+    /// 
     /// Pass -INF/+INF to get a precise result (e.g. mate)
-    fn search(
+    fn search<E: Eval>(
         &mut self,
+        eval: &E,
         mut alpha: i32,
         beta: i32,
         mut depth: i16
@@ -283,8 +267,10 @@ impl<'a> Search<'a> {
             return 0;
         }
 
-        let hash_is_same = self.cache[hash_index].hash == hash;
+        // Exit search (tl, nl, listen)
+        self.update();
 
+        let hash_is_same = self.cache[hash_index].hash == hash;
         // if not a "prove"-search
         if hash_is_same && !root_node && beta - alpha < 2 {
             let br = self.cache[hash_index];
@@ -305,20 +291,17 @@ impl<'a> Search<'a> {
                 }
             }
         }
-
-        if self.nodes & NODES_BETWEEN_UPDATES == 0 {
-            self.update();
-        }
         if depth <= 0 {
-            return self.extension(alpha, beta);
+            return self.extension(eval, alpha, beta);
         }
+
         self.nodes += 1;
+
         if self.ply + 1 > HALF_DEPTH_LIMIT {
-            return self.static_eval();
+            return eval.eval(&self.board);
         }
 
         let in_check = self.board.is_in_check();
-
         // Null move prune
         if !in_check && !root_node && depth > 2 {
             self.ply += 1;
@@ -328,7 +311,7 @@ impl<'a> Search<'a> {
             let old_en_passant = self.board.en_passant;
             self.board.en_passant = 0;
 
-            let score = -self.search(-beta, -beta + 1, depth - 3);	// reduction = 2
+            let score = -self.search(eval, -beta, -beta + 1, depth - 3);	// reduction = 2
 
             self.board.turn = !self.board.turn;
             self.board.en_passant = old_en_passant;
@@ -336,7 +319,7 @@ impl<'a> Search<'a> {
             self.history_set.remove(self.history_vec.last().unwrap());
             self.ply -= 1;
 
-            if self.abort {
+            if self.abort.load(Ordering::Relaxed) {
                 return 0;
             }
             if score >= beta {
@@ -407,6 +390,7 @@ impl<'a> Search<'a> {
             self.ply += 1;
             let mut score = if i != 0 && depth > 2 && !(*mov > ME_PROMISING_MIN || in_check) {
                 -self.search(
+                    eval,
                     -beta,
                     -alpha,
                     depth - 2 - (depth > 3 && i > 7 && i + 9 > moves.len()) as i16
@@ -415,14 +399,14 @@ impl<'a> Search<'a> {
                 alpha + 1
             };
             if score > alpha {
-                score = -self.search(-alpha - 1, -alpha, depth - 1);
+                score = -self.search(eval, -alpha - 1, -alpha, depth - 1);
                 if score > alpha && score < beta {
-                    score = -self.search(-beta, -alpha, depth - 1)
+                    score = -self.search(eval, -beta, -alpha, depth - 1)
                 }
             }
             self.ply -= 1;
             self.undo_move();
-            if self.abort {
+            if self.abort.load(Ordering::Relaxed) {
                 return 0;
             }
             if score > alpha {
@@ -468,14 +452,13 @@ impl<'a> Search<'a> {
     /// See only captures and check lines 'til the end
     /// 
     /// Evaluate all quiet leafs
-    fn extension(&mut self, mut alpha: i32, beta: i32) -> i32 {
-        if self.nodes & NODES_BETWEEN_UPDATES == 0 {
-            self.update();
-        }
+    fn extension<E: Eval>(&mut self, eval: &E, mut alpha: i32, beta: i32) -> i32 {
+        // Exit search extension (tl, nl, listen)
+        self.update();
         self.nodes += 1;
 
         // cuttin even before we get a list of moves
-        alpha = max(alpha, self.static_eval());
+        alpha = max(alpha, eval.eval(&self.board));
         if alpha >= beta {
             return beta; // fail high
         }
@@ -501,10 +484,10 @@ impl<'a> Search<'a> {
                 continue;
             }
             self.ply += 1;
-            alpha = max(alpha, -self.extension(-beta, -alpha));
+            alpha = max(alpha, -self.extension(eval, -beta, -alpha));
             self.ply -= 1;
             self.undo_move();
-            if self.abort {
+            if self.abort.load(Ordering::Relaxed) {
                 return 0;
             }
             if alpha >= beta {
@@ -513,16 +496,6 @@ impl<'a> Search<'a> {
         }
 
         alpha // fail low
-    }
-
-    /* Warning!
-        Before calling this function, consider the following:
-        1) Search MUST determine if this position is already happened before, eval won't return 0 in case of repetition or 50 useless moves.
-        2) Search MUST determine if the game ended! Eval does NOT evaluate staled/mated positions specifically.
-        3) Eval is not great on evaluating checks and detecting possibilities - it's HCE, wdy want?
-    */
-    fn static_eval(&mut self) -> i32 {
-        self.eval.eval(&self.board)
     }
 
     /* Play functions */

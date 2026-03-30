@@ -3,7 +3,7 @@ mod frame;
 mod engine;
 mod interface;
 
-use std::io;
+use std::io::stdin;
 use crate::interface::{uci::uci_loop, xboard::xboard_loop};
 
 
@@ -11,7 +11,7 @@ fn main() {
     let mut quit = false;
     loop {
         let mut input = String::new();
-        match io::stdin().read_line(&mut input) {
+        match stdin().read_line(&mut input) {
             Ok(_goes_into_input_above) => {
                 let line = input.to_lowercase();
                 match line.trim() {
