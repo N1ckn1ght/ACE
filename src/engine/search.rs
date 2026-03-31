@@ -1,6 +1,6 @@
 use std::{cmp::{max, min}, collections::HashSet, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Instant};
-use crate::frame::{board::Board, util::*};
-use super::zobrist::Zobrist;
+use crate::{engine::hc_eval::{EVAL_MATE, EVAL_PRE_MATE}, frame::{board::Board, util::*}};
+use super::{hc_eval::EVAL_INF, zobrist::Zobrist};
 
 
 const DEFAULT_VEC_CAPACITY: usize = 300;
@@ -14,7 +14,7 @@ enum GameResult {
 
 pub trait Eval {
     /// Return static evaluation score on a given board
-    fn eval(&self, board: &Board) -> i32;
+    fn eval(&self, board: &Board) -> i16;
 }
 
 pub struct Search {
@@ -22,10 +22,13 @@ pub struct Search {
 
     /* Handles */
     pub abort:			Arc<AtomicBool>,		// stop search signal
+    searchmoves:        Vec<u32>,
     
     /* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
     cache:		        Vec<EvalHash>,
     cached_cnt:         u64,
+    cache_size_bits:    usize,
+    cache_mask:         u64,
     
     /* Cache for already made in board moves to track drawish positions */
     history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
@@ -49,15 +52,7 @@ pub struct Search {
     killer:				[[u32; HALF_DEPTH_LIMIT]; 2],
     tpv_flag:			bool,					// if this is a principle variation (in search)
     mate_flag:			bool,					// if mate is present
-    cur_depth:          i16,                    // current depth of the iterative dfs (comm-related)
-
-    /* Comms */
-    last_score:         i32,                    // last score for the current thinking side (?)
-
-    /* Options */
-    cache_size_bits:    usize,
-    rand:               i32,
-    searchmoves:        Vec<u32>
+    cur_depth:          u8,                     // current depth of the iterative dfs (comm-related)
 }
 
 impl Search {
@@ -67,7 +62,8 @@ impl Search {
         let zobrist = Zobrist::default();
         let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         cache_perm_vec.push(zobrist.cache_new(&board));
-        let cache_size_bits = CACHE_SIZE;
+        let cache_size_bits = 25;  // just an initial value
+        let cache_mask = (1 << cache_size_bits) - 1;
 
         Self {
             board,
@@ -88,9 +84,8 @@ impl Search {
             tpv_flag:		    false,
             mate_flag:		    false,
             cur_depth:          0,
-            last_score:         0,
             cache_size_bits,
-            rand:               0,
+            cache_mask,
             searchmoves:        vec![]
         }
     }
@@ -104,7 +99,7 @@ impl Search {
         &mut self,
         eval: &E,
         time_limit_ms: u64,
-        depth_target: i16,
+        depth_target: u8,
         node_limit: u64,  // pass 0 if None
         strict_search: bool,  // search for mate on given depth_target
         searchmoves: Option<&[&str]>
@@ -118,8 +113,8 @@ impl Search {
         for len in self.tpv_len.iter_mut() { *len = 0 };
         for num in self.killer.iter_mut() { for mov in num.iter_mut() { *mov = 0 } };
 
-        let mut alpha = -INF;
-        let mut beta  =  INF;
+        let mut alpha = -EVAL_INF;
+        let mut beta  =  EVAL_INF;
         if strict_search {
             self.cur_depth = depth_target;
             self.mate_flag = true;
@@ -150,20 +145,20 @@ impl Search {
             if self.tpv_len[0] != 0 {
                 self.post(score);
             }
-            if !(-LARGM..=LARGM).contains(&score) {
+            if !(-EVAL_PRE_MATE..=EVAL_PRE_MATE).contains(&score) {
                 if self.mate_flag {
                     break;
                 }
                 log("Mate detected.");
-                alpha = -INF;
-                beta = INF;
+                alpha = -EVAL_INF;
+                beta = EVAL_INF;
                 self.mate_flag = true;
                 continue;
             }
             if score <= alpha || score >= beta {
                 if k > 15 {
-                    alpha = -INF;
-                    beta = INF;
+                    alpha = -EVAL_INF;
+                    beta = EVAL_INF;
                     log("Alpha/beta fail! Using INFINITE values now.");
                     continue;
                 }
@@ -249,16 +244,16 @@ impl Search {
     fn search<E: Eval>(
         &mut self,
         eval: &E,
-        mut alpha: i32,
-        beta: i32,
-        mut depth: i16
-    ) -> i32 {
+        mut alpha: i16,
+        beta: i16,
+        mut depth: u8
+    ) -> i16 {
         let root_node = self.ply == 0;
 
         self.tpv_len[self.ply] = self.ply;
 
         let hash = *self.history_vec.last().unwrap();
-        let hash_index = (hash & TEMP_PRE_CALC_CACHE_BITMASK) as usize;
+        let hash_index = (hash & self.cache_mask) as usize;
         if !root_node && (self.board.hmc > 99 || self.history_set.contains(&hash)) {
             return 0;
         }
@@ -266,16 +261,16 @@ impl Search {
         // Exit search (tl, nl, listen)
         self.update();
 
-        let hash_is_same = self.cache[hash_index].hash == hash;
+        let hash_is_same = self.cache[hash_index].is_same(hash);
         // if not a "prove"-search
         if hash_is_same && !root_node && beta - alpha < 2 {
             let br = self.cache[hash_index];
             if br.depth >= depth {
                 if br.flag & HF_PRECISE != 0 {
-                    if br.score < -LARGM {
-                        return br.score + self.ply as i32;
-                    } else if br.score > LARGM {
-                        return br.score - self.ply as i32;
+                    if br.score < -EVAL_PRE_MATE {
+                        return br.score + self.ply as i16;
+                    } else if br.score > EVAL_PRE_MATE {
+                        return br.score - self.ply as i16;
                     }
                     return br.score;
                 }
@@ -331,7 +326,7 @@ impl Search {
         
         if moves.is_empty() {
             if in_check {
-                return -LARGE + self.ply as i32;
+                return -EVAL_MATE + self.ply as i16;
             }
             return 0;
         }
@@ -379,7 +374,7 @@ impl Search {
         moves.reverse();
         
         let mut hf_cur = HF_LOW;
-        depth += in_check as i16;
+        depth += in_check as u8;
         // a/b with lmr and pv proving
         for (i, mov) in moves.iter().enumerate() {
             self.make_move(*mov);
@@ -389,7 +384,7 @@ impl Search {
                     eval,
                     -beta,
                     -alpha,
-                    depth - 2 - (depth > 3 && i > 7 && i + 9 > moves.len()) as i16
+                    depth - 2 - (depth > 3 && i > 7 && i + 9 > moves.len()) as u8
                 )
             } else {
                 alpha + 1
@@ -443,10 +438,10 @@ impl Search {
                 self.cached_cnt += 1;
             }
             self.cache[hash_index] = EvalHash::new(hash, alpha, depth, hf_cur);	
-            if alpha < -LARGM {
-                self.cache[hash_index].score -= self.ply as i32;
-            } else if alpha > LARGM {
-                self.cache[hash_index].score += self.ply as i32;
+            if alpha < -EVAL_PRE_MATE {
+                self.cache[hash_index].score -= self.ply as i16;
+            } else if alpha > EVAL_PRE_MATE {
+                self.cache[hash_index].score += self.ply as i16;
             }
         }
 
@@ -456,7 +451,12 @@ impl Search {
     /// See only captures and check lines 'til the end
     /// 
     /// Evaluate all quiet leafs
-    fn extension<E: Eval>(&mut self, eval: &E, mut alpha: i32, beta: i32) -> i32 {
+    fn extension<E: Eval>(
+        &mut self,
+        eval: &E,
+        mut alpha: i16,
+        beta: i16
+    ) -> i16 {
         // Exit search extension (tl, nl, listen)
         self.update();
         self.nodes += 1;
@@ -472,7 +472,7 @@ impl Search {
         // if mate or stalemate
         if moves.is_empty() {
             if self.board.is_in_check() {
-                return -LARGE + self.ply as i32;
+                return -EVAL_MATE + self.ply as i16;
             }
             return 0;
         }
@@ -502,7 +502,7 @@ impl Search {
         alpha // fail low
     }
 
-    fn post(&self, score: i32) {
+    fn post(&self, score: i16) {
         let (st, sv) = Self::score_to_uci(score);
         let time = self.ts.elapsed().as_millis() as u64;
         let cache_max = 1 << self.cache_size_bits;
@@ -530,17 +530,22 @@ impl Search {
         );
     } 
 
-    fn score_to_uci(score: i32) -> (String, i32) {
+    fn score_to_uci(score: i16) -> (String, i16) {
         if score < 0 {
-            if score < -LARGM {
-                return ("mate".to_owned(), -(100001 + (LARGE + score) / 2));
+            if score < -EVAL_PRE_MATE {
+                return ("mate".to_owned(), 1 + (EVAL_MATE + score) / 2);
             }
-            return ("cp".to_owned(), score / 4);
+            return ("cp".to_owned(), score);
         }
-        if score > LARGM {
-            return ("mate".to_owned(), 100001 + (LARGE - score) / 2);
+        if score > EVAL_PRE_MATE {
+            return ("mate".to_owned(), 1 + (EVAL_MATE - score) / 2);
         }
-        ("cp".to_owned(), score / 4)
+        ("cp".to_owned(), score)
+    }
+
+    fn calc_cache_size(megabytes: u32) -> u32 {
+
+        0
     }
 
     /* Aux */
@@ -577,6 +582,50 @@ impl Search {
     }
 }
 
+/* Branch cache search flags */
+
+pub const HF_PRECISE: u8 = 1;
+pub const HF_LOW: u8 = 2;
+pub const HF_HIGH: u8 = 4;
+
+/* ADDITIONAL DATA STRUCTURES */
+
+#[derive(Copy, Clone)]
+struct EvalHash {
+    pub hash_upper_part: u32,
+    pub hash_lower_part: u32,
+    pub score: i16, 
+    pub depth: u8,
+    pub flag: u8
+}
+
+impl EvalHash {    
+    pub fn new(hash: u64, score: i16, depth: u8, flag: u8) -> Self {
+        EvalHash {
+            hash_upper_part: (hash >> 32) as u32,
+            hash_lower_part: hash as u32,
+            score,
+            depth,
+            flag
+        }
+    }
+
+    pub fn is_same(&self, hash: u64) -> bool {
+        hash as u32 == self.hash_lower_part && (hash >> 32) as u32 == self.hash_upper_part
+    }
+}
+
+impl Default for EvalHash {
+    fn default() -> Self {
+        Self {
+            hash_upper_part: 0,
+            hash_lower_part: 0,
+            score: 0,
+            depth: 0,
+            flag: 0
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -2,11 +2,15 @@ use std::cmp::max;
 use crate::{engine::{hc_weights::HCWeights, search::Eval}, frame::{board::Board, util::*}};
 
 
+pub const EVAL_PRE_MATE: i16 = 0b111000000000001;
+pub const EVAL_MATE: i16     = 0b111111000000000;
+pub const EVAL_INF: i16      = 0b111111111110000;
+
 const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
 const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
 
 impl Eval for HCEval {
-    fn eval(&self, board: &Board) -> i32 {
+    fn eval(&self, board: &Board) -> i16 {
         HCEval::eval(self, board)
     }
 }
@@ -43,7 +47,7 @@ impl HCEval {
     }
 
     /// Return static evaluation score on a given board
-    pub fn eval(&self, board: &Board) -> i32 {
+    pub fn eval(&self, board: &Board) -> i16 {
         let counter = (board.bbs[N] | board.bbs[N2]).count_ones() * 3 + 
             (board.bbs[B] | board.bbs[B2]).count_ones() * 3 + 
             (board.bbs[R] | board.bbs[R2]).count_ones() * 4 +
@@ -487,8 +491,9 @@ impl HCEval {
         /* SCORE APPLICATION ENDS */
 
         if board.turn {
-            return -score;
+            score = -score;
         }
-        score
+        score /= 4;
+        score.clamp(-(EVAL_MATE as i32 - 1), EVAL_MATE as i32 - 1) as i16
     }
 }

@@ -92,16 +92,6 @@ pub const CSB: u8 = 0b0010; // castle short black
 pub const CLW: u8 = 0b0100; // castle long white
 pub const CLB: u8 = 0b1000; // castle long black
 
-pub const LARGE: i32 = 0x00100000;
-pub const INF:   i32 = 0x01000000;
-pub const LARGM: i32 = LARGE - (HALF_DEPTH_LIMIT << 1) as i32;
-
-/* Branch cache search flags */
-
-pub const HF_PRECISE: u16 = 1;
-pub const HF_LOW: u16 = 2;
-pub const HF_HIGH: u16 = 4;
-
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
 
 #[inline]
@@ -209,55 +199,6 @@ pub fn move_get_promotion(mov: u32) -> usize {
 #[inline]
 pub fn move_get_capture(mov: u32) -> usize {
     (mov >> 27 & 0b1111) as usize
-}
-
-/* ADDITIONAL DATA STRUCTURES */
-
-#[derive(Copy, Clone)]
-pub struct EvalMove {
-    pub mov: u32,
-    pub score: i32
-}
-
-impl EvalMove {
-    #[inline]
-    pub fn new(mov: u32, score: i32) -> Self {
-        EvalMove {
-            mov,
-            score
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct EvalHash {
-    pub hash: u64,
-    pub score: i32, 
-    pub depth: i16,
-    pub flag: u16
-}
-
-impl EvalHash {    
-    #[inline]
-    pub fn new(hash: u64, score: i32, depth: i16, flag: u16) -> Self {
-        EvalHash {
-            hash,
-            score,
-            depth,
-            flag
-        }
-    }
-}
-
-impl Default for EvalHash {
-    fn default() -> Self {
-        Self {
-            hash: 0,
-            score: 0,
-            depth: 0,
-            flag: 0
-        }
-    }
 }
 
 /* GENERAL FUNCTIONS */
@@ -379,25 +320,6 @@ pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Opti
         }
     }
     None
-}
-
-pub fn score_to_string(mut score: i32, turn: bool) -> String {
-    if turn {
-        score = -score;
-    }
-    if score >= 0 {
-        if score > LARGM {
-            let ts = 1 + (LARGE - score) / 2;
-            return "M+".to_string() + &ts.to_string();
-        }
-        return "+".to_string() + &(score / 4).to_string();
-    }
-    // else if score < 0
-    if score < -LARGM {
-        let ts = 1 + (LARGE + score) / 2;
-        return "M-".to_string() + &ts.to_string();
-    }
-    (score / 4).to_string()
 }
 
 
