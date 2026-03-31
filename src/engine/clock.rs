@@ -2,7 +2,7 @@
 
 /// Returns recommended time in ms to spend on searching best move
 /// 
-/// Contains safety padding
+/// Has safety padding (10 ms)
 pub fn calc_time_to_think(
     turn: bool,
     movetime: Option<u64>,
@@ -29,16 +29,6 @@ pub fn calc_time_to_think(
     } else {
         movestogo.unwrap_or(50)
     };
-    let time = rem / horizon + (inc >> 6) * 61;
-
-    if time < 9 {
-        return 9;
-    }
-    if time + 11 > rem {
-        if rem < 20 {
-            return 9;
-        }
-        return rem - 11;
-    }
+    let time = (rem / horizon + (inc >> 6) * 61).clamp(10, rem.max(20) - 10);
     time
 }

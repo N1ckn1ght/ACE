@@ -582,13 +582,11 @@ impl Search {
     }
 }
 
-/* Branch cache search flags */
+/* CACHE related section */
 
-pub const HF_PRECISE: u8 = 1;
-pub const HF_LOW: u8 = 2;
-pub const HF_HIGH: u8 = 4;
-
-/* ADDITIONAL DATA STRUCTURES */
+const HF_PRECISE: u8 = 1;
+const HF_LOW: u8 = 2;
+const HF_HIGH: u8 = 4;
 
 #[derive(Copy, Clone)]
 struct EvalHash {
