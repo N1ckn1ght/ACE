@@ -15,6 +15,7 @@ pub fn uci_loop() -> bool {
         let mut engine = Search::init();
         engine.abort = Arc::clone(&abort);
         let eval = HCEval::init(None);
+        println!("option name Hash type spin default 512 min 1 max 262144");
         println!("uciok");
 
         for input in rx {

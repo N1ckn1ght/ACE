@@ -1,15 +1,9 @@
-use std::{cmp::{max, min}, collections::HashSet, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread, time::{Duration, Instant}};
+use std::{cmp::{max, min}, collections::HashSet, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Instant};
 use crate::frame::{board::Board, util::*};
 use super::zobrist::Zobrist;
 
 
 const DEFAULT_VEC_CAPACITY: usize = 300;
-
-// todo: rework
-pub const CACHE_SIZE: usize = 25;  // entries, in power of 2;
-                                   // keep in mind, programm will eat additional 1.4 MB bc of lookup tables.
-                                   // 25 is recommended (it's 512 MB)
-pub const TEMP_PRE_CALC_CACHE_BITMASK: u64 = (1 << CACHE_SIZE) - 1; // sorry for that
 
 enum GameResult {
     InProgress,
@@ -61,7 +55,7 @@ pub struct Search {
     last_score:         i32,                    // last score for the current thinking side (?)
 
     /* Options */
-    cache_size_bits:    i32,
+    cache_size_bits:    usize,
     rand:               i32,
     searchmoves:        Vec<u32>
 }
@@ -73,10 +67,11 @@ impl Search {
         let zobrist = Zobrist::default();
         let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         cache_perm_vec.push(zobrist.cache_new(&board));
+        let cache_size_bits = CACHE_SIZE;
 
         Self {
             board,
-            cache:	            vec![EvalHash::default(); 1 << CACHE_SIZE],
+            cache:	            vec![EvalHash::default(); 1 << cache_size_bits],
             cached_cnt:         0,
             history_vec:	    cache_perm_vec,
             history_set:	    HashSet::default(),
@@ -94,7 +89,7 @@ impl Search {
             mate_flag:		    false,
             cur_depth:          0,
             last_score:         0,
-            cache_size_bits:    0,
+            cache_size_bits,
             rand:               0,
             searchmoves:        vec![]
         }
@@ -152,9 +147,8 @@ impl Search {
             } else {
                 score = temp;
             }
-            // self.last_score = score_to_gui(score, false);
             if self.tpv_len[0] != 0 {
-                self.post();
+                self.post(score);
             }
             if !(-LARGM..=LARGM).contains(&score) {
                 if self.mate_flag {
@@ -241,7 +235,9 @@ impl Search {
                 self.abort.store(true, Ordering::Relaxed);
                 return;
             }
-            thread::sleep(Duration::from_micros(1));
+            if self.nodes & POST_INTERVAL == 0 {
+                self.post_regular();
+            }
         }
     }
 
@@ -291,7 +287,7 @@ impl Search {
                 }
             }
         }
-        if depth <= 0 {
+        if depth == 0 {
             return self.extension(eval, alpha, beta);
         }
 
@@ -424,9 +420,14 @@ impl Search {
                 self.tpv_len[self.ply] = self.tpv_len[self.ply + 1];
             
                 if alpha >= beta {
+                    // cache usage (1/2)
                     if hash_is_same || depth > min(self.cache[hash_index].depth, 4) {
+                        if self.cache[hash_index].depth == 0 {
+                            self.cached_cnt += 1;
+                        }
                         self.cache[hash_index] = EvalHash::new(hash, score, depth, HF_HIGH);
                     }
+
                     if *mov < ME_CAPTURE_MIN {
                         self.killer[1][self.ply] = self.killer[0][self.ply];
                         self.killer[0][self.ply] = *mov & MFE_CLEAR;
@@ -436,8 +437,11 @@ impl Search {
             }
         }
 
-        // todo: rework this? feels like a bug as well
+        // cache usage (2/2)
         if hash_is_same || depth > min(self.cache[hash_index].depth, 4) {
+            if self.cache[hash_index].depth == 0 {
+                self.cached_cnt += 1;
+            }
             self.cache[hash_index] = EvalHash::new(hash, alpha, depth, hf_cur);	
             if alpha < -LARGM {
                 self.cache[hash_index].score -= self.ply as i32;
@@ -498,35 +502,45 @@ impl Search {
         alpha // fail low
     }
 
-    /* Play functions */
-
-    fn get_result(&mut self) -> GameResult {
-        let moves = self.board.get_legal_moves();
-        if moves.is_empty() {
-            if self.board.is_in_check() {
-                if self.board.turn {
-                    return GameResult::WhiteWon;
-                }
-                return GameResult::BlackWon;
-            }
-            return GameResult::Draw;
-        }
-        if self.board.hmc > 99 {
-            return GameResult::Draw;
-        }
-        // TODO: autodraw on move repetition
-        GameResult::InProgress
-    }
-
-    fn post(&self) {
-        // let scu = self.last_score;
-        let scu = 0;
-        let started_black = true;
-        print!("{} {} {} {}", self.cur_depth, scu, self.ts.elapsed().as_millis() / 10, self.nodes);
+    fn post(&self, score: i32) {
+        let (st, sv) = Self::score_to_uci(score);
+        let time = self.ts.elapsed().as_millis() as u64;
+        let cache_max = 1 << self.cache_size_bits;
+        print!("info depth {} score {} {} nodes {} nps {} hashfull {} time {} pv",
+            self.cur_depth,
+            st, sv,
+            self.nodes,
+            self.nodes * 1000 / time.max(1),
+            self.cached_cnt * 1000 / cache_max,
+            time
+        );
         for (i, mov) in self.tpv[0].iter().enumerate().take(max(self.tpv_len[0], 1)) {
-            print!(" {}", move_transform(*mov, (i & 1 != 0) ^ started_black));
+            print!(" {}", move_transform(*mov, (i & 1 != 0) ^ self.board.turn));
         }
         println!();
+    }
+
+    fn post_regular(&self) {
+        let time = self.ts.elapsed().as_millis() as u64;
+        let cache_max = 1 << self.cache_size_bits;
+        println!("info nodes {} nps {} hashfull {}",
+            self.nodes,
+            self.nodes * 1000 / time.max(1),
+            self.cached_cnt * 1000 / cache_max
+        );
+    } 
+
+    fn score_to_uci(score: i32) -> (String, i32) {
+        if score < 0 {
+            if score < -LARGM {
+                return ("mate".to_owned(), -(100001 + (LARGE + score) / 2));
+            }
+            return ("cp".to_owned(), score / 4);
+        }
+        if score > LARGM {
+            return ("mate".to_owned(), 100001 + (LARGE - score) / 2);
+        }
+        ("cp".to_owned(), score / 4)
     }
 
     /* Aux */
@@ -542,6 +556,24 @@ impl Search {
     #[inline]
     pub fn get_turn(&self) -> bool {
         self.board.turn
+    }
+
+    pub fn get_result(&mut self) -> GameResult {
+        let moves = self.board.get_legal_moves();
+        if moves.is_empty() {
+            if self.board.is_in_check() {
+                if self.board.turn {
+                    return GameResult::WhiteWon;
+                }
+                return GameResult::BlackWon;
+            }
+            return GameResult::Draw;
+        }
+        if self.board.hmc > 99 {
+            return GameResult::Draw;
+        }
+        // TODO: autodraw on move repetition
+        GameResult::InProgress
     }
 }
 

@@ -27,6 +27,7 @@ pub fn log(line: &str) {
 pub const HALF_DEPTH_LIMIT: usize = 64;
 pub const NODES_BETWEEN_UPDATES: u64 = 0b00000000111111111111;
 pub const INFINITE_TIME: u64 = 1 << 48;
+pub const POST_INTERVAL: u64 = (1 << 20) - 1;
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 
@@ -378,23 +379,6 @@ pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Opti
         }
     }
     None
-}
-
-pub fn score_to_gui(mut score: i32, playother: bool) -> i32 {
-    if playother { 
-        score = -score;
-    }
-    if score < 0 {
-        if score < -LARGM {
-            return -(100001 + (LARGE + score) / 2);
-        }
-        return score / 4;
-    }
-    // else if score >= 0
-    if score > LARGM {
-        return 100001 + (LARGE - score) / 2;
-    }
-    score / 4
 }
 
 pub fn score_to_string(mut score: i32, turn: bool) -> String {
