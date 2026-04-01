@@ -81,7 +81,7 @@ pub fn uci_loop() -> bool {
                     let mut binc: Option<u64> = None;
                     let mut movestogo: Option<u64> = None;
                     let mut node_limit: u64 = 0;
-                    let mut depth_limit: u8 = 127;
+                    let mut depth_limit: u8 = HARD_DEPTH_LIMIT as u8;
                     let mut mate_flag = false;
                     let mut searchmoves: Option<&[&str]> = None;
                     // ponder
@@ -112,7 +112,7 @@ pub fn uci_loop() -> bool {
                                     movestogo = Some(cmd[i + 1].parse::<u64>().unwrap());
                                 },
                                 "depth" => {
-                                    depth_limit = cmd[i + 1].parse::<i32>().unwrap().clamp(1, 254) as u8;
+                                    depth_limit = cmd[i + 1].parse::<usize>().unwrap().clamp(1, HARD_DEPTH_LIMIT) as u8;
                                 },
                                 "nodes" => {
                                     node_limit = cmd[i + 1].parse::<u64>().unwrap().max(1000);

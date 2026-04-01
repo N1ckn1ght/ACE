@@ -46,11 +46,11 @@ pub struct Search {
     nl:                 u64,                    // node_limit_set
     ply:				usize,					// current distance to root of the search
                                                 // expected lines of moves
-    tpv:				[[u32; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
+    tpv:				[[u32; HARD_DEPTH_LIMIT]; HARD_DEPTH_LIMIT],
                                                 // expected lines of moves length
-    tpv_len:			[usize; HALF_DEPTH_LIMIT],
+    tpv_len:			[usize; HARD_DEPTH_LIMIT],
                                                 // quiet moves that cause a beta cutoff
-    killer:				[[u32; HALF_DEPTH_LIMIT]; 2],
+    killer:				[[u32; HARD_DEPTH_LIMIT]; 2],
     tpv_flag:			bool,					// if this is a principle variation (in search)
     mate_flag:			bool,					// if mate is present
     cur_depth:          u8,                     // current depth of the iterative dfs (comm-related)
@@ -79,9 +79,9 @@ impl Search {
             nodes:			    0,
             nl:                 0,
             ply:			    0,
-            tpv:			    [[0; HALF_DEPTH_LIMIT]; HALF_DEPTH_LIMIT],
-            tpv_len:		    [0; HALF_DEPTH_LIMIT],
-            killer:			    [[0; HALF_DEPTH_LIMIT]; 2],
+            tpv:			    [[0; HARD_DEPTH_LIMIT]; HARD_DEPTH_LIMIT],
+            tpv_len:		    [0; HARD_DEPTH_LIMIT],
+            killer:			    [[0; HARD_DEPTH_LIMIT]; 2],
             tpv_flag:		    false,
             mate_flag:		    false,
             cur_depth:          0,
@@ -182,7 +182,7 @@ impl Search {
         }
 
         log(&format!("Approximate time spent: {} ms", self.ts.elapsed().as_millis() + 1));
-        if self.tpv_len[0] > 1 {
+        if self.cur_depth > 2 {
             return (move_transform(self.tpv[0][0], self.board.turn), Some(move_transform(self.tpv[0][1], !self.board.turn)));
         }
         (move_transform(self.tpv[0][0], self.board.turn), None)
@@ -289,7 +289,8 @@ impl Search {
 
         self.nodes += 1;
 
-        if self.ply + 1 > HALF_DEPTH_LIMIT {
+        // sus
+        if self.ply & HARD_DEPTH_LIMIT != 0 {
             return eval.eval(&self.board);
         }
 
