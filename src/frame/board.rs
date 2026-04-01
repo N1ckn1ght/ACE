@@ -477,7 +477,7 @@ impl Board {
         E
     }
 
-    pub fn export(&self) -> String {
+    pub fn export_fen(&self) -> String {
         let mut fen = String::new();
         let mut pieces: [usize; 64] = [E; 64];
         for (i, bb) in self.bbs.iter().enumerate() {
@@ -542,6 +542,14 @@ impl Board {
         let no = (self.no + 1 + (!self.turn) as i16) / 2;
         fen.push_str(&no.to_string());
         fen
+    }
+
+    pub fn export_moves(&self) {
+            
+    }
+
+    pub fn export_moves_ui(&self) {
+        
     }
 
     #[inline]
@@ -617,7 +625,7 @@ impl Board {
         let moves = self.get_legal_moves();
         for mov in moves.iter() {
             self.make_move(*mov);
-            println!("{}\t{}\t{}\t{}", mov, move_transform(*mov, self.turn), self.perft(depth - 1), self.export());
+            println!("{}\t{}\t{}\t{}", mov, move_transform(*mov, self.turn), self.perft(depth - 1), self.export_fen());
             self.undo_move();
         }
     }
@@ -668,16 +676,16 @@ mod tests {
     fn test_board_import_export() {
         let mut board1 = Board::default();
         let board2 = Board::import("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board1.export());
-        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board2.export());
+        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board1.export_fen());
+        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board2.export_fen());
         del_bit(&mut board1.bbs[P],   8);
         del_bit(&mut board1.bbs[P],  12);
         del_bit(&mut board1.bbs[P],  13);
         del_bit(&mut board1.bbs[P2], 55);
         del_bit(&mut board1.bbs[N2], 62);
-        assert_eq!("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1", board1.export());
+        assert_eq!("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1", board1.export_fen());
         let board3 = Board::import("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1");
-        assert_eq!(board1.export(), board3.export());
+        assert_eq!(board1.export_fen(), board3.export_fen());
     }
 
     #[test]
@@ -752,22 +760,22 @@ mod tests {
     fn test_board_import_export_advanced() {
         let mut board = Board::default();
         _ = board.get_legal_moves();
-        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board.export());
+        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board.export_fen());
         let mut board = Board::import("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
         _ = board.get_legal_moves();
-        assert_eq!("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1", board.export());
+        assert_eq!("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1", board.export_fen());
         let mut board = Board::import("1rbq1r1k/p1ppB1pp/2p5/8/2BPp1n1/2N4N/P1P1Q1PP/R3K2R b KQ d3 0 15");
         _ = board.get_legal_moves();
-        assert_eq!("1rbq1r1k/p1ppB1pp/2p5/8/2BPp1n1/2N4N/P1P1Q1PP/R3K2R b KQ d3 0 15", board.export());
+        assert_eq!("1rbq1r1k/p1ppB1pp/2p5/8/2BPp1n1/2N4N/P1P1Q1PP/R3K2R b KQ d3 0 15", board.export_fen());
         let mut board = Board::import("1rbq1r1k/p1ppB1pp/2p5/8/2B3n1/2Np3N/P1P1Q1PP/R3K2R w KQ - 0 16");
         _ = board.get_legal_moves();
-        assert_eq!("1rbq1r1k/p1ppB1pp/2p5/8/2B3n1/2Np3N/P1P1Q1PP/R3K2R w KQ - 0 16", board.export());
+        assert_eq!("1rbq1r1k/p1ppB1pp/2p5/8/2B3n1/2Np3N/P1P1Q1PP/R3K2R w KQ - 0 16", board.export_fen());
         let mut board = Board::import("r3k2r/p1pp1pb1/bn2Qnp1/2qPN3/1p2P3/2N5/PPPBBPPP/R3K2R b KQkq - 3 2");
         _ = board.get_legal_moves();
-        assert_eq!("r3k2r/p1pp1pb1/bn2Qnp1/2qPN3/1p2P3/2N5/PPPBBPPP/R3K2R b KQkq - 3 2", board.export());
+        assert_eq!("r3k2r/p1pp1pb1/bn2Qnp1/2qPN3/1p2P3/2N5/PPPBBPPP/R3K2R b KQkq - 3 2", board.export_fen());
         let mut board = Board::import("4k3/8/8/8/8/8/Q7/4K3 w - - 0 1");
         _ = board.get_legal_moves();
-        assert_eq!("4k3/8/8/8/8/8/Q7/4K3 w - - 0 1", board.export());
+        assert_eq!("4k3/8/8/8/8/8/Q7/4K3 w - - 0 1", board.export_fen());
     }
 
     #[test]

@@ -2,9 +2,9 @@ use std::cmp::max;
 use crate::{engine::{hc_weights::HCWeights, search::Eval}, frame::{board::Board, util::*}};
 
 
-pub const EVAL_PRE_MATE: i16 = 0b111000000000001;
-pub const EVAL_MATE: i16     = 0b111111000000000;
-pub const EVAL_INF: i16      = 0b111111111110000;
+pub const EVAL_PRE_MATE: i16 = 0b011110000000001;
+pub const EVAL_MATE: i16     = 0b011111000000000;
+pub const EVAL_INF: i16      = 0b011111111111111;
 
 const CENTER: [u64; 2] = [0b0000000000000000000110000001100000011000000000000000000000000000, 0b0000000000000000000000000001100000011000000110000000000000000000];
 const STRONG: [u64; 2] = [0b0000000001111110011111100011110000000000000000000000000000000000, 0b0000000000000000000000000000000000111100011111100111111000000000];
@@ -495,5 +495,50 @@ impl HCEval {
         }
         score /= 4;
         score.clamp(-(EVAL_MATE as i32 - 1), EVAL_MATE as i32 - 1) as i16
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::tests::eval_wa_test;
+
+    #[test]
+    fn hc_eval_wa_depth1() {
+        let eval = HCEval::init(None);
+        eval_wa_test(&eval, 1, 0);
+    }
+
+    #[test]
+    fn hc_eval_wa_depth2() {
+        let eval = HCEval::init(None);
+        eval_wa_test(&eval, 2, 0);
+    }
+
+    #[test] 
+    fn hc_eval_wa_depth3() {
+        let eval = HCEval::init(None);
+        eval_wa_test(&eval, 3, 0);
+    }
+
+    #[test]
+    fn hc_eval_wa_depth4() {
+        let eval = HCEval::init(None);
+        eval_wa_test(&eval, 4, 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn hc_eval_wa_depth5() {
+        let eval = HCEval::init(None);
+        eval_wa_test(&eval, 5, 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn hc_eval_wa_depth6() {
+        let eval = HCEval::init(None);
+        eval_wa_test(&eval, 6, 0);
     }
 }

@@ -5,7 +5,8 @@ use super::{hc_eval::EVAL_INF, zobrist::Zobrist};
 
 const DEFAULT_VEC_CAPACITY: usize = 300;
 
-enum GameResult {
+#[derive(Debug, PartialEq)]
+pub enum GameResult {
     InProgress,
     WhiteWon,
     Draw,
@@ -623,11 +624,4 @@ impl Default for EvalHash {
             flag: 0
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::mpsc::channel;
-
 }
