@@ -30,13 +30,13 @@ pub fn uci_loop() -> bool {
                 },
                 "position" => {
                     if cmd.len() < 2 {
-                        log("Error (this command requires arguments): position");
+                        println!("Error (this command requires arguments): position");
                         continue;
                     }
                     match cmd[1] {
                         "fen" => {
                             if cmd.len() < 3 {
-                                log("Error (this argument requires parameter): fen");
+                                println!("Error (this argument requires parameter): fen");
                                 continue;
                             }
                             engine.set_pos(Some(cmd[2]));
@@ -57,7 +57,7 @@ pub fn uci_loop() -> bool {
                                 continue;
                             }
                             if cmd[2] != "moves" {
-                                log(&format!("Error (unexpected argument): {}", cmd[2]));
+                                println!("Error (unexpected argument): {}", cmd[2]);
                                 continue;
                             }
                             parse_apply_moves(&cmd[3..], &mut engine);
@@ -69,7 +69,7 @@ pub fn uci_loop() -> bool {
                             }
                         },
                         _ => {
-                            log(&format!("Error (unexpected argument): {}", cmd[1]));
+                            println!("Error (unexpected argument): {}", cmd[1]);
                         }
                     }
                 },
@@ -198,7 +198,7 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>) {
                 return;
             }
             _ => {
-
+                println!("Error (unknown command): {}", first);
             }
         }
     }

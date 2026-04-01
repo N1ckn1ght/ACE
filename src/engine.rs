@@ -9,7 +9,7 @@ pub mod clock;
 mod tests {
     use crate::{engine::search::{Eval, GameResult, Search}, frame::util::{log, move_transform_back}};
 
-    pub fn eval_wa_test<E: Eval>(eval: &E, depth: u8, nodes: u64) {
+    pub fn util_test_eval_wa<E: Eval>(eval: &E, depth: u8, nodes: u64) {
         let mut engine = Search::init();
         let mut res = engine.get_result();
         while res == GameResult::InProgress {

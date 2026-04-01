@@ -130,8 +130,7 @@ impl Board {
         self.no = (self.no - 1) * 2 + self.turn as i16;
     }
 
-    /* TODO (optimize): it is possible to generate leval moves using some extra bitboards WITHOUT making and undoing pseudo-legal moves.
-       This is proven to be slightly faster (with the exception of en passant, probably), but also depends on the code. */
+    /// Verifies the king doesn't end up being under attack
     pub fn get_legal_moves(&mut self) -> Vec<u32> {
         let mut moves = self.get_pseudo_legal_moves();
         let mut i = 0;
@@ -259,6 +258,7 @@ impl Board {
         }
     }
 
+    /// Doesn't verify if the king ends up being under attack
     pub fn get_pseudo_legal_moves(&self) -> Vec<u32> {
         let mut moves = Vec::with_capacity(64);
         let turn = self.turn as usize;
@@ -422,9 +422,11 @@ impl Board {
         moves
     }
 
-    /* atk_turn is a colour of ATTACKING pieces
-       occupancies is the bitboard all pieces of every colour combined
-       defenders is the bitboard of pieces of the ATTACKED piece colour */
+    /// `atk_turn` is a color of ATTACKING piece
+    /// 
+    /// `occupanices` is a bitboard of all pieces both colors
+    /// 
+    /// `defenders` is a bitboard of all pieces ATTACKED color
     pub fn is_under_attack(&self, atk_turn: bool, sq: usize, occupancies: u64, defenders: u64) -> bool {
         // kings
         if self.maps.attacks_king[sq] & self.bbs[K + atk_turn as usize] != 0 {
@@ -455,8 +457,9 @@ impl Board {
         false
     }
 
-    /* Note: king capture is not included
-       turn is a color of a captured piece */
+    /// `turn` is a color of a CAPTURED piece.
+    /// 
+    /// King capture is not inclulded.
     pub fn get_capture(&self, turn: bool, sq: usize) -> usize {
         let turn = turn as usize;
         if get_bit(self.bbs[P | turn], sq) != 0 {
@@ -544,12 +547,14 @@ impl Board {
         fen
     }
 
-    pub fn export_moves(&self) {
-            
-    }
-
-    pub fn export_moves_ui(&self) {
-        
+    pub fn export_moves(&mut self) -> Vec<String> {
+        let mut moves = Vec::with_capacity(self.move_history.len());
+        let mut turn = self.turn ^ (self.move_history.len() & 1 != 0);
+        for mov in self.move_history.iter() {
+            moves.push(move_transform(*mov, turn));
+            turn = !turn;
+        }
+        moves
     }
 
     #[inline]
@@ -558,12 +563,13 @@ impl Board {
         self.bbs[P | turn] | self.bbs[N | turn] | self.bbs[B | turn] | self.bbs[R | turn] | self.bbs[Q | turn] | self.bbs[K | turn]
     }
 
-    // ally in this context are pieces of the same colour as attacker
+    /// `ally` is a bitboard of ATTACK side pieces
     #[inline]
     pub fn get_sliding_diagonal_attacks(&self, sq: usize, occupancies: u64, ally: u64) -> u64 {
         self.get_sliding_diagonal_opportunities(sq, occupancies) & !ally
     }
 
+    /// `ally` is a bitboard of ATTACK side pieces
     #[inline]
     pub fn get_sliding_straight_attacks(&self, sq: usize, occupancies: u64, ally: u64) -> u64 {
         self.get_sliding_straight_opportunities(sq, occupancies) & !ally
@@ -673,7 +679,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_board_import_export() {
+    fn test_board_import_export_fen() {
         let mut board1 = Board::default();
         let board2 = Board::import("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board1.export_fen());
@@ -686,6 +692,18 @@ mod tests {
         assert_eq!("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1", board1.export_fen());
         let board3 = Board::import("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1");
         assert_eq!(board1.export_fen(), board3.export_fen());
+    }
+
+    #[test]
+    fn test_board_export_moves() {
+        let mut board = Board::default();
+        let chk_strs = vec!["e2e4", "d7d5", "e4d5", "b8c6", "d5c6", "g8f6", "c6b7", "e7e5", "b7a8r", "f8c5", "a8c8", "e8g8", "c8d8", "f8d8"];
+        for (i, movstr) in chk_strs.iter().enumerate() {
+            // log(&format!("{}", movstr));
+            let mv = move_transform_back(movstr, &board.get_legal_moves(), board.turn).unwrap();
+            board.make_move(mv);
+            assert_eq!(board.export_moves(), chk_strs[..i+1]);
+        }
     }
 
     #[test]

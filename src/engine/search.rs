@@ -109,7 +109,7 @@ impl Search {
         self.tl = time_limit_ms;
         self.nl = node_limit;
         self.abort.store(false, Ordering::Relaxed);
-        self.nodes = 0;
+        self.nodes = 1;
         for line in self.tpv.iter_mut() { for node in line.iter_mut() { *node = 0 } };
         for len in self.tpv_len.iter_mut() { *len = 0 };
         for num in self.killer.iter_mut() { for mov in num.iter_mut() { *mov = 0 } };

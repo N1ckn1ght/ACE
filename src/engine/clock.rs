@@ -1,4 +1,5 @@
-/* It is entirely possible to add positional evaluation to the equation, e.g. adding/reducing time depending on a positional complexity! */
+use crate::frame::util::INFINITE_TIME;
+
 
 /// Returns recommended time in ms to spend on searching best move
 /// 
@@ -12,11 +13,12 @@ pub fn calc_time_to_think(
     binc: Option<u64>,
     movestogo: Option<u64>
 ) -> u64 {
+    /* It is entirely possible to add positional evaluation to the equation, e.g. adding/reducing time depending on a positional complexity! */
     let rem = movetime.unwrap_or({
         if turn {
-            btime.unwrap_or(180000)
+            btime.unwrap_or(INFINITE_TIME)
         } else {
-            wtime.unwrap_or(180000)
+            wtime.unwrap_or(INFINITE_TIME)
         }
     });
     let inc = if turn {

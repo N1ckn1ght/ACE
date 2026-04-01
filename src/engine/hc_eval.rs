@@ -502,43 +502,43 @@ impl HCEval {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::tests::eval_wa_test;
+    use crate::engine::tests::util_test_eval_wa;
 
     #[test]
-    fn hc_eval_wa_depth1() {
+    fn test_eval_hc_wa_depth1() {
         let eval = HCEval::init(None);
-        eval_wa_test(&eval, 1, 0);
+        util_test_eval_wa(&eval, 1, 0);
     }
 
     #[test]
-    fn hc_eval_wa_depth2() {
+    fn test_eval_hc_wa_depth2() {
         let eval = HCEval::init(None);
-        eval_wa_test(&eval, 2, 0);
+        util_test_eval_wa(&eval, 2, 0);
     }
 
     #[test] 
-    fn hc_eval_wa_depth3() {
+    fn test_eval_hc_wa_depth3() {
         let eval = HCEval::init(None);
-        eval_wa_test(&eval, 3, 0);
+        util_test_eval_wa(&eval, 3, 0);
     }
 
     #[test]
-    fn hc_eval_wa_depth4() {
+    fn test_eval_hc_wa_depth4() {
         let eval = HCEval::init(None);
-        eval_wa_test(&eval, 4, 0);
-    }
-
-    #[test]
-    #[ignore]
-    fn hc_eval_wa_depth5() {
-        let eval = HCEval::init(None);
-        eval_wa_test(&eval, 5, 0);
+        util_test_eval_wa(&eval, 4, 0);
     }
 
     #[test]
     #[ignore]
-    fn hc_eval_wa_depth6() {
+    fn test_eval_hc_wa_depth5() {
         let eval = HCEval::init(None);
-        eval_wa_test(&eval, 6, 0);
+        util_test_eval_wa(&eval, 5, 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_eval_hc_wa_depth6() {
+        let eval = HCEval::init(None);
+        util_test_eval_wa(&eval, 6, 0);
     }
 }
