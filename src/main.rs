@@ -25,7 +25,7 @@ fn main() {
                         quit = xboard_loop();
                     }
                     _ => {
-
+                        println!("Error (usage: uci | xboard | quit)");
                     }
                 };
             }

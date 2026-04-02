@@ -24,8 +24,8 @@ pub fn log(line: &str) {
 
 /* LIMITATIONS */
 
-pub const HARD_DEPTH_LIMIT: usize = 128;
-pub const NODES_BETWEEN_UPDATES: u64 = 0b00000000111111111111;
+pub const HARD_DEPTH_LIMIT: usize = 128;  // if changed, go through search.rs "sus" commented lines
+pub const NODES_BETWEEN_UPDATES: u64 = (1 << 12) - 1;
 pub const INFINITE_TIME: u64 = 1 << 48;
 pub const POST_INTERVAL: u64 = (1 << 20) - 1;
 

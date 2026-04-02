@@ -22,8 +22,10 @@ pub struct Search {
     board:				Board,
 
     /* Handles */
-    pub abort:			Arc<AtomicBool>,		// stop search signal
+    pub abort:			Arc<AtomicBool>,		// stop search signal (if true, exit immediately)
+    pub ponder:         Arc<AtomicBool>,        // kinda "don't stop search" signal (even if mate)
     searchmoves:        Vec<u32>,
+    pub do_post:        bool,
     
     /* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
     cache:		        Vec<EvalHash>,
@@ -76,6 +78,8 @@ impl Search {
             ts:				    Instant::now(),
             tl:				    0,
             abort:			    Arc::new(AtomicBool::new(true)),
+            ponder:             Arc::new(AtomicBool::new(false)),
+            do_post:            true,
             nodes:			    0,
             nl:                 0,
             ply:			    0,
@@ -104,7 +108,12 @@ impl Search {
         node_limit: u64,  // pass 0 if None
         strict_search: bool,  // search for mate on given depth_target
         searchmoves: Option<&[&str]>
-    ) -> (String, Option<String>) {
+    ) -> (
+        String,         // bestmove
+        Option<String>, // ponder (if depth > 1)
+        String,         // cp/mate (score_to_uci) 
+        i16             // score (score_to_uci)
+    ) {
         self.ts = Instant::now();
         self.tl = time_limit_ms;
         self.nl = node_limit;
@@ -132,8 +141,8 @@ impl Search {
             }
         }
         let mut k = 1;
-        let mut score;
-        let baw = 300;  // divide by 400 to get centipawns
+        let mut score = 0;
+        let baw = 75;  // in centipawns
         loop {
             self.tpv_flag = true;
             let temp = self.search(eval, alpha, beta, self.cur_depth);
@@ -175,17 +184,23 @@ impl Search {
             beta = score + baw;
             k = 1;
             self.cur_depth += 1;
-            if self.cur_depth > depth_target || self.ts.elapsed().as_millis() as u64 > self.tl {
+            if self.cur_depth > depth_target || (self.ts.elapsed().as_millis() as u64 > self.tl && !self.ponder.load(Ordering::Relaxed)) {
                 break;
             }
-            // TODO: don't exit search in ponder!!?
         }
 
+        // do not exit search while ponder even if it is mate
+        while self.ponder.load(Ordering::Relaxed) {}
+
+        let bestmove = move_transform(self.tpv[0][0], self.board.turn);
+        let ponder = if self.cur_depth > 2 {
+            Some(move_transform(self.tpv[0][1], !self.board.turn))
+        } else {
+            None
+        };
+        let score = Self::score_to_uci(score);
         log(&format!("Approximate time spent: {} ms", self.ts.elapsed().as_millis() + 1));
-        if self.cur_depth > 2 {
-            return (move_transform(self.tpv[0][0], self.board.turn), Some(move_transform(self.tpv[0][1], !self.board.turn)));
-        }
-        (move_transform(self.tpv[0][0], self.board.turn), None)
+        (bestmove, ponder, score.0, score.1)
     }
 
     pub fn set_pos(&mut self, fen: Option<&str>) {
@@ -227,12 +242,14 @@ impl Search {
             return;
         }
         if self.nodes & NODES_BETWEEN_UPDATES == 0 {
-            if self.ts.elapsed().as_millis() as u64 > self.tl {
-                self.abort.store(true, Ordering::Relaxed);
-                return;
-            }
             if self.nodes & POST_INTERVAL == 0 {
                 self.post_regular();
+            }
+            if self.ponder.load(Ordering::Relaxed) {
+                return;
+            }
+            if self.ts.elapsed().as_millis() as u64 > self.tl {
+                self.abort.store(true, Ordering::Relaxed);
             }
         }
     }
@@ -264,7 +281,7 @@ impl Search {
 
         let hash_is_same = self.cache[hash_index].is_same(hash);
         // if not a "prove"-search
-        if hash_is_same && !root_node && beta - alpha < 2 {
+        if hash_is_same && !root_node && beta < alpha + 2 {
             let br = self.cache[hash_index];
             if br.depth >= depth {
                 if br.flag & HF_PRECISE != 0 {
@@ -505,6 +522,9 @@ impl Search {
     }
 
     fn post(&self, score: i16) {
+        if !self.do_post {
+            return;
+        }
         let (st, sv) = Self::score_to_uci(score);
         let time = self.ts.elapsed().as_millis() as u64;
         let cache_max = 1 << self.cache_size_bits;
@@ -523,6 +543,9 @@ impl Search {
     }
 
     fn post_regular(&self) {
+        if !self.do_post {
+            return;
+        }
         let time = self.ts.elapsed().as_millis() as u64;
         let cache_max = 1 << self.cache_size_bits;
         println!("info nodes {} nps {} hashfull {}",
@@ -565,6 +588,11 @@ impl Search {
         self.board.turn
     }
 
+    /// 0-depth eval, cannot see if position is even legal or mate
+    pub fn get_static_eval<E: Eval>(&self, eval: &E) -> i16 {
+        eval.eval(&self.board)
+    }
+
     pub fn get_result(&mut self) -> GameResult {
         let moves = self.board.get_legal_moves();
         if moves.is_empty() {
@@ -581,6 +609,24 @@ impl Search {
         }
         // TODO: autodraw on move repetition
         GameResult::InProgress
+    }
+
+    pub fn make_move_safe(&mut self, movstr: &str) -> bool {
+        let moves = self.board.get_legal_moves();
+        let mov = move_transform_back(movstr, &moves, self.board.turn);
+        if mov.is_none() {
+            return false;
+        }
+        self.make_move(mov.unwrap());
+        true
+    }
+
+    pub fn undo_move_safe(&mut self) -> bool {
+        if self.history_vec.len() < 2 {
+            return false;
+        }
+        self.undo_move();
+        true
     }
 }
 
@@ -624,5 +670,21 @@ impl Default for EvalHash {
             depth: 0,
             flag: 0
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::tests::util_test_eval_wa;
+
+    #[test]
+    fn search_mate_3() {
+        // 6R1/1pr5/k6p/2P4q/1p2Q3/1Pb5/P3p3/1K6 w - - 0 1
+    }
+
+    fn util_test_search_fm() {
+        
     }
 }

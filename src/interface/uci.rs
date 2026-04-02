@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io::stdin, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::{Sender, channel}}, thread, time::Duration};
+use std::{collections::HashSet, io::stdin, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::{Sender, channel}}, thread};
 use once_cell::sync::Lazy;
 use crate::{engine::{clock::calc_time_to_think, hc_eval::HCEval, search::Search}, frame::util::*};
 
@@ -9,11 +9,15 @@ pub fn uci_loop() -> bool {
 
     let (tx, rx) = channel::<String>();  // this is not optimal, this is bad
     let abort = Arc::new(AtomicBool::new(true));
+    let ponder = Arc::new(AtomicBool::new(false));
+
     let abort_listener_clone = Arc::clone(&abort);
+    let ponder_listener_clone = Arc::clone(&ponder);
 
     let handle = thread::spawn(move || {
         let mut engine = Search::init();
         engine.abort = Arc::clone(&abort);
+        engine.ponder = Arc::clone(&ponder);
         let eval = HCEval::init(None);
         println!("option name Hash type spin default 384 min 1 max 24576");
         println!("uciok");
@@ -84,7 +88,8 @@ pub fn uci_loop() -> bool {
                     let mut depth_limit: u8 = HARD_DEPTH_LIMIT as u8;
                     let mut mate_flag = false;
                     let mut searchmoves: Option<&[&str]> = None;
-                    // ponder
+                    let mut ponder = false;
+                    let mut show_eval = false;
 
                     let mut last_arg_index = cmd.len();
                     for (i, arg) in cmd.iter().enumerate().skip(1).rev() {
@@ -94,7 +99,7 @@ pub fn uci_loop() -> bool {
                                     searchmoves = Some(&cmd[i+1..last_arg_index]);
                                 },
                                 "ponder" => {
-                                    // todo
+                                    ponder = true;
                                 },
                                 "wtime" => {
                                     wtime = Some(cmd[i + 1].parse::<u64>().unwrap());
@@ -128,6 +133,10 @@ pub fn uci_loop() -> bool {
                                 "infinite" => {
                                     movetime = Some(INFINITE_TIME);
                                 },
+                                "eval" => {
+                                    // custom non-uci command
+                                    show_eval = true;
+                                },
                                 _ => {
                                     // -- unreachable in this implementation
                                 }
@@ -135,20 +144,55 @@ pub fn uci_loop() -> bool {
                             last_arg_index = i;
                         }
                     }
+
+                    engine.do_post = true;
+                    engine.ponder.store(ponder, Ordering::Relaxed);
                     let time = calc_time_to_think(engine.get_turn(), movetime, wtime, btime, winc, binc, movestogo);
-                    log(&format!("Launching search w/ options: forcetime {} depth_limit {} node_limit {} mate_flag {} do_searchmoves {}", time, depth_limit, node_limit, mate_flag, searchmoves.is_some()));
-                    let (bestmove, ponder) = engine.go(&eval, time, depth_limit, node_limit, mate_flag, searchmoves);
-                    if ponder.is_some() {
-                        println!("bestmove {} ponder {}", bestmove, ponder.unwrap());
-                    } else {
-                        println!("bestmove {}", bestmove);
+
+                    log(&format!("Launching search w/ options: forcetime {} depth_limit {} node_limit {} mate_flag {} ponder {} do_searchmoves {}", time, depth_limit, node_limit, mate_flag, ponder, searchmoves.is_some()));
+
+                    let (bestmove, ponder, scs, scv) = engine.go(&eval, time, depth_limit, node_limit, mate_flag, searchmoves);
+                    print!("bestmove {}", bestmove);
+                    if show_eval {
+                        print!(" score {} {}", scs, scv);
                     }
+                    if ponder.is_some() {
+                        print!(" ponder {}", ponder.unwrap());
+                    }
+                    println!();
                 },
                 "glm" => {
+                    // custom non-uci command
                     let mvs = engine.get_legal_moves();
                     for mv in mvs {
                         print!("{} ", move_transform(mv, engine.get_turn()));
                     }
+                    println!();
+                },
+                "eval" => {
+                    // custom non-uci command
+                    println!("{}", engine.get_static_eval(&eval));
+                },
+                "move" => {
+                    // custom non-uci command
+                    if cmd.len() < 2 {
+                        println!("Error (this argument requires parameter): move");
+                        continue;
+                    }
+                    let res = engine.make_move_safe(cmd[1]);
+                    if !res {
+                        println!("Error (illegal move): {}", cmd[1]);
+                    }
+                },
+                "undo" => {
+                    // custom non-uci command
+                    let res = engine.undo_move_safe();
+                    if !res {
+                        println!("Error (no moves made): undo")
+                    }
+                },
+                "status" => {
+                    println!("{:?}", engine.get_result());
                 },
                 "quit" => {
                     break;
@@ -160,14 +204,14 @@ pub fn uci_loop() -> bool {
         }
     });
 
-    listen(&tx, abort_listener_clone);
+    listen(&tx, abort_listener_clone, ponder_listener_clone);
 
     let _ = handle.join();
     true
 }
 
 /// Read loop
-fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>) {
+fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>, ponder: Arc<AtomicBool>) {
     loop {
         let mut input = String::new();
         match stdin().read_line(&mut input) {
@@ -185,15 +229,21 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>) {
             "isready" => {
                 println!("readyok");
             },
-            "setoption" | "ucinewgame" | "position" | "go" => {
+            "ponderhit" => {
+                ponder.store(false, Ordering::Relaxed);
+            },
+            "setoption" | "ucinewgame" | "position" | "go" | "eval" | "glm" | "move" | "undo" | "status" => {
                 abort.store(true, Ordering::Relaxed);
+                ponder.store(false, Ordering::Relaxed);
                 let _ = tx.send(input).unwrap();
             },
             "stop" => {
                 abort.store(true, Ordering::Relaxed);
+                ponder.store(false, Ordering::Relaxed);
             },
             "quit" => {
                 abort.store(true, Ordering::Relaxed);
+                ponder.store(false, Ordering::Relaxed);
                 let _ = tx.send(input).unwrap();
                 return;
             }
@@ -204,6 +254,7 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>) {
     }
 }
 
+/// faster with pseudo_legal
 fn parse_apply_moves(moves: &[&str], engine: &mut Search) {
     for mov in moves {
         engine.make_move(move_transform_back(
@@ -227,6 +278,7 @@ static GO_ARGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "nodes",
         "mate",
         "movetime",
-        "infinite"
+        "infinite",
+        "eval"
     ])
 });
