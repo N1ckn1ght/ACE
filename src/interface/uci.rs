@@ -4,10 +4,9 @@ use crate::{engine::{clock::calc_time_to_think, hc_eval::HCEval, search::Search}
 
 
 pub fn uci_loop() -> bool {
-    println!("id name {}", MYNAME);
-    println!("id author {}", AUTHOR);
+    print_greeting();
 
-    let (tx, rx) = channel::<String>();  // this is not optimal, this is bad
+    let (tx, rx) = channel::<String>();  // not sure
     let abort = Arc::new(AtomicBool::new(true));
     let ponder = Arc::new(AtomicBool::new(false));
 
@@ -19,14 +18,24 @@ pub fn uci_loop() -> bool {
         engine.abort = Arc::clone(&abort);
         engine.ponder = Arc::clone(&ponder);
         let eval = HCEval::init(None);
-        println!("option name Hash type spin default 384 min 1 max 24576");
-        println!("uciok");
 
         for input in rx {
-            let cmd = input.trim().split_whitespace().collect::<Vec<&str>>();
-            match cmd[0] {
+            let cmd = input.split_whitespace().collect::<Vec<&str>>();
+            match cmd[0].to_lowercase().as_str() {
                 "setoption" => {
-                    // TODO
+                    if cmd.len() < 5 {
+                        println!("Error (usage: setoption name OPTION value VALUE)");
+                        continue;
+                    }
+                    match cmd[2].to_lowercase().as_str() {
+                        "hash" => {
+                            let mb = cmd[4].parse::<u32>().unwrap().clamp(1, 24576);
+                            engine.set_cache_size(mb);
+                        },
+                        _ => {
+                            println!("Error (no such option): {}", cmd[2]);
+                        }
+                    }
                 },
                 "ucinewgame" => {
                     engine.clear_cache();
@@ -37,30 +46,37 @@ pub fn uci_loop() -> bool {
                         println!("Error (this command requires arguments): position");
                         continue;
                     }
-                    match cmd[1] {
+                    match cmd[1].to_lowercase().as_str() {
                         "fen" => {
                             if cmd.len() < 3 {
                                 println!("Error (this argument requires parameter): fen");
                                 continue;
                             }
-                            engine.set_pos(Some(cmd[2]));
-                            if cmd.len() < 4 {
+                            // I'm gonna assume and haters gonna hate for inconsistency
+                            // expected input like
+                            // rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+                            // if it has no "- 0 1" part, you'll see a crash
+                            let mut last_index = 3;
+                            for arg in cmd.iter().skip(3) {
+                                if arg == &"moves" {
+                                    break;
+                                }
+                                last_index += 1;
+                            }
+                            let fen = cmd[2..last_index].join(" ");
+                            // log(&format!("Setting up this fen: <{}>", fen));
+                            engine.set_pos(Some(&fen));
+                            if cmd.len() < last_index + 2 {
                                 continue;
                             }
-                            if cmd[3] != "moves" {
-                                continue;
-                            }
-                            if cmd.len() < 5 {
-                                continue;
-                            }
-                            parse_apply_moves(&cmd[4..], &mut engine);
+                            parse_apply_moves(&cmd[last_index + 1..], &mut engine);
                         },
                         "startpos" => {
                             engine.set_pos(None);
                             if cmd.len() < 4 {
                                 continue;
                             }
-                            if cmd[2] != "moves" {
+                            if cmd[2].to_lowercase().as_str() != "moves" {
                                 println!("Error (unexpected argument): {}", cmd[2]);
                                 continue;
                             }
@@ -93,8 +109,8 @@ pub fn uci_loop() -> bool {
 
                     let mut last_arg_index = cmd.len();
                     for (i, arg) in cmd.iter().enumerate().skip(1).rev() {
-                        if GO_ARGS.contains(arg) {
-                            match cmd[i] {
+                        if GO_ARGS.contains(arg.to_lowercase().as_str()) {
+                            match cmd[i].to_lowercase().as_str() {
                                 "searchmoves" => {
                                     searchmoves = Some(&cmd[i+1..last_arg_index]);
                                 },
@@ -179,7 +195,7 @@ pub fn uci_loop() -> bool {
                         println!("Error (this argument requires parameter): move");
                         continue;
                     }
-                    let res = engine.make_move_safe(cmd[1]);
+                    let res = engine.make_move_safe(cmd[1].to_lowercase().as_str());
                     if !res {
                         println!("Error (illegal move): {}", cmd[1]);
                     }
@@ -194,9 +210,12 @@ pub fn uci_loop() -> bool {
                 "status" => {
                     println!("{:?}", engine.get_result());
                 },
-                "quit" => {
+                "quit" | "exit" => {
                     break;
-                }
+                },
+                "export" => {
+                    println!("{}", engine.export_fen());
+                },
                 _ => {
 
                 }
@@ -216,23 +235,21 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>, ponder: Arc<AtomicBool>) 
         let mut input = String::new();
         match stdin().read_line(&mut input) {
             Ok(_goes_into_input_above) => {
-
+                
             },
             Err(_no_updates_is_fine) => {
                 continue;
             }
         }
-        input = input.trim().to_lowercase();
-
         let first = input.split_whitespace().next().unwrap_or("");
-        match first {
+        match first.to_lowercase().as_str() {
             "isready" => {
                 println!("readyok");
             },
             "ponderhit" => {
                 ponder.store(false, Ordering::Relaxed);
             },
-            "setoption" | "ucinewgame" | "position" | "go" | "eval" | "glm" | "move" | "undo" | "status" => {
+            "setoption" | "ucinewgame" | "position" | "go" | "eval" | "glm" | "move" | "undo" | "status" | "export" => {
                 abort.store(true, Ordering::Relaxed);
                 ponder.store(false, Ordering::Relaxed);
                 let _ = tx.send(input).unwrap();
@@ -241,12 +258,15 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>, ponder: Arc<AtomicBool>) 
                 abort.store(true, Ordering::Relaxed);
                 ponder.store(false, Ordering::Relaxed);
             },
-            "quit" => {
+            "quit" | "exit" => {
                 abort.store(true, Ordering::Relaxed);
                 ponder.store(false, Ordering::Relaxed);
                 let _ = tx.send(input).unwrap();
                 return;
-            }
+            },
+            "uci" => {
+                print_greeting();
+            },
             _ => {
                 println!("Error (unknown command): {}", first);
             }
@@ -263,6 +283,13 @@ fn parse_apply_moves(moves: &[&str], engine: &mut Search) {
             engine.get_turn()).unwrap()
         );
     }
+}
+
+fn print_greeting() {
+    println!("id name {}", MYNAME);
+    println!("id author {}", AUTHOR);
+    println!("option name Hash type spin default 384 min 1 max 24576");
+    println!("uciok");
 }
 
 static GO_ARGS: Lazy<HashSet<&'static str>> = Lazy::new(|| {

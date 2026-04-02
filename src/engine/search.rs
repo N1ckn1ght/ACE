@@ -30,7 +30,7 @@ pub struct Search {
     /* Cache for evaluated positions as leafs (eval() result) or branches (search result with given a/b) */
     cache:		        Vec<EvalHash>,
     cached_cnt:         u64,
-    cache_size_bits:    usize,
+    cache_size_bits:    u8,
     cache_mask:         u64,
     
     /* Cache for already made in board moves to track drawish positions */
@@ -65,12 +65,11 @@ impl Search {
         let zobrist = Zobrist::default();
         let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         cache_perm_vec.push(zobrist.cache_new(&board));
-        let cache_size_bits = 25;  // just an initial value
-        let cache_mask = (1 << cache_size_bits) - 1;
+        let cache_size_bits = EvalHash::calc_cache_size_bits_from_mb(384);
 
         Self {
             board,
-            cache:	            vec![EvalHash::default(); 1 << cache_size_bits],
+            cache:              vec![EvalHash::default(); 1 << cache_size_bits],
             cached_cnt:         0,
             history_vec:	    cache_perm_vec,
             history_set:	    HashSet::default(),
@@ -90,7 +89,7 @@ impl Search {
             mate_flag:		    false,
             cur_depth:          0,
             cache_size_bits,
-            cache_mask,
+            cache_mask:         (1 << cache_size_bits) - 1,
             searchmoves:        vec![]
         }
     }
@@ -216,9 +215,14 @@ impl Search {
         self.history_vec.push(self.zobrist.cache_new(&self.board));
     }
 
+    pub fn set_cache_size(&mut self, megabytes: u32) {
+        self.cache_size_bits = EvalHash::calc_cache_size_bits_from_mb(megabytes);
+        self.cache_mask = (1 << self.cache_size_bits) - 1;
+        self.clear_cache();
+    }
+
     pub fn clear_cache(&mut self) {
-        self.cache.clear();
-        self.cache.resize(1 << self.cache_size_bits, EvalHash::default());
+        self.cache = vec![EvalHash::default(); 1 << self.cache_size_bits];
         self.cached_cnt = 0;
     }
 
@@ -568,11 +572,6 @@ impl Search {
         ("cp".to_owned(), score)
     }
 
-    fn calc_cache_size(megabytes: u32) -> u32 {
-
-        0
-    }
-
     /* Aux */
 
     pub fn get_legal_moves(&mut self) -> Vec<u32> {
@@ -628,6 +627,11 @@ impl Search {
         self.undo_move();
         true
     }
+
+    pub fn export_fen(&self) -> String {
+        let fen = self.board.export_fen();
+        fen
+    }
 }
 
 /* CACHE related section */
@@ -659,6 +663,12 @@ impl EvalHash {
     pub fn is_same(&self, hash: u64) -> bool {
         hash as u32 == self.hash_lower_part && (hash >> 32) as u32 == self.hash_upper_part
     }
+
+    pub fn calc_cache_size_bits_from_mb(megabytes: u32) -> u8 {
+        let eh = 96;
+        let rsz = ((megabytes as u64) * 8 * 1024 * 1024).div_ceil(eh);
+        (63 - rsz.leading_zeros()) as u8
+    }
 }
 
 impl Default for EvalHash {
@@ -677,11 +687,19 @@ impl Default for EvalHash {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::tests::util_test_eval_wa;
+    use crate::engine::hc_eval::HCEval;
+
+    // todo: rel performance test
 
     #[test]
     fn search_mate_3() {
-        // 6R1/1pr5/k6p/2P4q/1p2Q3/1Pb5/P3p3/1K6 w - - 0 1
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_pos(Some("4qrk1/p1r1Bppp/4b3/2p3Q1/8/3P4/PPP2PPP/R3R1K1 w - - 3 19"));
+        let (b, _, s, v) = engine.go(&eval, 65536, 6, 0, true, None);
+        assert_eq!(s, "mate");
+        assert_eq!(v, 3);
+        assert_eq!(b, "e7f6");
     }
 
     fn util_test_search_fm() {
