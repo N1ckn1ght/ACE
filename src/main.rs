@@ -1,43 +1,40 @@
 mod gen;
 mod frame;
 mod engine;
+mod interface;
 
-use std::time::Duration;
-use std::{io, thread};
-use std::sync::mpsc::channel;
-use crate::gen::{leaping::init_leaping_attacks, magic::init_magics, secondary::init_secondary_maps};
-use crate::engine::chara::Chara;
+use std::io::stdin;
+use crate::interface::{uci::uci_loop, xboard::xboard_loop};
+
 
 fn main() {
-    init_magics(&mut 1773); // good random number!
-    init_leaping_attacks();
-    init_secondary_maps();
-    
-    let (tx, rx) = channel();
-    let mut chara = Chara::init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rx);
-
-    let handle = thread::spawn(move || {
-        loop {
-            let mut input = String::new();
-            let mut quit = false;
-            match io::stdin().read_line(&mut input) {
-                Ok(_goes_into_input_above) => {
-                    if input.trim() == "quit" {
+    let mut quit = false;
+    loop {
+        let mut input = String::new();
+        match stdin().read_line(&mut input) {
+            Ok(_goes_into_input_above) => {
+                let line = input.to_lowercase();
+                match line.trim() {
+                    "quit" => {
                         quit = true;
+                    },
+                    "uci" => {
+                        quit = uci_loop();
+                    },
+                    "xboard" => {
+                        quit = xboard_loop();
                     }
-                    let _ = tx.send(input);
-                }
-                Err(_no_updates_is_fine) => {
-    
-                }
+                    _ => {
+                        println!("Error (usage: uci | xboard | quit)");
+                    }
+                };
             }
-            if quit {
-                break;
-            }
-            thread::sleep(Duration::from_millis(1));
-        }
-    });
+            Err(_no_updates_is_fine) => {
 
-    chara.listen();
-    let _ = handle.join();
+            }
+        }
+        if quit {
+            break;
+        }
+    }
 }

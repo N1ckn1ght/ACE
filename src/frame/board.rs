@@ -18,7 +18,7 @@ pub struct Board {
     pub castlings:    u8,           // castle rights (util.rs has const indices)
     pub en_passant:   usize,        /* en passant target square
                                         - warning: it will be 0 in case if there's none, even though 0 is a valid square itself */
-    pub hmc:          u16,          // halfmove clock (which drops for every capture or pawn movement)
+    pub hmc:          u16,          // NO PROGRESS half-move clock (it drops to 0 at every capture or pawn movement)
     pub no:           i16,          /* halfmove number
                                         it should act as a fullmove number in import/export (which increases after each black move) */
     /* Accessible constants */
@@ -38,12 +38,30 @@ impl Default for Board {
 
 impl Board {
     pub fn import(fen: &str) -> Self {
-        let mut bbs = [0; 14];
-        let mut turn = false;
-        let mut castlings = 0;
-        let mut en_passant = 0;
-        let mut hmc = 0;
-        let mut no = 0;
+        let mut b = Self { 
+            bbs:          [0; 14],
+            turn:         false,
+            castlings:    0,
+            en_passant:   0,
+            hmc:          0,
+            no:           0,
+            maps:         Maps::default(),
+            move_history: Vec::with_capacity(300),
+            hmc_history:  Vec::with_capacity(300),
+            enp_history:  Vec::with_capacity(300),
+            cst_history:  Vec::with_capacity(300)
+        };
+        b.set_pos(fen);
+        b
+    }
+
+    pub fn set_pos(&mut self, fen: &str) {
+        self.bbs = [0; 14];
+        self.turn = false;
+        self.castlings = 0;
+        self.en_passant = 0;
+        self.hmc = 0;
+        self.no = 0;
 
         let mut parts = fen.split_whitespace();
 
@@ -52,7 +70,7 @@ impl Board {
         let mut bit = 0;
         for char in part.chars() {
             if PIECES.contains_key(&char) {
-                set_bit(&mut bbs[PIECES[&char]], flip(bit));
+                set_bit(&mut self.bbs[PIECES[&char]], flip(bit));
                 bit += 1;
             } else if char != '/' {
                 bit += char.to_digit(10).unwrap() as usize;
@@ -62,17 +80,17 @@ impl Board {
         // turn
         let part = parts.next().unwrap();
         if part.starts_with('b') {
-            turn = true;
+            self.turn = true;
         }
 
         // castle rights
         let part = parts.next().unwrap();
         for char in part.chars() {
             match char {
-                'K' => castlings |= CSW,
-                'Q' => castlings |= CLW,
-                'k' => castlings |= CSB,
-                'q' => castlings |= CLB,
+                'K' => self.castlings |= CSW,
+                'Q' => self.castlings |= CLW,
+                'k' => self.castlings |= CSB,
+                'q' => self.castlings |= CLB,
                 '-' => (),
                 _   => panic!("Failed to import from FEN")
             };
@@ -85,49 +103,34 @@ impl Board {
                 break;
             }
             if char > '9' { 
-                en_passant += char as usize - 'a' as usize;
+                self.en_passant += char as usize - 'a' as usize;
             } else { 
-                en_passant += (char as usize - '0' as usize) * 8 - 8;
+                self.en_passant += (char as usize - '0' as usize) * 8 - 8;
             };
         }
-        if en_passant > 63 { 
+        if self.en_passant > 63 { 
             panic!("Failed to import from FEN")
         };
 
         // halfmove clock
         let part = parts.next().unwrap();
         for char in part.chars() {
-            hmc *= 10;
-            hmc += char as u16 - '0' as u16;
+            self.hmc *= 10;
+            self.hmc += char as u16 - '0' as u16;
         }
 
         // fullmove number
         let part = parts.next().unwrap();
         for char in part.chars() {
-            no *= 10;
-            no += char as i16 - '0' as i16;
+            self.no *= 10;
+            self.no += char as i16 - '0' as i16;
         }
 
         // fullmove to halfmove
-        no = (no - 1) * 2 + turn as i16;
-
-        Self { 
-            bbs, 
-            turn,
-            castlings,
-            en_passant,
-            hmc,
-            no,
-            maps:         Maps::default(),
-            move_history: Vec::with_capacity(300),
-            hmc_history:  Vec::with_capacity(300),
-            enp_history:  Vec::with_capacity(300),
-            cst_history:  Vec::with_capacity(300)
-        }
+        self.no = (self.no - 1) * 2 + self.turn as i16;
     }
 
-    /* TODO (optimize): it is possible to generate leval moves using some extra bitboards WITHOUT making and reverting pseudo-legal moves.
-       This is proven to be slightly faster (with the exception of en passant, probably), but also depends on the code. */
+    /// Verifies the king doesn't end up being under attack
     pub fn get_legal_moves(&mut self) -> Vec<u32> {
         let mut moves = self.get_pseudo_legal_moves();
         let mut i = 0;
@@ -143,7 +146,7 @@ impl Board {
             } else {
                 i += 1;
             }
-            self.revert_move();
+            self.undo_move();
         }
         moves
     }
@@ -222,7 +225,7 @@ impl Board {
         self.turn = !self.turn;
     }
 
-    pub fn revert_move(&mut self) {
+    pub fn undo_move(&mut self) {
         let mov = self.move_history.pop().unwrap();
         self.en_passant = self.enp_history.pop().unwrap();
         self.hmc        = self.hmc_history.pop().unwrap();
@@ -255,6 +258,7 @@ impl Board {
         }
     }
 
+    /// Doesn't verify if the king ends up being under attack
     pub fn get_pseudo_legal_moves(&self) -> Vec<u32> {
         let mut moves = Vec::with_capacity(64);
         let turn = self.turn as usize;
@@ -418,9 +422,11 @@ impl Board {
         moves
     }
 
-    /* atk_turn is a colour of ATTACKING pieces
-       occupancies is the bitboard all pieces of every colour combined
-       defenders is the bitboard of pieces of the ATTACKED piece colour */
+    /// `atk_turn` is a color of ATTACKING piece
+    /// 
+    /// `occupanices` is a bitboard of all pieces both colors
+    /// 
+    /// `defenders` is a bitboard of all pieces ATTACKED color
     pub fn is_under_attack(&self, atk_turn: bool, sq: usize, occupancies: u64, defenders: u64) -> bool {
         // kings
         if self.maps.attacks_king[sq] & self.bbs[K + atk_turn as usize] != 0 {
@@ -451,8 +457,9 @@ impl Board {
         false
     }
 
-    /* Note: king capture is not included
-       turn is a color of a captured piece */
+    /// `turn` is a color of a CAPTURED piece.
+    /// 
+    /// King capture is not inclulded.
     pub fn get_capture(&self, turn: bool, sq: usize) -> usize {
         let turn = turn as usize;
         if get_bit(self.bbs[P | turn], sq) != 0 {
@@ -473,7 +480,7 @@ impl Board {
         E
     }
 
-    pub fn export(&self) -> String {
+    pub fn export_fen(&self) -> String {
         let mut fen = String::new();
         let mut pieces: [usize; 64] = [E; 64];
         for (i, bb) in self.bbs.iter().enumerate() {
@@ -490,7 +497,7 @@ impl Board {
                     fen.push(char::from_u32(skip + '0' as u32).unwrap());
                     skip = 0;
                 }
-                fen.push(PIECES_REV[&(*piece as u32)]);
+                fen.push(PIECES_REV[*piece]);
             } else {
                 skip += 1;
             }
@@ -540,18 +547,29 @@ impl Board {
         fen
     }
 
+    pub fn export_moves(&mut self) -> Vec<String> {
+        let mut moves = Vec::with_capacity(self.move_history.len());
+        let mut turn = self.turn ^ (self.move_history.len() & 1 != 0);
+        for mov in self.move_history.iter() {
+            moves.push(move_transform(*mov, turn));
+            turn = !turn;
+        }
+        moves
+    }
+
     #[inline]
     pub fn get_occupancies(&self, turn: bool) -> u64 {
         let turn = turn as usize;
         self.bbs[P | turn] | self.bbs[N | turn] | self.bbs[B | turn] | self.bbs[R | turn] | self.bbs[Q | turn] | self.bbs[K | turn]
     }
 
-    // ally in this context are pieces of the same colour as attacker
+    /// `ally` is a bitboard of ATTACK side pieces
     #[inline]
     pub fn get_sliding_diagonal_attacks(&self, sq: usize, occupancies: u64, ally: u64) -> u64 {
         self.get_sliding_diagonal_opportunities(sq, occupancies) & !ally
     }
 
+    /// `ally` is a bitboard of ATTACK side pieces
     #[inline]
     pub fn get_sliding_straight_attacks(&self, sq: usize, occupancies: u64, ally: u64) -> u64 {
         self.get_sliding_straight_opportunities(sq, occupancies) & !ally
@@ -571,12 +589,25 @@ impl Board {
         self.maps.attacks_rook[magic_index as usize + self.maps.ais_rook[sq]]
     }
 
-    // although it's unused by the board itself
+
+    /* Auxiliary (used by search or eval) */
+
+    #[inline]
+    pub fn get_sliding_straight_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+        self.get_sliding_straight_attacks(sq1, 1 << sq2, 0) & self.get_sliding_straight_attacks(sq2, 1 << sq1, 0)
+    }
+
+    #[inline]
+    pub fn get_sliding_diagonal_path_unsafe(&self, sq1: usize, sq2: usize) -> u64 {
+        self.get_sliding_diagonal_attacks(sq1, 1 << sq2, 0) & self.get_sliding_diagonal_attacks(sq2, 1 << sq1, 0)
+    }
+
     pub fn is_in_check(&self) -> bool {
         let ally = self.get_occupancies(self.turn);
         let enemy = self.get_occupancies(!self.turn);
         self.is_under_attack(!self.turn, gtz(self.bbs[K | self.turn as usize]), ally | enemy, ally)
     }
+
 
     /* Debug and benchmarking */
 
@@ -590,23 +621,22 @@ impl Board {
         for mov in moves.iter() {
             self.make_move(*mov);
             count += self.perft(depth - 1);
-            self.revert_move();
+            self.undo_move();
         }
         count
     }
 
-    // uses standard output instead
     #[allow(dead_code)]
     pub fn perft_divided(&mut self, depth: usize) {
         let moves = self.get_legal_moves();
         for mov in moves.iter() {
             self.make_move(*mov);
-            println!("{}\t{}\t{}\t{}", mov, move_transform(*mov, self.turn), self.perft(depth - 1), self.export());
-            self.revert_move();
+            println!("{}\t{}\t{}\t{}", mov, move_transform(*mov, self.turn), self.perft(depth - 1), self.export_fen());
+            self.undo_move();
         }
     }
 
-    // [moves, captures, en passants, castles, promotions]
+    /// Counts \[moves, captures, en passants, castles, promotions\]
     #[allow(dead_code)]
     pub fn perft_verbosed(&mut self, depth: usize) -> [u64; 5] {
         let moves = self.get_legal_moves();
@@ -637,7 +667,7 @@ impl Board {
             for (i, elem) in count.iter_mut().enumerate() {
                 *elem += temp[i];
             }
-            self.revert_move();
+            self.undo_move();
         }
         count
     }
@@ -649,19 +679,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_board_import_export() {
+    fn test_board_import_export_fen() {
         let mut board1 = Board::default();
         let board2 = Board::import("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board1.export());
-        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board2.export());
+        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board1.export_fen());
+        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board2.export_fen());
         del_bit(&mut board1.bbs[P],   8);
         del_bit(&mut board1.bbs[P],  12);
         del_bit(&mut board1.bbs[P],  13);
         del_bit(&mut board1.bbs[P2], 55);
         del_bit(&mut board1.bbs[N2], 62);
-        assert_eq!("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1", board1.export());
+        assert_eq!("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1", board1.export_fen());
         let board3 = Board::import("rnbqkb1r/ppppppp1/8/8/8/8/1PPP2PP/RNBQKBNR w KQkq - 0 1");
-        assert_eq!(board1.export(), board3.export());
+        assert_eq!(board1.export_fen(), board3.export_fen());
+    }
+
+    #[test]
+    fn test_board_export_moves() {
+        let mut board = Board::default();
+        let chk_strs = vec!["e2e4", "d7d5", "e4d5", "b8c6", "d5c6", "g8f6", "c6b7", "e7e5", "b7a8r", "f8c5", "a8c8", "e8g8", "c8d8", "f8d8"];
+        for (i, movstr) in chk_strs.iter().enumerate() {
+            // log(&format!("{}", movstr));
+            let mv = move_transform_back(movstr, &board.get_legal_moves(), board.turn).unwrap();
+            board.make_move(mv);
+            assert_eq!(board.export_moves(), chk_strs[..i+1]);
+        }
     }
 
     #[test]
@@ -677,7 +719,7 @@ mod tests {
         assert_eq!("0000000010101000011100001101111101110000101010000000000000000000", bb_to_str(dmask | smask));
     }
     
-    // it also tests make/revert move because of get_legal_move() realization (I AM lazy)
+    // it also tests make/undo move because of get_legal_move() realization (I AM lazy)
     #[test]
     fn test_board_legal_moves_1() {
         assert_eq!(Board::default().get_legal_moves().len(), 20);
@@ -736,22 +778,22 @@ mod tests {
     fn test_board_import_export_advanced() {
         let mut board = Board::default();
         _ = board.get_legal_moves();
-        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board.export());
+        assert_eq!("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", board.export_fen());
         let mut board = Board::import("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
         _ = board.get_legal_moves();
-        assert_eq!("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1", board.export());
+        assert_eq!("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1", board.export_fen());
         let mut board = Board::import("1rbq1r1k/p1ppB1pp/2p5/8/2BPp1n1/2N4N/P1P1Q1PP/R3K2R b KQ d3 0 15");
         _ = board.get_legal_moves();
-        assert_eq!("1rbq1r1k/p1ppB1pp/2p5/8/2BPp1n1/2N4N/P1P1Q1PP/R3K2R b KQ d3 0 15", board.export());
+        assert_eq!("1rbq1r1k/p1ppB1pp/2p5/8/2BPp1n1/2N4N/P1P1Q1PP/R3K2R b KQ d3 0 15", board.export_fen());
         let mut board = Board::import("1rbq1r1k/p1ppB1pp/2p5/8/2B3n1/2Np3N/P1P1Q1PP/R3K2R w KQ - 0 16");
         _ = board.get_legal_moves();
-        assert_eq!("1rbq1r1k/p1ppB1pp/2p5/8/2B3n1/2Np3N/P1P1Q1PP/R3K2R w KQ - 0 16", board.export());
+        assert_eq!("1rbq1r1k/p1ppB1pp/2p5/8/2B3n1/2Np3N/P1P1Q1PP/R3K2R w KQ - 0 16", board.export_fen());
         let mut board = Board::import("r3k2r/p1pp1pb1/bn2Qnp1/2qPN3/1p2P3/2N5/PPPBBPPP/R3K2R b KQkq - 3 2");
         _ = board.get_legal_moves();
-        assert_eq!("r3k2r/p1pp1pb1/bn2Qnp1/2qPN3/1p2P3/2N5/PPPBBPPP/R3K2R b KQkq - 3 2", board.export());
+        assert_eq!("r3k2r/p1pp1pb1/bn2Qnp1/2qPN3/1p2P3/2N5/PPPBBPPP/R3K2R b KQkq - 3 2", board.export_fen());
         let mut board = Board::import("4k3/8/8/8/8/8/Q7/4K3 w - - 0 1");
         _ = board.get_legal_moves();
-        assert_eq!("4k3/8/8/8/8/8/Q7/4K3 w - - 0 1", board.export());
+        assert_eq!("4k3/8/8/8/8/8/Q7/4K3 w - - 0 1", board.export_fen());
     }
 
     #[test]
@@ -884,6 +926,25 @@ mod tests {
     }
 
     #[test]
+    fn test_board_aux() {
+        let ar_true  = [[0, 7], [7, 0], [63, 7], [7, 63], [56, 63], [63, 56], [56, 0], [0, 56], [27, 51], [33, 38]];
+        let board = Board::import("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        for case in ar_true.into_iter() {
+            assert_ne!(board.get_sliding_straight_path_unsafe(case[0], case[1]), 0);
+        }
+
+        let ar_true  = [[7, 56], [63, 0], [0, 63], [56, 7], [26, 53], [39, 53], [39, 60], [25, 4], [44, 8]];
+        for case in ar_true.into_iter() {
+            assert_ne!(board.get_sliding_diagonal_path_unsafe(case[0], case[1]), 0);
+        }
+
+        let board = Board::default();
+        assert_eq!(board.is_in_check(), false);
+        let board = Board::import("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+        assert_eq!(board.is_in_check(), true);
+    }
+
+    #[test]
     #[ignore]
     fn test_board_legal_moves_heavy_1() {
         let mut board = Board::default();
@@ -903,13 +964,5 @@ mod tests {
     fn test_board_legal_moves_heavy_3() {
         let mut board = Board::default();
         assert_eq!(board.perft(6), 119060324);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_board_legal_moves_heavy_4() {
-        // Kiwipete again
-        let mut board = Board::import("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
-        assert_eq!(board.perft(6), 8031647685);
     }
 }

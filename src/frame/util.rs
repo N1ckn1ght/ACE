@@ -3,54 +3,30 @@
 
 #![allow(dead_code)]
 
-use std::{cmp::min, fs, io::Cursor, path::Path};
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use std::cmp::min;
 use phf::phf_map;
 
-pub const MYNAME: &str = "Akira CE v1.2.1";
+
+pub const MYNAME: &str = "Akira CE v1.3.0";
+pub const AUTHOR: &str = "N1ckn1ght";
+
+/* CONTROL */
+
+const DEBUG_MODE: bool = false;
+
+pub fn log(line: &str) {
+    if DEBUG_MODE {
+        println!("#DEBUG\t{}", line);
+    }
+}
+
 
 /* LIMITATIONS */
 
-pub const CACHE_SIZE: usize = 25;  // entries, in power of 2;
-                                   // keep in mind, programm will eat additional 1.4 MB bc of lookup tables.
-                                   // 25 is recommended (it's 512 MB)
-pub const TEMP_PRE_CALC_CACHE_BITMASK: u64 = (1 << CACHE_SIZE) - 1; // sorry for that
-
-pub const HALF_DEPTH_LIMIT: usize = 64;
-pub const HALF_DEPTH_LIMIT_SAFE: i16 = 50;                                      // for chara.think()
-pub const NODES_BETWEEN_UPDATES: u64       = 0b00000000111111111111; 
-pub const NODES_BETWEEN_COMMS_PASSIVE: u64 = 0b00000111111111111111;
-pub const NODES_BETWEEN_COMMS_ACTIVE: u64  = 0b00000000111111111111;
-pub const NODES_BETWEEN_POSTS: u64         = 0b00011111111111111111;
-pub const PONDER_TIME: u128 = 1 << 63;                                          // no limit
-
-/* SPECIFIED PATHES */
-
-// dir
-pub const PATH_RES:  &str = "./res";
-
-// magic (sliding pieces attack) maps
-pub const PATH_MR:   &str = "./res/magics_rook";
-pub const PATH_BBR:  &str = "./res/blocker_boards_rook";
-pub const PATH_AMR:  &str = "./res/attack_maps_rook";
-pub const PATH_MB:   &str = "./res/magics_bishop";
-pub const PATH_BBB:  &str = "./res/blocker_boards_bishop";
-pub const PATH_AMB:  &str = "./res/attack_maps_bishop";
-// no attack maps for queen specifically, refer to AMB | AMR after magic operations
-// leaping pieces attack maps
-pub const PATH_AMK:  &str = "./res/attack_maps_king";
-pub const PATH_AMN:  &str = "./res/attack_maps_knight";
-pub const PATH_AMP:  &str = "./res/attack_maps_pawn_white";
-pub const PATH_AMP2: &str = "./res/attack_maps_pawn_black";
-pub const PATH_SMP:  &str = "./res/step_maps_pawn_white";   // double pawn move (e.g. e2e4) NOT included
-pub const PATH_SMP2: &str = "./res/step_maps_pawn_black";
-// secondary maps
-pub const PATH_RNK:  &str = "./res/ranks";                  // disincluding current square
-pub const PATH_FLS:  &str = "./res/files";
-pub const PATH_FKS:  &str = "./res/flanks";                 // left and right files (edge has one)
-pub const PATH_FWD:  &str = "./res/forward_field_white";          // all ranks starting from Rank + 1 (colour-dependent)
-pub const PATH_FWD2: &str = "./res/forward_field_black";
-pub const PATH_RAD2: &str = "./res/attack_maps_radius_2";   // like king map, but radius 2
+pub const HARD_DEPTH_LIMIT: usize = 128;  // if changed, go through search.rs "sus" commented lines
+pub const NODES_BETWEEN_UPDATES: u64 = (1 << 12) - 1;
+pub const INFINITE_TIME: u64 = 1 << 48;
+pub const POST_INTERVAL: u64 = (1 << 20) - 1;
 
 /* GLOBAL CONSTANTS (changing them will break everything, starting from STATIC MAPS several blocks below) */
 
@@ -114,16 +90,6 @@ pub const CSW: u8 = 0b0001; // castle short white
 pub const CSB: u8 = 0b0010; // castle short black
 pub const CLW: u8 = 0b0100; // castle long white
 pub const CLB: u8 = 0b1000; // castle long black
-
-pub const LARGE: i32 = 0x00100000;
-pub const INF:   i32 = 0x01000000;
-pub const LARGM: i32 = LARGE - (HALF_DEPTH_LIMIT << 1) as i32;
-
-/* Branch cache search flags */
-
-pub const HF_PRECISE: i16 = 1;
-pub const HF_LOW: i16 = 2;
-pub const HF_HIGH: i16 = 4;
 
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
 
@@ -234,55 +200,6 @@ pub fn move_get_capture(mov: u32) -> usize {
     (mov >> 27 & 0b1111) as usize
 }
 
-/* ADDITIONAL DATA STRUCTURES */
-
-#[derive(Copy, Clone)]
-pub struct EvalMove {
-    pub mov: u32,
-    pub score: i32
-}
-
-impl EvalMove {
-    #[inline]
-    pub fn new(mov: u32, score: i32) -> Self {
-        EvalMove {
-            mov,
-            score
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct EvalHash {
-    pub hash: u64,
-    pub score: i32, 
-    pub depth: i16,
-    pub flag: i16
-}
-
-impl EvalHash {    
-    #[inline]
-    pub fn new(hash: u64, score: i32, depth: i16, flag: i16) -> Self {
-        EvalHash {
-            hash,
-            score,
-            depth,
-            flag
-        }
-    }
-}
-
-impl Default for EvalHash {
-    fn default() -> Self {
-        Self {
-            hash: 0,
-            score: 0,
-            depth: 0,
-            flag: 0
-        }
-    }
-}
-
 /* GENERAL FUNCTIONS */
 
 pub fn xor64(mut num: u64) -> u64 {
@@ -290,96 +207,6 @@ pub fn xor64(mut num: u64) -> u64 {
     num ^= num >> 7;
     num ^= num << 17;
     num
-}
-
-pub fn init64(f: fn(&mut[u64]), path: &str) {
-    if Path::new(path).exists() {
-        //println!("#DEBUG\tFound file: {}", path);
-    } else {
-        //println!("#DEBUG\tCreating file: {}", path);
-        let mut vec = vec![0; 64];
-        f(&mut vec);
-        vector_to_file(&vec, path);
-    }
-}
-
-/* FILE IO */
-
-// save 1d slice of u64 values to file
-pub fn vector_to_file(arr: &[u64], path: &str) {
-    let mut buf: Vec<u8> = Vec::with_capacity(arr.len() * 8);
-    for elem in arr {
-        buf.write_u64::<LittleEndian>(*elem).unwrap();
-    }
-    match fs::metadata(path) {
-        Ok(_) => {
-            let path_backup: &str = &(path.to_owned() + ".bkp");
-            fs::rename(path, path_backup).expect("Failed to rename an existing file");
-            fs::write(path, buf).expect("Failed to write a file");
-            fs::remove_file(path_backup).expect("Failed to remove a backup file");
-        },
-        Err(_) => {
-            fs::write(path, buf).expect("Failed to write a file");
-        }
-    }
-}
-
-// load list of u64 values from file as 1d vector
-pub fn file_to_vector(path: &str) -> Vec<u64> {
-    let buf: Vec<u8> = fs::read(path).expect("Failed to read a file");
-    let len = buf.len() / 8;
-    let mut cur = Cursor::new(buf);
-    let mut vec: Vec<u64> = Vec::with_capacity(len);
-    for _ in 0..len {
-        vec.push(cur.read_u64::<LittleEndian>().unwrap());
-    }
-    vec
-}
-
-// doesn't require attack index shifts as it's possible to get them on the fly
-pub fn magics_to_file(path: &str, magics: &[u64], bits: &[usize], attacks: &[u64]) {
-    let mut buf: Vec<u8> = Vec::new();
-    let mut shift = 0;
-    for i in 0..64 {
-        buf.write_u64::<LittleEndian>(magics[i]).unwrap();
-        buf.write_u32::<LittleEndian>(bits[i] as u32).unwrap();
-        let count = 1 << bits[i];
-        for attack in attacks.iter().skip(shift).take(count) {
-            buf.write_u64::<LittleEndian>(*attack).unwrap();
-        }
-        shift += count;
-    }   
-    match fs::metadata(path) {
-        Ok(_) => {
-            let path_backup: &str = &(path.to_owned() + ".bkp");
-            fs::rename(path, path_backup).expect("Failed to rename an existing file");
-            fs::write(path, buf).expect("Failed to write magics to file");
-            fs::remove_file(path_backup).expect("Failed to remove a backup file");
-        },
-        Err(_) => {
-            fs::write(path, buf).expect("Failed to write magics to file");
-        }
-    }
-}
-
-// load magics from file, returns 1d attack maps vector AND fills magics, bits, ais arrays
-pub fn file_to_magics(path: &str, magics: &mut [u64], bits: &mut [usize], attacks_index_shifts: &mut [usize]) -> Vec<u64> {
-    let buf: Vec<u8> = fs::read(path).expect("Failed to read magics from file");
-    let mut cur = Cursor::new(buf);
-    let mut shift = 0;
-    let mut vec: Vec<u64> = Vec::new();
-    for i in 0..64 {
-        attacks_index_shifts[i] = shift;
-        magics[i] = cur.read_u64::<LittleEndian>().unwrap();
-        bits[i] = cur.read_u32::<LittleEndian>().unwrap() as usize;
-        let count = 1 << bits[i];
-        for _ in shift..(shift + count) {
-            vec.push(cur.read_u64::<LittleEndian>().unwrap());
-        }
-        shift += count;
-    }
-    vec.shrink_to_fit();
-    vec
 }
 
 /* TESTING PURPOSES */
@@ -433,25 +260,13 @@ pub static PIECES: phf::Map<char, usize> = phf_map! {
     'K' => K
 };
 
-// TODO (optional): find a way to use usize key, if there is one, same with changing keys to constants from above
-pub static PIECES_REV: phf::Map<u32, char> = phf_map! {
-    2u32  => 'P',
-    3u32  => 'p',
-    4u32  => 'N',
-    5u32  => 'n',
-    6u32  => 'B',
-    7u32  => 'b',
-    8u32  => 'R',
-    9u32  => 'r',
-    10u32 => 'Q',
-    11u32 => 'q',
-    12u32 => 'K',
-    13u32 => 'k'
-};
+pub const PIECES_REV: [char; 14] = ['E', 'e', 'P', 'p', 'N', 'n', 'B', 'b', 'R', 'r', 'Q', 'q', 'K', 'k'];
 
 /* INTERFACE */
 
-// engine -> gui
+/// engine -> gui
+/// 
+/// turn as the current board.turn on which this move is legal
 pub fn move_transform(mov: u32, turn: bool) -> String {
     let from = move_get_from(mov, turn);
     let to = move_get_to(mov, turn);
@@ -462,12 +277,12 @@ pub fn move_transform(mov: u32, turn: bool) -> String {
     str.push(char::from_u32((to   & 7) as u32 + 'a' as u32).unwrap());
     str.push(char::from_u32((to   / 8) as u32 + '1' as u32).unwrap());
     if promotion != E {
-        str.push(PIECES_REV[&((promotion | 1) as u32)]);
+        str.push(PIECES_REV[promotion | 1]);
     }
     str
 }
 
-// gui -> Option<engine>, if null - it's illegal
+/// gui -> Option<engine>, if null - it's illegal
 pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Option<u32> {
     let command     = input.as_bytes();
     if command.len() < 4 {
@@ -506,66 +321,11 @@ pub fn move_transform_back(input: &str, legal_moves: &[u32], turn: bool) -> Opti
     None
 }
 
-pub fn score_to_gui(mut score: i32, playother: bool) -> i32 {
-    if playother { 
-        score = -score;
-    }
-    if score < 0 {
-        if score < -LARGM {
-            return -(100001 + (LARGE + score) / 2);
-        }
-        return score / 4;
-    }
-    // else if score >= 0
-    if score > LARGM {
-        return 100001 + (LARGE - score) / 2;
-    }
-    score / 4
-}
-
-pub fn score_to_string(mut score: i32, turn: bool) -> String {
-    if turn {
-        score = -score;
-    }
-    if score >= 0 {
-        if score > LARGM {
-            let ts = 1 + (LARGE - score) / 2;
-            return "M+".to_string() + &ts.to_string();
-        }
-        return "+".to_string() + &(score / 4).to_string();
-    }
-    // else if score < 0
-    if score < -LARGM {
-        let ts = 1 + (LARGE + score) / 2;
-        return "M-".to_string() + &ts.to_string();
-    }
-    (score / 4).to_string()
-}
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::frame::board::Board;
-
-    #[test]
-    fn test_utility_file_io() {
-        const PATH: &str = "./TEST_FILE_1";
-        let mut arr = [1, 2, 3, 4];
-        for _ in 0..20 {
-            for j in 0..4 {
-                arr[j] = xor64(arr[j]);
-            }
-        }
-        arr[2] = 1;
-        vector_to_file(&arr, PATH);
-        let arr2 = file_to_vector(PATH);
-        fs::remove_file(PATH).expect("Failed to delete a file");
-        assert_eq!(arr.len(), arr2.len());
-        for i in 0..4 {
-            assert_eq!(arr[i], arr2[i]);
-        }
-    }
 
     #[test]
     fn test_utility_bb_from_to_str() {

@@ -1,17 +1,8 @@
-// A module to generate additional bit masks that are useful to eval()
+use crate::{frame::util::{del_bit, pop_bit, set_bit}, gen::leaping::get_attacks_king};
 
-use crate::frame::util::*;
 
-pub fn init_secondary_maps() {
-    init64(init_ranks, PATH_RNK);
-    init64(init_files, PATH_FLS);
-    init64(init_flanks, PATH_FKS);
-    init64(init_forward_field_white, PATH_FWD);
-    init64(init_forward_field_black, PATH_FWD2);
-    init64(init_radius_2, PATH_RAD2);
-}
-
-fn init_ranks(ranks: &mut[u64]) {
+pub fn get_ranks() -> Vec<u64> {
+    let mut ranks = vec![0; 64];
     for i in 0..64 {
         let offset = i & 56;
         for j in 0..8 {
@@ -19,9 +10,11 @@ fn init_ranks(ranks: &mut[u64]) {
         }
         del_bit(&mut ranks[i], i);
     }
+    ranks
 }
 
-fn init_files(files: &mut[u64]) {
+pub fn get_files() -> Vec<u64> {
+    let mut files = vec![0; 64];
     for i in 0..64 {
         let mut j = i & 7;
         while j < 64 {
@@ -30,55 +23,49 @@ fn init_files(files: &mut[u64]) {
         }
         del_bit(&mut files[i], i);
     }
+    files
 }
 
-fn init_flanks(map: &mut[u64]) {
+pub fn get_flanks() -> Vec<u64> {
+    let mut flanks = vec![0; 64];
     for i in 0..64 {
         let file = i & 7;
         for j in (file..64).step_by(8) {
             if file != 0 {
-                set_bit(&mut map[i], j - 1);
+                set_bit(&mut flanks[i], j - 1);
             }
             if file != 7 {
-                set_bit(&mut map[i], j + 1);
+                set_bit(&mut flanks[i], j + 1);
             }
         }
     }
+    flanks
 }
 
-fn init_forward_field_white(map: &mut[u64]) {
+pub fn get_forward_field_white() -> Vec<u64> {
+    let mut map = vec![0; 64];
     for i in 0..56 {
         for j in ((i & 56) + 8)..64 {
             set_bit(&mut map[i], j);
         }
     }
+    map
 }
 
-fn init_forward_field_black(map: &mut[u64]) {
+pub fn get_forward_field_black() -> Vec<u64> {
+    let mut map = vec![0; 64];
     for i in 8..64 {
         for j in 0..(i & 56) {
             set_bit(&mut map[i], j);
         }
     }
+    map
 }
 
-fn init_radius_2(map: &mut[u64]) {
-    let mut rad1 = [0; 64];
-    for (i, attack) in rad1.iter_mut().enumerate() {
-        let down  = i > 7;
-        let up    = i < 56;
-        let left  = i & 7 < 7;
-        let right = i & 7 != 0;
+pub fn get_radius_2() -> Vec<u64> {
+    let mut map = vec![0; 64];
 
-        if right         { set_bit(attack, i - 1 )};
-        if right && down { set_bit(attack, i - 9 )};
-        if down          { set_bit(attack, i - 8 )};
-        if down && left  { set_bit(attack, i - 7 )};
-        if left          { set_bit(attack, i + 1 )};
-        if left && up    { set_bit(attack, i + 9 )};
-        if up            { set_bit(attack, i + 8 )};
-        if up && right   { set_bit(attack, i + 7 )};
-    }
+    let rad1 = get_attacks_king();
 
     for i in 0..64 {
         let mut bits = rad1[i];
@@ -89,28 +76,31 @@ fn init_radius_2(map: &mut[u64]) {
         del_bit(&mut map[i], i);
         // map[i] &= !rad1[i];
     }
+
+    map
 }
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::util::bb_to_str;
-    
+    use crate::frame::util::{bb_to_str, get_bit};
+
+
     #[test]
     fn test_secondary_maps() {
-        let mut ranks = vec![0; 64];
-        init_ranks(&mut ranks);
-        let mut files = vec![0; 64];
-        init_files(&mut files);
+        let ranks = get_ranks();
+        assert_eq!(ranks.len(), 64);
+        let files = get_files();
+        assert_eq!(files.len(), 64);
         
         assert_eq!("0000000100000001000000010000000100000001000000010000000100000000", bb_to_str(files[ 0]));
         assert_eq!("0000000000000000000000000000000000000000000000000000000011111110", bb_to_str(ranks[ 0]));
         assert_eq!("0000100000001000000010000000000000001000000010000000100000001000", bb_to_str(files[35]));
         assert_eq!("0000000000000000000000001111011100000000000000000000000000000000", bb_to_str(ranks[35]));
 
-        let mut flanks = vec![0; 64];
-        init_flanks(&mut flanks);
+        let flanks = get_flanks();
+        assert_eq!(flanks.len(), 64);
 
         assert_eq!("1010000010100000101000001010000010100000101000001010000010100000", bb_to_str(flanks[ 6]));
         assert_eq!("1010000010100000101000001010000010100000101000001010000010100000", bb_to_str(flanks[30]));
@@ -124,10 +114,10 @@ mod tests {
         assert_eq!("0000010100000101000001010000010100000101000001010000010100000101", bb_to_str(flanks[ 1]));
         assert_eq!("0010100000101000001010000010100000101000001010000010100000101000", bb_to_str(flanks[36]));
 
-        let mut ffdw = vec![0; 64];
-        init_forward_field_white(&mut ffdw);
-        let mut ffdb = vec![0; 64];
-        init_forward_field_black(&mut ffdb);
+        let ffdw = get_forward_field_white();
+        assert_eq!(ffdw.len(), 64);
+        let ffdb = get_forward_field_black();
+        assert_eq!(ffdb.len(), 64);
 
         assert_eq!("0000000000000000000000000000000000000000000000000000000000000000", bb_to_str(ffdw[56]));
         assert_eq!("0000000000000000000000000000000000000000000000000000000000000000", bb_to_str(ffdw[63]));
@@ -142,8 +132,8 @@ mod tests {
         assert_eq!("0000000000000000000000000000000000000000111111111111111111111111", bb_to_str(ffdb[28]));
         assert_eq!("0000000000000000000000000000000000000000111111111111111111111111", bb_to_str(ffdb[25]));
     
-        let mut rad2 = vec![0; 64];
-        init_radius_2(&mut rad2);
+        let rad2 = get_radius_2();
+        assert_eq!(rad2.len(), 64);
 
         assert_eq!("0000000000000000000000001111100011111000110110001111100011111000", bb_to_str(rad2[21]));
         assert_eq!("0000000000000000000001110000011100000110000001110000011100000000", bb_to_str(rad2[24]));

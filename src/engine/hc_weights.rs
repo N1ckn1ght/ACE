@@ -1,6 +1,7 @@
 use crate::frame::util::*;
 
-pub struct Weights {
+#[derive(Clone, Copy)]
+pub struct HCWeights {
     /* These weights are stored with respect to the colour, black pieces will provide negative values
         - Usual order is:
         - [ Phase (0-1) ][ Piece (0-11) ][ Square (0-63) ]
@@ -41,15 +42,12 @@ pub struct Weights {
     pub s_mobility:		   i32,					// per every square (for N, B, R, Q)
     pub s_bishop_pair:	  [i32;  2],			// bishop pair smol bonus
     pub s_qnight:		  [i32;  2],			// queen & knight smol bonus
-    pub s_turn:			  [i32;  2],
-    pub s_turn_div:	       i32,					// score +/-= score / div
-    pub rand:			   i32					// random weight of [-rand, +rand] will be added to an evaluated leaf
+    pub s_turn:			  [i32;  2]
 }
 
-impl Weights {
+impl HCWeights {
     // possible modify by some multipliers
     pub fn init() -> Self {
-
         let pieces_weights_const = [
             [ 328, 1348, 1460, 1908, 4100, 0 ],
             [ 396, 1124, 1188, 2048, 3744, 0 ]
@@ -63,7 +61,7 @@ impl Weights {
         let p_outpost_block_pre = 40;
         let p_semiblocked_pre = -200;
         let p_blocked_pre = -200;
-        let p_passing_pre = [0, 120, 140, 160, 190, 240, 300, 0];
+        let p_passing_pre = [0, 60, 120, 160, 190, 240, 300, 0];
         let nb_outpost_pre = 80;
         let nb_outpost_reach_pre = 80;
         let rq_atk_open_pre = 40;
@@ -86,7 +84,6 @@ impl Weights {
         let s_bishop_pair_pre = 80;
         let s_qnight_pre = 40;
         let s_turn_pre = 35;
-        let s_turn_div = 12;
 
         /* These are PeSTO values (used as 3/8 score tiebreakers) + Kaissa weights (x4 of course) + my improvisation:
             +54/0 per pawn in center (d4-e6) in mittelspiel
@@ -320,9 +317,7 @@ impl Weights {
             s_mobility,
             s_bishop_pair: colour_transform(s_bishop_pair_pre),
             s_qnight: colour_transform(s_qnight_pre),
-            s_turn: colour_transform(s_turn_pre),
-            s_turn_div,
-            rand: 0
+            s_turn: colour_transform(s_turn_pre)
         }
     }
 }
