@@ -1,4 +1,4 @@
-use std::{cmp::{max, min}, collections::HashSet, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Instant};
+use std::{cmp::{max, min}, collections::HashSet, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread, time::{Duration, Instant}};
 use crate::{engine::hc_eval::{EVAL_MATE, EVAL_PRE_MATE}, frame::{board::Board, util::*}};
 use super::{hc_eval::EVAL_INF, zobrist::Zobrist};
 
@@ -107,12 +107,7 @@ impl Search {
         node_limit: u64,  // pass 0 if None
         strict_search: bool,  // search for mate on given depth_target
         searchmoves: Option<&[&str]>
-    ) -> (
-        String,         // bestmove
-        Option<String>, // ponder (if depth > 1)
-        String,         // cp/mate (score_to_uci) 
-        i16             // score (score_to_uci)
-    ) {
+    ) -> EngineOutput {
         self.ts = Instant::now();
         self.tl = time_limit_ms;
         self.nl = node_limit;
@@ -139,9 +134,10 @@ impl Search {
                 self.searchmoves.push(move_transform_back(move_str, &plm, self.board.turn).unwrap());
             }
         }
-        let mut k = 1;
+        let mut k = 2;
         let mut score = 0;
         let baw = 75;  // in centipawns
+
         loop {
             self.tpv_flag = true;
             let temp = self.search(eval, alpha, beta, self.cur_depth);
@@ -151,37 +147,36 @@ impl Search {
             } else {
                 score = temp;
             }
-            if self.tpv_len[0] != 0 {
-                self.post(score);
-            }
+            self.post(score);
             if !(-EVAL_PRE_MATE..=EVAL_PRE_MATE).contains(&score) {
                 if self.mate_flag {
                     break;
                 }
                 log("Mate detected.");
-                alpha = -EVAL_INF;
-                beta = EVAL_INF;
                 self.mate_flag = true;
+                if self.cur_depth == 1 {
+                    break;
+                }
                 continue;
             }
             if score <= alpha || score >= beta {
-                if k > 15 {
+                if k > 16 {
                     alpha = -EVAL_INF;
                     beta = EVAL_INF;
                     log("Alpha/beta fail! Using INFINITE values now.");
                     continue;
                 }
-                k *= 2;
                 alpha = alpha + baw * k - baw * (k * 2);
                 beta = beta - baw * k + baw * (k * 2);
                 log(&format!("Alpha/beta fail! Using x{} from base aspiration now.", k));
+                k *= k;
                 continue;
             }
 
             // self.last_score = score_to_gui(score, false);
             alpha = score - baw;
             beta = score + baw;
-            k = 1;
+            k = 2;
             self.cur_depth += 1;
             if self.cur_depth > depth_target || (self.ts.elapsed().as_millis() as u64 > self.tl && !self.ponder.load(Ordering::Relaxed)) {
                 break;
@@ -189,17 +184,17 @@ impl Search {
         }
 
         // do not exit search while ponder even if it is mate
-        while self.ponder.load(Ordering::Relaxed) {}
+        while self.ponder.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(1));
+        }
 
-        let bestmove = move_transform(self.tpv[0][0], self.board.turn);
-        let ponder = if self.cur_depth > 2 {
-            Some(move_transform(self.tpv[0][1], !self.board.turn))
-        } else {
-            None
-        };
-        let score = Self::score_to_uci(score);
-        log(&format!("Approximate time spent: {} ms", self.ts.elapsed().as_millis() + 1));
-        (bestmove, ponder, score.0, score.1)
+        let ui_score = Self::score_to_uci(score);
+        EngineOutput { 
+            bestmove: move_transform(self.tpv[0][0], self.board.turn),
+            ponder: if self.cur_depth > 2 {Some(move_transform(self.tpv[0][1], !self.board.turn))} else {None},
+            score_type: ui_score.0,
+            score_value: ui_score.1
+        }
     }
 
     pub fn set_pos(&mut self, fen: Option<&str>) {
@@ -317,7 +312,7 @@ impl Search {
 
         let in_check = self.board.is_in_check();
         // Null move prune
-        if !in_check && !root_node && depth > 2 {
+        if !in_check && !root_node && !self.mate_flag && depth > 2 {
             self.ply += 1;
             self.board.turn = !self.board.turn;
             self.history_set.insert(*self.history_vec.last().unwrap());
@@ -402,7 +397,8 @@ impl Search {
         for (i, mov) in moves.iter().enumerate() {
             self.make_move(*mov);
             self.ply += 1;
-            let mut score = if i != 0 && depth > 2 && !(*mov > ME_PROMISING_MIN || in_check) {
+
+            let mut score = if !self.mate_flag && i != 0 && depth > 2 && !(*mov > ME_PROMISING_MIN || in_check) {
                 -self.search(
                     eval,
                     -beta,
@@ -418,6 +414,7 @@ impl Search {
                     score = -self.search(eval, -beta, -alpha, depth - 1)
                 }
             }
+
             self.ply -= 1;
             self.undo_move();
             if self.abort.load(Ordering::Relaxed) {
@@ -683,6 +680,15 @@ impl Default for EvalHash {
     }
 }
 
+/* I/O */
+
+pub struct EngineOutput {
+    pub bestmove: String,
+    pub ponder: Option<String>,  // if depth > 1
+    pub score_type: String,      // cp/mate (score_to_uci)
+    pub score_value: i16         // score (score_to_uci)
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -696,10 +702,10 @@ mod tests {
         let mut engine = Search::init();
         let eval = HCEval::init(None);
         engine.set_pos(Some("4qrk1/p1r1Bppp/4b3/2p3Q1/8/3P4/PPP2PPP/R3R1K1 w - - 3 19"));
-        let (b, _, s, v) = engine.go(&eval, 65536, 6, 0, true, None);
-        assert_eq!(s, "mate");
-        assert_eq!(v, 3);
-        assert_eq!(b, "e7f6");
+        let res = engine.go(&eval, 65536, 6, 0, true, None);
+        assert_eq!(res.score_type, "mate");
+        assert_eq!(res.score_value, 3);
+        assert_eq!(res.bestmove, "e7f6");
     }
 
     fn util_test_search_fm() {

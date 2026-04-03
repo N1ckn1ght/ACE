@@ -18,7 +18,7 @@ pub struct Board {
     pub castlings:    u8,           // castle rights (util.rs has const indices)
     pub en_passant:   usize,        /* en passant target square
                                         - warning: it will be 0 in case if there's none, even though 0 is a valid square itself */
-    pub hmc:          u16,          // halfmove clock (which drops for every capture or pawn movement)
+    pub hmc:          u16,          // NO PROGRESS half-move clock (it drops to 0 at every capture or pawn movement)
     pub no:           i16,          /* halfmove number
                                         it should act as a fullmove number in import/export (which increases after each black move) */
     /* Accessible constants */

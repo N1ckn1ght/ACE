@@ -167,13 +167,13 @@ pub fn uci_loop() -> bool {
 
                     log(&format!("Launching search w/ options: forcetime {} depth_limit {} node_limit {} mate_flag {} ponder {} do_searchmoves {}", time, depth_limit, node_limit, mate_flag, ponder, searchmoves.is_some()));
 
-                    let (bestmove, ponder, scs, scv) = engine.go(&eval, time, depth_limit, node_limit, mate_flag, searchmoves);
-                    print!("bestmove {}", bestmove);
+                    let res = engine.go(&eval, time, depth_limit, node_limit, mate_flag, searchmoves);
+                    print!("bestmove {}", res.bestmove);
                     if show_eval {
-                        print!(" score {} {}", scs, scv);
+                        print!(" score {} {}", res.score_type, res.score_value);
                     }
-                    if ponder.is_some() {
-                        print!(" ponder {}", ponder.unwrap());
+                    if res.ponder.is_some() {
+                        print!(" ponder {}", res.ponder.unwrap());
                     }
                     println!();
                 },
