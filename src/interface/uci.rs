@@ -5,7 +5,6 @@ use crate::{engine::{clock::calc_time_to_think, hc_eval::HCEval, search::Search}
 
 pub fn uci_loop() -> bool {
     print_greeting();
-
     let (tx, rx) = channel::<String>();  // not sure
     let abort = Arc::new(AtomicBool::new(true));
     let ponder = Arc::new(AtomicBool::new(false));
@@ -172,8 +171,8 @@ pub fn uci_loop() -> bool {
                     if show_eval {
                         print!(" score {} {}", res.score_type, res.score_value);
                     }
-                    if res.ponder.is_some() {
-                        print!(" ponder {}", res.ponder.unwrap());
+                    if let Some(mv) = res.ponder {
+                        print!(" ponder {}", mv);
                     }
                     println!();
                 },
@@ -252,7 +251,7 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>, ponder: Arc<AtomicBool>) 
             "setoption" | "ucinewgame" | "position" | "go" | "eval" | "glm" | "move" | "undo" | "status" | "export" => {
                 abort.store(true, Ordering::Relaxed);
                 ponder.store(false, Ordering::Relaxed);
-                let _ = tx.send(input).unwrap();
+                tx.send(input).unwrap();
             },
             "stop" => {
                 abort.store(true, Ordering::Relaxed);
@@ -261,7 +260,7 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>, ponder: Arc<AtomicBool>) 
             "quit" | "exit" => {
                 abort.store(true, Ordering::Relaxed);
                 ponder.store(false, Ordering::Relaxed);
-                let _ = tx.send(input).unwrap();
+                tx.send(input).unwrap();
                 return;
             },
             "uci" => {
@@ -278,7 +277,7 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>, ponder: Arc<AtomicBool>) 
 fn parse_apply_moves(moves: &[&str], engine: &mut Search) {
     for mov in moves {
         engine.make_move(move_transform_back(
-            *mov,
+            mov,
             &engine.get_pseudo_legal_moves(),
             engine.get_turn()).unwrap()
         );

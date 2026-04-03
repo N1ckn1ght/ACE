@@ -58,7 +58,7 @@ fn test_magic(magic: u64, target: usize, combs: &Vec<u64>, attacks: &Vec<u64>) -
         }
         used[index] = attacks[i];
     }
-    return success
+    success
 }
 
 /// Generate and return attack maps array (1d), magics themself, magic bit counts, and an array of shifts to get an attack for the square from attack map array

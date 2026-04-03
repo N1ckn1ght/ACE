@@ -127,10 +127,10 @@ impl Search {
             self.mate_flag = false;
         }
         self.searchmoves = vec![];
-        if searchmoves.is_some() {
+        if let Some(moves) = searchmoves {
             let plm = self.get_pseudo_legal_moves();  // assuming...
             self.searchmoves = vec![];
-            for move_str in searchmoves.unwrap().iter() {
+            for move_str in moves.iter() {
                 self.searchmoves.push(move_transform_back(move_str, &plm, self.board.turn).unwrap());
             }
         }
@@ -626,8 +626,7 @@ impl Search {
     }
 
     pub fn export_fen(&self) -> String {
-        let fen = self.board.export_fen();
-        fen
+        self.board.export_fen()
     }
 }
 
@@ -637,7 +636,7 @@ const HF_PRECISE: u8 = 1;
 const HF_LOW: u8 = 2;
 const HF_HIGH: u8 = 4;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 struct EvalHash {
     pub hash_upper_part: u32,
     pub hash_lower_part: u32,
@@ -665,18 +664,6 @@ impl EvalHash {
         let eh = 96;
         let rsz = ((megabytes as u64) * 8 * 1024 * 1024).div_ceil(eh);
         (63 - rsz.leading_zeros()) as u8
-    }
-}
-
-impl Default for EvalHash {
-    fn default() -> Self {
-        Self {
-            hash_upper_part: 0,
-            hash_lower_part: 0,
-            score: 0,
-            depth: 0,
-            flag: 0
-        }
     }
 }
 

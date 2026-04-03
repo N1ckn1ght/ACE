@@ -31,6 +31,5 @@ pub fn calc_time_to_think(
     } else {
         movestogo.unwrap_or(50)
     };
-    let time = (rem / horizon + (inc >> 6) * 61).clamp(10, rem.max(20) - 10);
-    time
+    (rem / horizon + (inc >> 6) * 61).clamp(10, rem.max(20) - 10)
 }

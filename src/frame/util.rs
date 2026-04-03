@@ -1,7 +1,7 @@
 // The utility file contains A LOT of constants and inline/qol functions to use.
 // It's designed to have some dead code in case of necessity and/or testing.
 
-// #![allow(dead_code)]
+#![allow(dead_code)]
 
 use std::cmp::min;
 use phf::phf_map;
@@ -10,10 +10,9 @@ use phf::phf_map;
 pub const MYNAME: &str = "Akira CE v1.3.0";
 pub const AUTHOR: &str = "N1ckn1ght";
 
-
 /* CONTROL */
 
-const DEBUG_MODE: bool = true;
+const DEBUG_MODE: bool = false;
 
 pub fn log(line: &str) {
     if DEBUG_MODE {

@@ -480,12 +480,6 @@ impl HCEval {
 
         score += ((score_pd[0] as f32 * phase_diff) + (score_pd[1] as f32 * (1.0 - phase_diff))) as i32;
         score += self.w.s_mobility * (mobility[0].count_ones() as i32 - mobility[1].count_ones() as i32);
-
-        if board.turn ^ (score > 0) {
-            score += score / self.w.s_turn_div;
-        } else {
-            score -= score / self.w.s_turn_div;
-        }
         score += self.w.s_turn[board.turn as usize];
 
         /* SCORE APPLICATION ENDS */

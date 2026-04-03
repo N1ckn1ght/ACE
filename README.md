@@ -1,12 +1,17 @@
-## Akira CE
+## Akira Chess Engine
+
+Approx. level of play: 1800 CCRL elo
+
+![Showcase](https://github.com/N1ckn1ght/my-gif-collection-for-github/blob/master/ace_v1.3.0.gif?raw=true)  
+__*Lucas Chess interface__
 
 ### Progress
 
-Pre-calculations - Complete!  
-Board - In progress...  
-Engine - Complete!  
-Eval - In progress...  
-Comms - In progress...  
+Pre-calculations - Done!  
+Board - Done!  
+Engine - Done!  
+Eval - HCE for now.  
+Comms - Supports UCI now!
 
 ### License
 
