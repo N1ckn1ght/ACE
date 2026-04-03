@@ -139,7 +139,7 @@ pub fn uci_loop() -> bool {
                                     node_limit = cmd[i + 1].parse::<u64>().unwrap().max(1000);
                                 },
                                 "mate" => {
-                                    depth_limit = cmd[i + 1].parse::<i32>().unwrap().clamp(1, 254) as u8;
+                                    depth_limit = (cmd[i + 1].parse::<usize>().unwrap().clamp(1, HARD_DEPTH_LIMIT >> 1) << 1) as u8;
                                     mate_flag = true;
                                     movetime = Some(INFINITE_TIME);
                                 },

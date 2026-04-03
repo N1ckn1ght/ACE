@@ -695,20 +695,51 @@ mod tests {
     use super::*;
     use crate::engine::hc_eval::HCEval;
 
-    // todo: rel performance test
-
     #[test]
-    fn search_mate_3() {
+    fn test_engine_relative_performance() {
+        let mut board = Board::default();
+        let mut avg1 = 0;
+        let mut val = 0;  // force compiler to calc just in case
+        for _ in 0..3 {
+            let ts = Instant::now();
+            let x = board.perft(4);
+            avg1 += ts.elapsed().as_millis();
+            val += x;
+        }
+        assert!(val > 1000);
         let mut engine = Search::init();
         let eval = HCEval::init(None);
-        engine.set_pos(Some("4qrk1/p1r1Bppp/4b3/2p3Q1/8/3P4/PPP2PPP/R3R1K1 w - - 3 19"));
-        let res = engine.go(&eval, 65536, 6, 0, true, None);
-        assert_eq!(res.score_type, "mate");
-        assert_eq!(res.score_value, 3);
-        assert_eq!(res.bestmove, "e7f6");
+        let mut avg2 = 0;
+        let mut val2 = 0;  // force compiler to calc just in case
+        for _ in 0..3 {
+            let ts = Instant::now();
+            let eo = engine.go(&eval, u64::MAX >> 1, 4, 0, false, None);
+            avg2 += ts.elapsed().as_millis();
+            val2 += eo.score_value;
+            assert_ne!(eo.bestmove, "a1a1");
+        }
+        assert!(val2 >= 0);
+        println!("{} {}", avg1, avg2);
+        assert!(avg2 < avg1);
     }
 
-    fn util_test_search_fm() {
-        
+    #[test]
+    fn test_engine_search_mate_2() {
+        util_test_search_fm("8/4p3/B1ppP3/1nPp4/Npk2N2/pR2p3/K3P3/3R4 w - - 0 1", "f4d3", 2, Some(1_000), Some(50_000));
+    }
+
+    #[test]
+    fn test_engine_search_mate_3() {
+        util_test_search_fm("4qrk1/p1r1Bppp/4b3/2p3Q1/8/3P4/PPP2PPP/R3R1K1 w - - 3 19", "e7f6", 3, None, Some(1_000_000));
+    }
+
+    fn util_test_search_fm(fen: &str, bestmove: &str, depth: u8, tl: Option<u64>, nl: Option<u64>) {
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_pos(Some(fen));
+        let res = engine.go(&eval, tl.unwrap_or(10_000), depth << 1, nl.unwrap_or(0), true, None);
+        assert_eq!(res.score_type, "mate");
+        assert_eq!(res.score_value, depth as i16);
+        assert_eq!(res.bestmove, bestmove);
     }
 }
