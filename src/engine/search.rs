@@ -626,22 +626,14 @@ impl Search {
     /// Returns score and is_quiet, so you don't have to prepare position
     pub fn get_static_eval<E: Eval>(&mut self, eval: &E) -> EvalOutput {
         let score = eval.eval(&self.board);
-        let mut is_quiet = true;
-        let mut q_score = None;
-        if self.get_result() != GameResult::InProgress {
-            is_quiet = false;
-        } else if self.board.is_in_check() {
-            is_quiet = false;
-        } else {
-            q_score = Some(self.extension(eval, -EVAL_INF, EVAL_INF, false));
-            if score != q_score.unwrap() {
-                is_quiet = false;
-            }
-        }
+        let q_score = self.extension(eval, -EVAL_INF, EVAL_INF, false);
+        let qr_score = self.extension(eval, -EVAL_INF, EVAL_INF, true);
+
         EvalOutput {
             score,
-            is_quiet,
-            q_score
+            q_score,
+            qr_score,
+            is_quiet: self.get_result() == GameResult::InProgress && score == q_score && !self.board.is_in_check()
         }
     }
 
@@ -734,8 +726,9 @@ pub struct EngineOutput {
 
 pub struct EvalOutput {
     pub score: i16,              // pure static score evaluation value
-    pub is_quiet: bool,          // position considered quiet if: captures make it worse, not under check, game is not ended
-    pub q_score: Option<i16>     // result of search extension
+    pub q_score: i16,            // result of search extension (root_ext = false), use this
+    pub qr_score: i16,           // result of search extension (root_ext = true)
+    pub is_quiet: bool           // position considered quiet if: captures make it worse, not under check, game is not ended
 }
 
 
