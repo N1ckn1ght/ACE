@@ -676,6 +676,28 @@ impl Search {
     pub fn export_fen(&self) -> String {
         self.board.export_fen()
     }
+
+    /// Note! It transforms the current piece encoding
+    /// 
+    /// From -/-/p/P/n/N/b/B/r/R/q/Q/k/K
+    /// 
+    /// Into "universal" P/N/B/R/Q/K/p/n/b/r/q/k
+    pub fn get_bitboards(&self) -> Vec<u64> {
+        vec![
+            self.board.bbs[P],
+            self.board.bbs[N],
+            self.board.bbs[B],
+            self.board.bbs[R],
+            self.board.bbs[Q],
+            self.board.bbs[K],
+            self.board.bbs[P2],
+            self.board.bbs[N2],
+            self.board.bbs[B2],
+            self.board.bbs[R2],
+            self.board.bbs[Q2],
+            self.board.bbs[K2]
+        ]
+    }
 }
 
 /* CACHE related section */
