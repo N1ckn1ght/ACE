@@ -7,9 +7,6 @@ use std::cmp::min;
 use phf::phf_map;
 
 
-pub const MYNAME: &str = "Akira CE v1.3.0";
-pub const AUTHOR: &str = "N1ckn1ght";
-
 /* CONTROL */
 
 const DEBUG_MODE: bool = false;
@@ -90,6 +87,7 @@ pub const CSW: u8 = 0b0001; // castle short white
 pub const CSB: u8 = 0b0010; // castle short black
 pub const CLW: u8 = 0b0100; // castle long white
 pub const CLB: u8 = 0b1000; // castle long black
+
 
 /* INLINE FUNCTIONS (...should they've been implemented using trait/impl?) */
 
@@ -200,6 +198,7 @@ pub fn move_get_capture(mov: u32) -> usize {
     (mov >> 27 & 0b1111) as usize
 }
 
+
 /* GENERAL FUNCTIONS */
 
 pub fn xor64(mut num: u64) -> u64 {
@@ -208,6 +207,7 @@ pub fn xor64(mut num: u64) -> u64 {
     num ^= num << 17;
     num
 }
+
 
 /* TESTING PURPOSES */
 
@@ -243,6 +243,7 @@ pub fn usize_to_str(value: usize) -> String {
     format!("{value:064b}")
 }
 
+
 /* STATIC MAPS (testing/print/converting purposes) */
 
 pub static PIECES: phf::Map<char, usize> = phf_map! {
@@ -261,6 +262,7 @@ pub static PIECES: phf::Map<char, usize> = phf_map! {
 };
 
 pub const PIECES_REV: [char; 14] = ['E', 'e', 'P', 'p', 'N', 'n', 'B', 'b', 'R', 'r', 'Q', 'q', 'K', 'k'];
+
 
 /* INTERFACE */
 

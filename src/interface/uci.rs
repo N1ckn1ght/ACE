@@ -1,5 +1,6 @@
 use std::{collections::HashSet, io::stdin, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::{Sender, channel}}, thread};
 use once_cell::sync::Lazy;
+use super::*;
 use crate::{engine::{clock::calc_time_to_think, hc_eval::HCEval, search::Search}, frame::util::*};
 
 
@@ -101,7 +102,6 @@ pub fn uci_loop() -> bool {
                     let mut movestogo: Option<u64> = None;
                     let mut node_limit: u64 = 0;
                     let mut depth_limit: u8 = HARD_DEPTH_LIMIT as u8;
-                    let mut mate_flag = false;
                     let mut searchmoves: Option<&[&str]> = None;
                     let mut ponder = false;
                     let mut show_eval = false;
@@ -137,11 +137,6 @@ pub fn uci_loop() -> bool {
                                 "nodes" => {
                                     node_limit = cmd[i + 1].parse::<u64>().unwrap().max(1000);
                                 },
-                                "mate" => {
-                                    depth_limit = (cmd[i + 1].parse::<usize>().unwrap().clamp(1, HARD_DEPTH_LIMIT >> 1) << 1) as u8;
-                                    mate_flag = true;
-                                    movetime = Some(INFINITE_TIME);
-                                },
                                 "movetime" => {
                                     movetime = Some(cmd[i + 1].parse::<u64>().unwrap());
                                 },
@@ -164,9 +159,9 @@ pub fn uci_loop() -> bool {
                     engine.ponder.store(ponder, Ordering::Relaxed);
                     let time = calc_time_to_think(engine.get_turn(), movetime, wtime, btime, winc, binc, movestogo);
 
-                    log(&format!("Launching search w/ options: forcetime {} depth_limit {} node_limit {} mate_flag {} ponder {} do_searchmoves {}", time, depth_limit, node_limit, mate_flag, ponder, searchmoves.is_some()));
+                    log(&format!("Launching search w/ options: forcetime {} depth_limit {} node_limit {} ponder {} do_searchmoves {}", time, depth_limit, node_limit, ponder, searchmoves.is_some()));
 
-                    let res = engine.go(&eval, time, depth_limit, node_limit, mate_flag, searchmoves);
+                    let res = engine.go(&eval, time, depth_limit, node_limit, searchmoves);
                     print!("bestmove {}", res.bestmove);
                     if show_eval {
                         print!(" score {} {}", res.score_type, res.score_value);
@@ -186,7 +181,14 @@ pub fn uci_loop() -> bool {
                 },
                 "eval" => {
                     // custom non-uci command
-                    println!("{}", engine.get_static_eval(&eval));
+                    engine.abort.store(false, Ordering::Relaxed);
+                    let res =  engine.get_static_eval(&eval);
+                    engine.abort.store(true, Ordering::Relaxed);
+                    print!("static_score {} is_quiet {}", res.score, res.is_quiet);
+                    if let Some(q) = res.q_score {
+                        print!(" q_score {}", q);
+                    }
+                    println!();
                 },
                 "move" => {
                     // custom non-uci command
@@ -287,7 +289,7 @@ fn parse_apply_moves(moves: &[&str], engine: &mut Search) {
 fn print_greeting() {
     println!("id name {}", MYNAME);
     println!("id author {}", AUTHOR);
-    println!("option name Hash type spin default 384 min 1 max 24576");
+    println!("option name Hash type spin default 24 min 1 max 24576");
     println!("uciok");
 }
 

@@ -1,4 +1,4 @@
-use std::{cmp::{max, min}, collections::HashSet, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread, time::{Duration, Instant}};
+use std::{cmp::{max, min}, collections::HashMap, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread, time::{Duration, Instant}};
 use crate::{engine::hc_eval::{EVAL_MATE, EVAL_PRE_MATE}, frame::{board::Board, util::*}};
 use super::{hc_eval::EVAL_INF, zobrist::Zobrist};
 
@@ -35,7 +35,7 @@ pub struct Search {
     
     /* Cache for already made in board moves to track drawish positions */
     history_vec:		Vec<u64>,				// previous board hashes stored here to call more quick hash_iter() function
-    history_set:		HashSet<u64>,			// for fast checking if this position had occured before in this line
+    history_set:		HashMap<u64, u8>,   	// for fast checking if this position had occured before in this line
                                                 // note: it's always 1 hash behind
 
     /* Accessible constants */
@@ -65,14 +65,14 @@ impl Search {
         let zobrist = Zobrist::default();
         let mut cache_perm_vec = Vec::with_capacity(DEFAULT_VEC_CAPACITY);
         cache_perm_vec.push(zobrist.cache_new(&board));
-        let cache_size_bits = EvalHash::calc_cache_size_bits_from_mb(384);
+        let cache_size_bits = EvalHash::calc_cache_size_bits_from_mb(24);
 
         Self {
             board,
             cache:              vec![EvalHash::default(); 1 << cache_size_bits],
             cached_cnt:         0,
             history_vec:	    cache_perm_vec,
-            history_set:	    HashSet::default(),
+            history_set:	    HashMap::default(),
             zobrist,
             ts:				    Instant::now(),
             tl:				    0,
@@ -105,7 +105,6 @@ impl Search {
         time_limit_ms: u64,
         depth_target: u8,
         node_limit: u64,  // pass 0 if None
-        strict_search: bool,  // search for mate on given depth_target
         searchmoves: Option<&[&str]>
     ) -> EngineOutput {
         self.ts = Instant::now();
@@ -119,13 +118,7 @@ impl Search {
 
         let mut alpha = -EVAL_INF;
         let mut beta  =  EVAL_INF;
-        if strict_search {
-            self.cur_depth = depth_target;
-            self.mate_flag = true;
-        } else {
-            self.cur_depth = 1;
-            self.mate_flag = false;
-        }
+        self.cur_depth = 1;
         self.searchmoves = vec![];
         if let Some(moves) = searchmoves {
             let plm = self.get_pseudo_legal_moves();  // assuming...
@@ -189,6 +182,7 @@ impl Search {
         }
 
         let ui_score = Self::score_to_uci(score);
+        log(&format!("Approximate time spent: {} ms", self.ts.elapsed().as_millis() as u64));
         EngineOutput { 
             bestmove: move_transform(self.tpv[0][0], self.board.turn),
             ponder: if self.cur_depth > 2 {Some(move_transform(self.tpv[0][1], !self.board.turn))} else {None},
@@ -223,7 +217,7 @@ impl Search {
 
     pub fn make_move(&mut self, mov: u32) {
         let prev_hash = *self.history_vec.last().unwrap();
-        self.history_set.insert(prev_hash);
+        *self.history_set.entry(prev_hash).or_insert(0) += 1;
         self.board.make_move(mov);
         let hash = self.zobrist.cache_iter(&self.board, mov, prev_hash);
         self.history_vec.push(hash);
@@ -232,7 +226,12 @@ impl Search {
     pub fn undo_move(&mut self) {
         self.board.undo_move();
         self.history_vec.pop();
-        self.history_set.remove(self.history_vec.last().unwrap());
+        let last = self.history_vec.last().unwrap();
+        let count = self.history_set.get_mut(last).unwrap();
+        *count -= 1;
+        if *count == 0 {
+            self.history_set.remove(last);
+        }
     }
 
     fn update(&mut self) {
@@ -271,12 +270,9 @@ impl Search {
 
         let hash = *self.history_vec.last().unwrap();
         let hash_index = (hash & self.cache_mask) as usize;
-        if !root_node && (self.board.hmc > 99 || self.history_set.contains(&hash)) {
+        if !root_node && (self.board.hmc > 99 || self.history_set.contains_key(&hash)) {
             return 0;
         }
-
-        // Exit search (tl, nl, listen)
-        self.update();
 
         let hash_is_same = self.cache[hash_index].is_same(hash);
         // if not a "prove"-search
@@ -299,10 +295,16 @@ impl Search {
                 }
             }
         }
-        if depth == 0 {
-            return self.extension(eval, alpha, beta);
+
+        let in_check = self.board.is_in_check();
+        if in_check {
+            depth += 1;  // bruh
+        } else if depth == 0 {
+            return self.extension(eval, alpha, beta, true);
         }
 
+        // Exit search (tl, nl, listen)
+        self.update();
         self.nodes += 1;
 
         // sus
@@ -310,31 +312,55 @@ impl Search {
             return eval.eval(&self.board);
         }
 
-        let in_check = self.board.is_in_check();
-        // Null move prune
-        if !in_check && !root_node && !self.mate_flag && depth > 2 {
-            self.ply += 1;
-            self.board.turn = !self.board.turn;
-            self.history_set.insert(*self.history_vec.last().unwrap());
-            self.history_vec.push(*self.history_vec.last().unwrap() ^ self.zobrist.hash_turn ^ self.zobrist.hash_en_passant[self.board.en_passant]);
-            let old_en_passant = self.board.en_passant;
-            self.board.en_passant = 0;
+        // Disabled, needs more testing (including mate search autotests AND elo strength test)
+        // // Null move prune
+        // // if: 1) not in check, 2) not the first damn node, 3) not the (possible) PV, 4) not search for mate, 5) we have enough depth
+        // if !in_check && !root_node && !self.tpv_flag && depth > 3 && !self.mate_flag {
+        //     // !!! check if the previous move was already a null-move
+        //     // at this point, self.history_vec.len() have to be more than 1
+        //     if self.history_vec[self.history_vec.len() - 2] ^ self.zobrist.hash_turn ^ self.zobrist.hash_en_passant[0] != *self.history_vec.last().unwrap() {
+        //         // the null move itself
+        //         self.board.turn = !self.board.turn;
+        //         self.ply += 1;
+        //         // remove the en passant option manually
+        //         let old_en_passant = self.board.en_passant;
+        //         self.board.en_passant = 0;
 
-            let score = -self.search(eval, -beta, -beta + 1, depth - 3);	// reduction = 2
+        //         // make the hash for the changed color and pass it as well
+        //         let prev_hash = *self.history_vec.last().unwrap();
+        //         *self.history_set.entry(prev_hash).or_insert(0) += 1;
+        //         self.history_vec.push(prev_hash ^ self.zobrist.hash_turn ^ self.zobrist.hash_en_passant[0]);
 
-            self.board.turn = !self.board.turn;
-            self.board.en_passant = old_en_passant;
-            self.history_vec.pop();
-            self.history_set.remove(self.history_vec.last().unwrap());
-            self.ply -= 1;
+        //         // calc a quick reducted score
+        //         let reduction = 2 + depth / 5;
+        //         let score = -self.search(eval, -beta, -beta + 1, depth - reduction);
 
-            if self.abort.load(Ordering::Relaxed) {
-                return 0;
-            }
-            if score >= beta {
-                return beta;
-            }
-        }
+        //         // restore the original board state
+        //         self.ply -= 1;
+        //         self.board.turn = !self.board.turn;
+        //         self.board.en_passant = old_en_passant;
+
+        //         // remove the null-move from stack
+        //         self.history_vec.pop();
+        //         let count = self.history_set.get_mut(&hash).unwrap();
+        //         if *count == 1 {
+        //             self.history_set.remove(&hash);
+        //         } else {
+        //             *count -= 1;
+        //         }
+
+        //         if self.abort.load(Ordering::Relaxed) {
+        //             return 0;
+        //         }
+        //         if score >= beta {
+        //             if score > EVAL_PRE_MATE {
+        //                 // alpha = EVAL_PRE_MATE - 1;
+        //             } else {
+        //                 return score;
+        //             }
+        //         }
+        //     }
+        // }
 
         let mut moves = self.board.get_legal_moves();
         // uci "go searchmoves" de momento
@@ -389,16 +415,15 @@ impl Search {
             }
         }
         moves.sort();
-        moves.reverse();
         
         let mut hf_cur = HF_LOW;
-        depth += in_check as u8;
         // a/b with lmr and pv proving
-        for (i, mov) in moves.iter().enumerate() {
+        for (i, mov) in moves.iter().rev().enumerate() {
             self.make_move(*mov);
             self.ply += 1;
 
-            let mut score = if !self.mate_flag && i != 0 && depth > 2 && !(*mov > ME_PROMISING_MIN || in_check) {
+            // LMR if: [1) not search for mate] 2) not in check 3) not a capture 4) not the first move 5) it's physically possible
+            let mut score = if !in_check && *mov < ME_PROMISING_MIN && i != 0 && depth > 2 && !self.mate_flag {
                 -self.search(
                     eval,
                     -beta,
@@ -458,68 +483,80 @@ impl Search {
                 self.cached_cnt += 1;
             }
             self.cache[hash_index] = EvalHash::new(hash, alpha, depth, hf_cur);	
-            if alpha < -EVAL_PRE_MATE {
-                self.cache[hash_index].score -= self.ply as i16;
-            } else if alpha > EVAL_PRE_MATE {
-                self.cache[hash_index].score += self.ply as i16;
-            }
         }
 
-        alpha // fail low
+        alpha  // fail low
     }
 
-    /// See only captures and check lines 'til the end
+    /// Looks through captures 'til the end
     /// 
-    /// Evaluate all quiet leafs
+    /// Gets out of checks
+    /// 
+    /// On a root node gives checks as well
+    /// 
+    /// Evaluates all quiet leafs
     fn extension<E: Eval>(
         &mut self,
         eval: &E,
         mut alpha: i16,
-        beta: i16
+        beta: i16,
+        root_ext: bool
     ) -> i16 {
         // Exit search extension (tl, nl, listen)
         self.update();
         self.nodes += 1;
 
-        // cuttin even before we get a list of moves
-        alpha = max(alpha, eval.eval(&self.board));
-        if alpha >= beta {
-            return beta; // fail high
+        let in_check = self.board.is_in_check();
+        if !in_check {
+            alpha = max(alpha, eval.eval(&self.board));
+            // cuttin even before we get a list of moves
+            if alpha >= beta {
+                return beta;  // fail high
+            }
         }
 
         let mut moves = self.board.get_legal_moves();
-        
         // if mate or stalemate
         if moves.is_empty() {
-            if self.board.is_in_check() {
+            if in_check {
                 return -EVAL_MATE + self.ply as i16;
             }
             return 0;
         }
 
         moves.sort();
-        moves.reverse();
 
-        for mov in moves.iter() {
-            self.make_move(*mov);
-            // extension will consider checks as well as captures
-            if *mov < ME_CAPTURE_MIN && !self.board.is_in_check() {
-                self.undo_move();
-                continue;
+        for mov in moves.iter().rev() {
+            if root_ext {
+                self.make_move(*mov);
+                if !in_check && *mov < ME_CAPTURE_MIN && !self.board.is_in_check() {
+                    // if are not in check, and this move is not promising, and this move does not lead to a check, drop it
+                    self.undo_move();
+                    continue;
+                }
+            } else {
+                // if not a root node of search extension, giving checks will lead to perpetual
+                if !in_check && *mov < ME_CAPTURE_MIN {
+                    continue;
+                }
+                // also make move after conditioning because it's possible here and it's faster
+                self.make_move(*mov);
             }
+
             self.ply += 1;
-            alpha = max(alpha, -self.extension(eval, -beta, -alpha));
+            alpha = max(alpha, -self.extension(eval, -beta, -alpha, false));
             self.ply -= 1;
             self.undo_move();
+
             if self.abort.load(Ordering::Relaxed) {
                 return 0;
             }
             if alpha >= beta {
-                return beta; // fail high
+                return beta;  // fail high
             }
         }
 
-        alpha // fail low
+        alpha  // fail low
     }
 
     fn post(&self, score: i16) {
@@ -554,12 +591,12 @@ impl Search {
             self.nodes * 1000 / time.max(1),
             self.cached_cnt * 1000 / cache_max
         );
-    } 
+    }
 
     fn score_to_uci(score: i16) -> (String, i16) {
         if score < 0 {
             if score < -EVAL_PRE_MATE {
-                return ("mate".to_owned(), 1 + (EVAL_MATE + score) / 2);
+                return ("mate".to_owned(), -((EVAL_MATE + score) / 2));
             }
             return ("cp".to_owned(), score);
         }
@@ -584,9 +621,28 @@ impl Search {
         self.board.turn
     }
 
-    /// 0-depth eval, cannot see if position is even legal or mate
-    pub fn get_static_eval<E: Eval>(&self, eval: &E) -> i16 {
-        eval.eval(&self.board)
+    /// 0-depth eval, if position is not quiet then this eval is incorrect
+    /// 
+    /// Returns score and is_quiet, so you don't have to prepare position
+    pub fn get_static_eval<E: Eval>(&mut self, eval: &E) -> EvalOutput {
+        let score = eval.eval(&self.board);
+        let mut is_quiet = true;
+        let mut q_score = None;
+        if self.get_result() != GameResult::InProgress {
+            is_quiet = false;
+        } else if self.board.is_in_check() {
+            is_quiet = false;
+        } else {
+            q_score = Some(self.extension(eval, -EVAL_INF, EVAL_INF, false));
+            if score != q_score.unwrap() {
+                is_quiet = false;
+            }
+        }
+        EvalOutput {
+            score,
+            is_quiet,
+            q_score
+        }
     }
 
     pub fn get_result(&mut self) -> GameResult {
@@ -676,6 +732,12 @@ pub struct EngineOutput {
     pub score_value: i16         // score (score_to_uci)
 }
 
+pub struct EvalOutput {
+    pub score: i16,              // pure static score evaluation value
+    pub is_quiet: bool,          // position considered quiet if: captures make it worse, not under check, game is not ended
+    pub q_score: Option<i16>     // result of search extension
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -684,10 +746,12 @@ mod tests {
 
     #[test]
     fn test_engine_relative_performance() {
+        const EXPECTED_PERCENTAGE: u128 = 110;  // with working Null-Move Pruning it should be less than 100
+
         let mut board = Board::default();
         let mut avg1 = 0;
         let mut val = 0;  // force compiler to calc just in case
-        for _ in 0..3 {
+        for _ in 0..5 {
             let ts = Instant::now();
             let x = board.perft(4);
             avg1 += ts.elapsed().as_millis();
@@ -698,35 +762,106 @@ mod tests {
         let eval = HCEval::init(None);
         let mut avg2 = 0;
         let mut val2 = 0;  // force compiler to calc just in case
-        for _ in 0..3 {
+        for _ in 0..5 {
             let ts = Instant::now();
-            let eo = engine.go(&eval, u64::MAX >> 1, 4, 0, false, None);
+            let eo = engine.go(&eval, u64::MAX >> 1, 4, 0, None);
             avg2 += ts.elapsed().as_millis();
             val2 += eo.score_value;
             assert_ne!(eo.bestmove, "a1a1");
         }
         assert!(val2 >= 0);
         println!("{} {}", avg1, avg2);
-        assert!(avg2 < avg1);
+        assert!(avg2 < avg1 * EXPECTED_PERCENTAGE / 100);
     }
 
     #[test]
     fn test_engine_search_mate_2() {
-        util_test_search_fm("8/4p3/B1ppP3/1nPp4/Npk2N2/pR2p3/K3P3/3R4 w - - 0 1", "f4d3", 2, Some(1_000), Some(50_000));
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_pos(Some("8/4p3/B1ppP3/1nPp4/Npk2N2/pR2p3/K3P3/3R4 w - - 0 1"));
+        let res = engine.go(&eval, 400, 4, 50_000, None);
+        assert_eq!(res.bestmove, "f4d3");
+        assert_eq!(res.score_type, "mate");
+        assert_eq!(res.score_value, 2);
     }
 
     #[test]
     fn test_engine_search_mate_3() {
-        util_test_search_fm("4qrk1/p1r1Bppp/4b3/2p3Q1/8/3P4/PPP2PPP/R3R1K1 w - - 3 19", "e7f6", 3, None, Some(1_000_000));
-    }
-
-    fn util_test_search_fm(fen: &str, bestmove: &str, depth: u8, tl: Option<u64>, nl: Option<u64>) {
         let mut engine = Search::init();
         let eval = HCEval::init(None);
-        engine.set_pos(Some(fen));
-        let res = engine.go(&eval, tl.unwrap_or(10_000), depth << 1, nl.unwrap_or(0), true, None);
+        engine.set_pos(Some("4qrk1/p1r1Bppp/4b3/2p3Q1/8/3P4/PPP2PPP/R3R1K1 w - - 3 19"));
+        let res = engine.go(&eval, 4_000, 6, 1_000_000, None);
+        assert_eq!(res.bestmove, "e7f6");
         assert_eq!(res.score_type, "mate");
-        assert_eq!(res.score_value, depth as i16);
-        assert_eq!(res.bestmove, bestmove);
+        assert_eq!(res.score_value, 3);
+    }
+
+    #[test]
+    fn test_engine_search_mate_m2() {
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_pos(Some("4qrk1/p1r2ppp/4bB2/2p3Q1/8/3P4/PPP2PPP/R3R1K1 b - - 4 19"));
+        let res = engine.go(&eval, 4_000, 6, 1_000_000, None);
+        assert_eq!(res.bestmove, "g7g6");
+        assert_eq!(res.score_type, "mate");
+        assert_eq!(res.score_value, -2);
+    }
+
+    #[test]
+    fn test_engine_search_mate_8() {
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_pos(Some("8/8/8/4n1p1/6P1/5B2/1kr5/4K3 b - - 0 68"));
+        let res = engine.go(&eval, 48_000, 64, 12_000_000, None);
+        assert_eq!(res.bestmove, "e5f3");
+        assert_eq!(res.score_type, "mate");
+        assert_eq!(res.score_value, 8);
+    }
+
+    #[test]
+    fn test_engine_search_mate_m7() {
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_pos(Some("8/8/8/6p1/6P1/5n2/1kr5/4K3 w - - 0 69"));
+        let res = engine.go(&eval, 48_000, 64, 12_000_000, None);
+        assert_eq!(res.bestmove, "e1f1");
+        assert_eq!(res.score_type, "mate");
+        assert_eq!(res.score_value, -7);
+    }
+
+    #[test]
+    fn test_engine_search_mate_6_shortcut() {
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_pos(Some("8/1p6/1R3Pk1/3K4/8/8/8/8 w - - 6 91"));
+        let res = engine.go(&eval, 16_000, 64, 1_250_000, None);  // nl is low here
+        assert!(res.bestmove == "d5e5" || res.bestmove == "d5e6");
+        assert_eq!(res.score_type, "mate");
+        assert!(res.score_value >= 6);  // it's fine if it sees it in 8 or something
+    }
+
+    #[test]
+    #[ignore]  // Test this with --release, otherwise you'll die of age
+    fn test_engine_search_mate_6() {
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_pos(Some("8/1p6/1R3Pk1/3K4/8/8/8/8 w - - 6 91"));
+        let res = engine.go(&eval, 600_000, 64, 64_000_000, None);  // nl is low here as well
+        assert!(res.bestmove == "d5e5" || res.bestmove == "d5e6");
+        assert_eq!(res.score_type, "mate");
+        assert_eq!(res.score_value, 6);
+    }
+
+    #[test]
+    #[ignore]  // Test this with --release, otherwise you'll die of age
+    fn test_engine_search_mate_7_sm() {
+        let mut engine = Search::init();
+        let eval = HCEval::init(None);
+        engine.set_cache_size(96);
+        engine.set_pos(Some("8/1p3k2/1R3P2/8/2K5/8/8/8 w - - 4 90"));
+        let res = engine.go(&eval, 600_000, 64, 64_000_000, Some(&["c4d5"]));
+        assert_eq!(res.bestmove, "c4d5");  // duh
+        assert_eq!(res.score_type, "mate");
+        assert_eq!(res.score_value, 7);
     }
 }
