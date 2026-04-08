@@ -2,16 +2,16 @@
 
 Approx. level of play: 1800 CCRL elo
 
-![Showcase](https://github.com/N1ckn1ght/my-gif-collection-for-github/blob/master/ace_v1.3.0.gif?raw=true)  
-__*Lucas Chess interface__
+<img src="https://github.com/N1ckn1ght/my-gif-collection-for-github/blob/master/ace_v1.4.4_console.gif?raw=true" width="480"/>  
+
+<img src="https://github.com/N1ckn1ght/my-gif-collection-for-github/blob/master/ace_v1.3.0.gif?raw=true" width="480"/>  
+
+_*Lucas Chess interface_
 
 ### Progress
 
-Pre-calculations - Done!  
-Board - Done!  
-Engine - Done!  
-Eval - HCE for now.  
-Comms - Supports UCI now!
+Current focus: working on a NNUE;  
+Engine needs some changes as well.
 
 ### License
 
