@@ -13,7 +13,7 @@ mod tests {
         let mut engine = Search::init();
         let mut game_res = engine.get_result();
         while game_res == GameResult::InProgress {
-            let res = engine.go(eval, u32::MAX as u64, depth, nodes, false, None);
+            let res = engine.go(eval, u32::MAX as u64, depth, nodes, None);
             let legals = engine.get_legal_moves();
             let mov = move_transform_back(&res.bestmove, &legals, engine.get_turn());
             assert!(mov.is_some());

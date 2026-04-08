@@ -53,15 +53,15 @@ impl HCWeights {
             [ 396, 1124, 1188, 2048, 3744, 0 ]
         ];
 
-        let p_isolated_pre = -44;
-        let p_doubled_pre = -52;
+        let p_isolated_pre = -80;
+        let p_doubled_pre = -64;
         let p_phalanga_pre = 80;
         let p_atk_center_pre = 44;
         let p_outpost_pre = 80;
         let p_outpost_block_pre = 40;
         let p_semiblocked_pre = -200;
         let p_blocked_pre = -200;
-        let p_passing_pre = [0, 60, 120, 160, 190, 240, 300, 0];
+        let p_passing_pre = [40, 40, 80, 120, 160, 240, 320, 0];
         let nb_outpost_pre = 80;
         let nb_outpost_reach_pre = 80;
         let rq_atk_open_pre = 40;
@@ -81,9 +81,9 @@ impl HCWeights {
         let g_ppawn_block_pre = 40;
         let g_atk_pro_ppb_pre = 40;
         let s_mobility = 7;
-        let s_bishop_pair_pre = 80;
-        let s_qnight_pre = 40;
-        let s_turn_pre = 35;
+        let s_bishop_pair_pre = 88;
+        let s_qnight_pre = 52;
+        let s_turn_pre = 40;
 
         /* These are PeSTO values (used as 3/8 score tiebreakers) + Kaissa weights (x4 of course) + my improvisation:
             +54/0 per pawn in center (d4-e6) in mittelspiel
@@ -91,7 +91,7 @@ impl HCWeights {
             +10/10 for pawns per every rank starting from 3rd (e.g. +10/20/30...)
             -10/0 for pawns on 5 rank
             +10/0 for pawn on f4 (although the purpose usually is to remove e4)
-            +54/30 per knight in center (d4-e6)
+            +30/30 per knight in center (d4-e6)
             -13/0 per knight on g3, d2
             -25/0 per knights and bishops at initial queen squares
             -40/0 per knights and bishops at initial king squares
@@ -119,9 +119,9 @@ impl HCWeights {
                 [
                     -167, -89, -34, -49,  61, -97, -15, -107,
                      -73, -41,  72,  36,  23,  62,   7,  -17,
-                     -47,  60,  37, 119, 138, 129,  73,   44,
-                      -9,  17,  19, 107,  91,  69,  18,   22,
-                     -13,   4,  16,  67,  82,  19,  21,   -8,
+                     -47,  60,  37,  95, 114, 129,  73,   44,
+                      -9,  17,  19,  83,  67,  69,  18,   22,
+                     -13,   4,  16,  43,  58,  19,  21,   -8,
                      -23,  -9,  12,  10,  19,  17,  12,  -16,
                      -29, -53, -12, -16,  -1,  18, -14,  -19,
                     -105, -46, -58, -33, -17, -28, -89, -23,
