@@ -184,11 +184,7 @@ pub fn uci_loop() -> bool {
                     engine.abort.store(false, Ordering::Relaxed);
                     let res =  engine.get_static_eval(&eval);
                     engine.abort.store(true, Ordering::Relaxed);
-                    print!("static_score {} is_quiet {}", res.score, res.is_quiet);
-                    if let Some(q) = res.q_score {
-                        print!(" q_score {}", q);
-                    }
-                    println!();
+                    println!("static_score {} is_quiet {} q_score {} qr_score {}", res.score, res.is_quiet, res.q_score, res.qr_score);
                 },
                 "move" => {
                     // custom non-uci command
