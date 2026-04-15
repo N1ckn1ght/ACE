@@ -179,6 +179,13 @@ pub fn uci_loop() -> bool {
                     }
                     println!();
                 },
+                "getbb" => {
+                    let bbs = engine.get_bitboards();
+                    for bb in bbs.iter() {
+                        print!("{} ", bb);
+                    }
+                    println!();
+                },
                 "eval" => {
                     // custom non-uci command
                     engine.abort.store(false, Ordering::Relaxed);
@@ -246,7 +253,7 @@ fn listen(tx: &Sender<String>, abort: Arc<AtomicBool>, ponder: Arc<AtomicBool>) 
             "ponderhit" => {
                 ponder.store(false, Ordering::Relaxed);
             },
-            "setoption" | "ucinewgame" | "position" | "go" | "eval" | "glm" | "move" | "undo" | "status" | "export" => {
+            "setoption" | "ucinewgame" | "position" | "go" | "eval" | "glm" | "move" | "undo" | "status" | "export" | "getbb" => {
                 abort.store(true, Ordering::Relaxed);
                 ponder.store(false, Ordering::Relaxed);
                 tx.send(input).unwrap();

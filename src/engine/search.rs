@@ -676,6 +676,28 @@ impl Search {
     pub fn export_fen(&self) -> String {
         self.board.export_fen()
     }
+
+    /// Note! It transforms the current piece encoding
+    /// 
+    /// From -/-/p/P/n/N/b/B/r/R/q/Q/k/K
+    /// 
+    /// Into "universal" P/N/B/R/Q/K/p/n/b/r/q/k
+    pub fn get_bitboards(&self) -> Vec<u64> {
+        vec![
+            self.board.bbs[P],
+            self.board.bbs[N],
+            self.board.bbs[B],
+            self.board.bbs[R],
+            self.board.bbs[Q],
+            self.board.bbs[K],
+            self.board.bbs[P2],
+            self.board.bbs[N2],
+            self.board.bbs[B2],
+            self.board.bbs[R2],
+            self.board.bbs[Q2],
+            self.board.bbs[K2]
+        ]
+    }
 }
 
 /* CACHE related section */
@@ -827,7 +849,7 @@ mod tests {
         let mut engine = Search::init();
         let eval = HCEval::init(None);
         engine.set_pos(Some("8/1p6/1R3Pk1/3K4/8/8/8/8 w - - 6 91"));
-        let res = engine.go(&eval, 16_000, 64, 1_250_000, None);  // nl is low here
+        let res = engine.go(&eval, 18_000, 64, 1_250_000, None);  // nl is low here
         assert!(res.bestmove == "d5e5" || res.bestmove == "d5e6");
         assert_eq!(res.score_type, "mate");
         assert!(res.score_value >= 6);  // it's fine if it sees it in 8 or something
