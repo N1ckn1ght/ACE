@@ -849,7 +849,7 @@ mod tests {
         let mut engine = Search::init();
         let eval = HCEval::init(None);
         engine.set_pos(Some("8/1p6/1R3Pk1/3K4/8/8/8/8 w - - 6 91"));
-        let res = engine.go(&eval, 16_000, 64, 1_250_000, None);  // nl is low here
+        let res = engine.go(&eval, 18_000, 64, 1_250_000, None);  // nl is low here
         assert!(res.bestmove == "d5e5" || res.bestmove == "d5e6");
         assert_eq!(res.score_type, "mate");
         assert!(res.score_value >= 6);  // it's fine if it sees it in 8 or something

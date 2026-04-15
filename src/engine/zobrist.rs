@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use crate::frame::{util::*, board::Board};
 
 pub struct Zobrist {
@@ -11,23 +11,23 @@ pub struct Zobrist {
 // Let us hope we are lucky!
 impl Default for Zobrist {
     fn default() -> Zobrist {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut hash_boards = [[0; 64]; K2 + 1];
         let mut hash_en_passant = [0; 64];
         let mut hash_castlings = [0; 16];
-        let hash_turn = rng.gen::<u64>();
+        let hash_turn = rng.random::<u64>();
 
         for hash_board in hash_boards.iter_mut() {
             for hash in hash_board.iter_mut() {
-                *hash = rng.gen::<u64>();
+                *hash = rng.random::<u64>();
             }
         }
         for hash in hash_en_passant.iter_mut() {
-            *hash = rng.gen::<u64>();
+            *hash = rng.random::<u64>();
         }
         for hash in hash_castlings.iter_mut() {
-            *hash = rng.gen::<u64>();
+            *hash = rng.random::<u64>();
         }
 
         Self {
